@@ -1,0 +1,73 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+import { ClipPlayer } from '../src/animation/clip-player.js';
+import { AnimationState } from '../src/animation/animation-state.js';
+import {
+  createCounterTemplate,
+  createParryTemplate,
+  createSlashTestTemplate,
+} from '../src/animation/action-templates.js';
+import { importLegacyPunchSnapshot } from '../src/animation/legacy-punch-import.js';
+import { createBlockCharacter } from '../src/character/block-character.js';
+import { createBlockRig } from '../src/character/block-rig.js';
+import { createDebugSword, mountDebugSword } from '../src/character/debug-sword.js';
+
+test('slash, parry and counter templates expose required authoring metadata', () => {
+  const slash = createSlashTestTemplate();
+  const parry = createParryTemplate();
+  const counter = createCounterTemplate();
+  assert.deepEqual(slash.clip.timeline.filter((key) => key.impact).map((key) => key.frame), [14]);
+  assert.deepEqual(slash.clip.timeline.filter((key) => key.cancel).map((key) => key.frame), [26]);
+  assert.deepEqual(slash.action.windows.weaponTrail[0], {
+    startFrame: 9,
+    endFrame: 19,
+    label: 'sword trail',
+  });
+  assert.equal(parry.action.windows.parry[0].startFrame, 3);
+  assert.equal(counter.clip.timeline.some((key) => key.name === 'counter_impact' && key.impact), true);
+});
+
+test('clip player and animation state remain presentation-only consumers', () => {
+  const slash = createSlashTestTemplate().clip;
+  const player = new ClipPlayer();
+  const state = new AnimationState({ [slash.id]: slash });
+  const result = state.applyActionState({ actionId: slash.id, frame: 14, playing: false }, player);
+  assert.equal(player.clip.id, 'slash_test');
+  assert.equal(result.frame, 14);
+  assert.equal('hitResult' in result, false);
+});
+
+test('legacy importer ignores carry preview axes and preserves arbitrary metadata', () => {
+  const result = importLegacyPunchSnapshot({
+    version: 4,
+    seq: [
+      { name: 'guard_enter', frame: 0, tag: 'guard_enter' },
+      { name: 'parry_contact', frame: 5, tag: 'parry-window:v1', impact: true },
+    ],
+    phases: {
+      guard_enter: { root_y: 10, carry_tilt: 90 },
+      parry_contact: { root_y: 20, carry_ox: 2 },
+    },
+  });
+  assert.deepEqual(result.report.ignoredPoseKeys, ['carry_ox', 'carry_tilt']);
+  assert.equal(result.clip.timeline[1].tag, 'parry-window:v1');
+  assert.equal('carry_tilt' in result.clip.poses.guard_enter, false);
+});
+
+test('Action Studio entry and module graph do not load legacy Punch scripts', async () => {
+  const html = await readFile(new URL('../tools/action-studio/index.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../tools/action-studio/action-studio.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /(?:src|href)=["'][^"']*\/ps\//i);
+  assert.doesNotMatch(app, /tools\/ps|actor-brawler|state\.js/i);
+  assert.match(html, /ACTION\s*<span>STUDIO/i);
+});
+
+test('Three-dependent character modules are importable without gameplay globals', () => {
+  assert.equal(typeof createBlockCharacter, 'function');
+  assert.equal(typeof createBlockRig, 'function');
+  assert.equal(typeof createDebugSword, 'function');
+  assert.equal(typeof mountDebugSword, 'function');
+});
+
