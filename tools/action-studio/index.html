@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Action Studio · Block Character Action Authoring</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./action-studio.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">BLOCK CHARACTER ACTION AUTHORING</p>
+      <h1>ACTION <span>STUDIO</span></h1>
+    </div>
+    <div class="authority-badge"><b>Presentation layer</b><span>combat authority stays external</span></div>
+  </header>
+
+  <main class="workspace">
+    <section class="stage-shell">
+      <canvas id="stageCanvas"></canvas>
+      <div class="stage-hud">
+        <span id="clipNow">SLASH TEST</span>
+        <strong id="phaseNow">READY · 0F</strong>
+      </div>
+      <div class="stage-help">拖曳旋轉 · 滾輪縮放 · 刀軌只作 presentation preview</div>
+      <div id="impactFlash" class="impact-flash"></div>
+      <div class="stage-legend">
+        <span><i class="impact-dot"></i>Impact</span>
+        <span><i class="cancel-dot"></i>Cancel</span>
+        <span><i class="trail-dot"></i>Weapon trail</span>
+      </div>
+    </section>
+
+    <aside class="editor">
+      <section class="panel quick-actions">
+        <div class="panel-title"><span>Phase A demo</span><small>independent core</small></div>
+        <div class="button-grid three">
+          <button id="showTPose">T-Pose</button>
+          <button id="showIdle">Idle</button>
+          <button id="playSlash" class="primary">▶ Slash Test</button>
+        </div>
+        <div class="button-grid three secondary-row">
+          <button data-template="guard">Guard</button>
+          <button data-template="parry">Parry</button>
+          <button data-template="counter">Counter</button>
+        </div>
+      </section>
+
+      <section class="panel playback">
+        <div class="button-grid four">
+          <button id="playToggle" class="primary">▶ Play</button>
+          <button id="slowToggle">0.25×</button>
+          <button id="loopToggle">Loop</button>
+          <button id="gameCamera">Game Camera</button>
+        </div>
+      </section>
+
+      <section class="panel timeline-panel">
+        <div class="panel-title"><span>Timeline</span><small id="timelineSummary">—</small></div>
+        <div id="timelineBar" class="timeline-bar"><div id="timelinePlayhead" class="timeline-playhead"></div></div>
+        <div class="scrub-row">
+          <input id="timelineScrub" type="range" min="0" max="26" step="0.01" value="0">
+          <output id="frameNow">0.00f</output>
+        </div>
+        <div id="timelineKeys" class="timeline-keys"></div>
+        <div class="key-tools">
+          <button id="addKey">＋ Key</button>
+          <button id="duplicateKey">⧉ Duplicate</button>
+          <button id="deleteKey">× Delete</button>
+        </div>
+        <div class="key-editor">
+          <label>Name<input id="keyName" type="text"></label>
+          <label>Frame<input id="keyFrame" type="number" min="0" step="1"></label>
+          <label>Ease<select id="keyEase"><option>lin</option><option>in</option><option>out</option><option>in-out</option></select></label>
+          <label>Tag<input id="keyTag" type="text"></label>
+          <label class="check"><input id="keyImpact" type="checkbox"> Impact</label>
+          <label class="check"><input id="keyCancel" type="checkbox"> Cancel</label>
+          <button id="applyKey" class="primary">Apply key data</button>
+        </div>
+      </section>
+
+      <section class="panel metadata-panel">
+        <div class="panel-title"><span>Action metadata</span><small>authoring hints · not hit results</small></div>
+        <div id="windowEditor" class="window-editor"></div>
+      </section>
+
+      <section class="panel socket-panel">
+        <div class="panel-title"><span>Weapon mount · HAND_R</span><small id="socketStatus">attached</small></div>
+        <div id="mountEditor" class="mount-editor"></div>
+        <div class="button-grid two">
+          <button id="saveMount" class="primary">Save calibration</button>
+          <button id="resetMount">Reset</button>
+        </div>
+      </section>
+
+      <section class="panel feel-panel">
+        <div class="panel-title"><span>Combat Feel Preview</span><small>editor presentation only</small></div>
+        <label>Hitstop <output id="hitstopValue">0.08s</output><input id="hitstop" type="range" min="0" max="0.25" step="0.01" value="0.08"></label>
+        <label>Camera shake <output id="shakeValue">0.45</output><input id="shake" type="range" min="0" max="1" step="0.01" value="0.45"></label>
+        <label>Dummy knockback <output id="knockbackValue">0.55</output><input id="knockback" type="range" min="0" max="1" step="0.01" value="0.55"></label>
+        <label class="check"><input id="dummyToggle" type="checkbox" checked> Preview dummy + impact flash</label>
+      </section>
+
+      <section class="panel library-panel">
+        <div class="panel-title"><span>Clip Library / Combo Preview</span><small>local presentation workspace</small></div>
+        <div class="library-save"><input id="libraryName" type="text" placeholder="action name"><button id="saveClip" class="primary">Save</button></div>
+        <div id="clipLibrary" class="clip-library"></div>
+        <div class="combo-head"><span>Combo queue</span><div><button id="playCombo">▶ Preview</button><button id="clearCombo">Clear</button></div></div>
+        <div id="comboQueue" class="combo-queue">queue is empty</div>
+      </section>
+
+      <section class="panel io-panel">
+        <div class="panel-title"><span>Project JSON</span><small>legacy Punch snapshots accepted</small></div>
+        <textarea id="projectJson" spellcheck="false" placeholder="Export or paste a project / legacy snapshot"></textarea>
+        <div class="button-grid two"><button id="exportProject">Export</button><button id="importProject" class="primary">Import</button></div>
+        <div id="ioStatus" class="status-line"></div>
+      </section>
+
+      <section class="panel pose-panel">
+        <div class="panel-title"><span>Pose sliders</span><small id="poseAxisSummary">POSE_KEYS</small></div>
+        <div id="poseControls"></div>
+      </section>
+
+      <section class="architecture-note">
+        <b>Runtime boundary</b>
+        <span>Action State → Animation State → Clip Player → Pose → Block Rig → Weapon / VFX</span>
+        <small>Network / Combat Simulation remains the authority for hit, block, parry and counter outcomes.</small>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Generated classic bundle keeps direct file:// opening compatible. -->
+  <script src="./action-studio.bundle.js"></script>
+</body>
+</html>
+

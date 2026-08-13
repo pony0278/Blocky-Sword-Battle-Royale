@@ -1,0 +1,10 @@
+{
+  "name": "blocky-sword-battle-royale",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:action-studio": "node build/build-action-studio.mjs",
+    "test": "node --test tests/action-core.test.js tests/action-studio-contract.test.js tests/action-studio-file-entry.test.js"
+  }
+}
+
