@@ -1,10 +1,12 @@
-import { createBlockCharacter } from '../../src/character/block-character.js';
-import { createDebugSword, mountDebugSword, DEFAULT_SWORD_MOUNT } from '../../src/character/debug-sword.js';
+import { createDefaultCharacter } from '../../src/character/default-character.js';
+import { createDebugSword, mountDebugSword } from '../../src/character/debug-sword.js';
+import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
 import { applyMountCalibration, normalizeMountCalibration } from '../../src/character/character-sockets.js';
 import { POSE_KEYS } from '../../src/animation/pose-schema.js';
 import { normalizePose } from '../../src/animation/pose-utils.js';
 import { createAnimationClip, clipMarkerSummary } from '../../src/animation/animation-clip.js';
 import { ClipPlayer } from '../../src/animation/clip-player.js';
+import { loadKayKitAnimationLibrary } from '../../src/animation/kaykit-animation-library.js';
 import { ACTION_TEMPLATE_FACTORIES } from '../../src/animation/action-templates.js';
 import { importLegacyPunchSnapshot } from '../../src/animation/legacy-punch-import.js';
 import {
@@ -17,7 +19,7 @@ const THREE = window.THREE;
 if (!THREE) throw new Error('Action Studio requires Three.js r128');
 
 const LIBRARY_KEY = 'ACTION_STUDIO_CLIP_LIBRARY_V1';
-const MOUNT_KEY = 'ACTION_STUDIO_DEBUG_SWORD_MOUNT_V1';
+const MOUNT_KEY = 'ACTION_STUDIO_KAYKIT_SWORD_MOUNT_V2';
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -49,7 +51,7 @@ scene.add(rimLight);
 const grid = new THREE.GridHelper(18, 18, 0x33425f, 0x1b263a);
 scene.add(grid);
 
-const character = createBlockCharacter(THREE);
+const character = createDefaultCharacter(THREE);
 scene.add(character.object3d);
 const sword = createDebugSword(THREE);
 let mountCalibration = loadMountCalibration();
@@ -64,6 +66,8 @@ scene.add(weaponTrail);
 let trailPoints = [];
 
 const player = new ClipPlayer();
+let animationSource = 'authored';
+let kayKitLibrary = null;
 let clip = null;
 let action = null;
 let selectedKeyIndex = 0;
@@ -108,9 +112,9 @@ function createPreviewDummy() {
 function loadMountCalibration() {
   try {
     const stored = JSON.parse(localStorage.getItem(MOUNT_KEY) || 'null');
-    return normalizeMountCalibration(stored || DEFAULT_SWORD_MOUNT);
+    return normalizeMountCalibration(stored || DEFAULT_KAYKIT_SWORD_MOUNT);
   } catch {
-    return normalizeMountCalibration(DEFAULT_SWORD_MOUNT);
+    return normalizeMountCalibration(DEFAULT_KAYKIT_SWORD_MOUNT);
   }
 }
 
@@ -129,6 +133,8 @@ function currentProject() {
 }
 
 function setProject(project, options = {}) {
+  character.stopAnimation();
+  animationSource = 'authored';
   clip = createAnimationClip(project.clip || project);
   action = createActionDefinition(project.action || {
     id: clip.id,
@@ -157,6 +163,55 @@ function loadTemplate(id, autoplay = false) {
   const factory = ACTION_TEMPLATE_FACTORIES[id];
   if (!factory) return;
   setProject(factory(), { autoplay });
+}
+
+function setKayKitStatus(message, isError = false) {
+  const status = document.getElementById('kaykitStatus');
+  status.textContent = message;
+  status.classList.toggle('error', isError);
+}
+
+async function loadKayKitRuntime() {
+  if (kayKitLibrary) return kayKitLibrary;
+  if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
+  if (location.protocol === 'file:') {
+    throw new Error('KayKit GLB animation packs require the local HTTP server');
+  }
+  setKayKitStatus('Loading four animation packs…');
+  const loader = new THREE.GLTFLoader();
+  kayKitLibrary = await loadKayKitAnimationLibrary(loader, {
+    baseUrl: '../../assets/kaykit/animations/',
+  });
+  character.registerAnimations(kayKitLibrary);
+  const select = document.getElementById('kaykitClip');
+  select.innerHTML = '';
+  [...kayKitLibrary.clips.keys()].forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  });
+  select.value = 'Idle_A';
+  setKayKitStatus(
+    `ready · ${kayKitLibrary.clips.size} clips · ${Object.keys(character.rig.bones).length} procedural bones`,
+  );
+  return kayKitLibrary;
+}
+
+function shouldLoopKayKitClip(name) {
+  return /Idle|Walking|Running|Blocking|Crouching|Sneaking|Crawling/.test(name);
+}
+
+async function playSelectedKayKitClip() {
+  await loadKayKitRuntime();
+  const name = document.getElementById('kaykitClip').value;
+  player.pause();
+  clearWeaponTrail();
+  animationSource = 'kaykit';
+  character.playAnimation(name, { loop: shouldLoopKayKitClip(name), inPlace: true });
+  document.getElementById('clipNow').textContent = name.toUpperCase();
+  document.getElementById('phaseNow').textContent = 'KAYKIT RUNTIME';
+  updatePlaybackButtons();
 }
 
 function rebuildClip(selectedName, seekFrame) {
@@ -385,7 +440,7 @@ function clearWeaponTrail() {
 function recordWeaponTrail(frame) {
   if (!isFrameInWindow(action, 'weaponTrail', frame)) return;
   const point = new THREE.Vector3();
-  sword.tip.getWorldPosition(point);
+  sword.trailTip.getWorldPosition(point);
   if (!trailPoints.length || trailPoints[trailPoints.length - 1].distanceToSquared(point) > 0.0002) {
     trailPoints.push(point);
     if (trailPoints.length > 70) trailPoints.shift();
@@ -551,6 +606,32 @@ canvas.addEventListener('wheel', (event) => {
   placeCamera();
 }, { passive: false });
 
+function bindV3AppearanceToggle(buttonId, setter) {
+  const button = document.getElementById(buttonId);
+  button.addEventListener('click', () => {
+    const visible = !button.classList.contains('on');
+    button.classList.toggle('on', visible);
+    setter(visible);
+  });
+}
+
+bindV3AppearanceToggle('toggleRigNodes', (visible) => {
+  character.setRigNodesVisible(visible);
+  sword.setNodesVisible(visible);
+});
+bindV3AppearanceToggle('toggleRigGlow', (visible) => {
+  character.setRigGlowVisible(visible);
+  sword.setGlowVisible(visible);
+});
+
+document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
+  loadKayKitRuntime().catch((error) => setKayKitStatus(error.message, true));
+});
+document.getElementById('playKayKitAnimation').addEventListener('click', () => {
+  playSelectedKayKitClip().catch((error) => setKayKitStatus(error.message, true));
+});
+document.getElementById('stopKayKitAnimation').addEventListener('click', () => loadTemplate('idle'));
+
 document.getElementById('showTPose').addEventListener('click', () => loadTemplate('t_pose'));
 document.getElementById('showIdle').addEventListener('click', () => loadTemplate('idle'));
 document.getElementById('playSlash').addEventListener('click', () => loadTemplate('slash_test', true));
@@ -656,7 +737,7 @@ document.getElementById('saveMount').addEventListener('click', () => {
   document.getElementById('socketStatus').textContent = 'attached · saved';
 });
 document.getElementById('resetMount').addEventListener('click', () => {
-  mountCalibration = normalizeMountCalibration(DEFAULT_SWORD_MOUNT);
+  mountCalibration = normalizeMountCalibration(DEFAULT_KAYKIT_SWORD_MOUNT);
   applyMountCalibration(sword.object3d, mountCalibration);
   localStorage.removeItem(MOUNT_KEY);
   renderMountEditor();
@@ -741,6 +822,8 @@ function tick(now) {
     recordWeaponTrail(player.frame);
     if (!player.playing) updatePlaybackButtons();
   }
+  character.update(deltaSeconds, camera);
+  sword.update();
   updatePreviewEffects(deltaSeconds);
 
   let shakeX = 0;
@@ -766,6 +849,19 @@ window.__actionStudio = {
   get project() { return currentProject(); },
   get sockets() { return Object.keys(character.sockets); },
   get handRWeaponAttached() { return sword.object3d.parent === character.sockets.HAND_R; },
+  get characterRigId() { return character.rig.definition.id; },
+  get proceduralBoneCount() { return Object.keys(character.rig.bones).length; },
+  get weaponRigId() { return sword.definition.id; },
+  get weaponBoneCount() { return Object.keys(sword.bones).length; },
+  get weaponSockets() { return Object.keys(sword.sockets); },
+  get weaponSweepSegment() {
+    const { start, end } = sword.getSweepSegment();
+    return { start: start.toArray(), end: end.toArray() };
+  },
+  get animationSource() { return animationSource; },
+  get renderStyle() { return 'v3-rig-line'; },
+  loadKayKitRuntime,
+  playKayKitClip(name, options = {}) { animationSource = 'kaykit'; return character.playAnimation(name, options); },
   get legacyScriptsLoaded() {
     return [...document.scripts].map((script) => script.src).filter((src) => /\/ps\//.test(src));
   },

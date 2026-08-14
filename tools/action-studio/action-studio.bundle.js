@@ -5,227 +5,8 @@
  */
 (() => {
 'use strict';
-// src/character/block-spec.js
-const __actionStudioModule3 = (() => {
-const DEFAULT_BLOCK_SPEC = Object.freeze({
-  headSize: 0.84,
-  bodyH: 0.78,
-  bodyW: 0.86,
-  bodyD: 0.56,
-  armUpper: 0.25,
-  armLower: 0.30,
-  armThick: 0.90,
-  armLenL: 1,
-  armLenR: 1,
-  legUpper: 0.34,
-  legLower: 0.45,
-  legThick: 1.23,
-  fist: 0.71,
-  shoe: 1.11,
-  shoulderDrop: 0.08,
-  legSpread: 0.22,
-});
-
-function createBlockSpec(overrides = {}) {
-  const result = { ...DEFAULT_BLOCK_SPEC };
-  for (const key of Object.keys(result)) {
-    const value = Number(overrides[key]);
-    if (Number.isFinite(value) && value > 0) result[key] = value;
-  }
-  return result;
-}
-return Object.freeze({ DEFAULT_BLOCK_SPEC, createBlockSpec });
-})();
-
-// src/character/block-rig.js
-const __actionStudioModule2 = (() => {
-const { createBlockSpec } = __actionStudioModule3;
-
-function material(THREE, color, options = {}) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: options.roughness ?? 0.65,
-    metalness: options.metalness ?? 0.02,
-    flatShading: options.flatShading ?? true,
-  });
-}
-
-function box(THREE, width, height, depth, color) {
-  return new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(THREE, color));
-}
-
-function joint(THREE, radius, color) {
-  return new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 1), material(THREE, color));
-}
-
-function buildArm(THREE, spine, spec, side, colors) {
-  const key = side < 0 ? 'L' : 'R';
-  const lengthMultiplier = key === 'L' ? spec.armLenL : spec.armLenR;
-  const upperLength = spec.armUpper * lengthMultiplier;
-  const lowerLength = spec.armLower * lengthMultiplier;
-  const thickness = spec.armThick;
-
-  const shoulder = new THREE.Group();
-  shoulder.name = `SHOULDER_${key}`;
-  shoulder.position.set(side * (spec.bodyW / 2 + 0.04), spec.bodyH - spec.shoulderDrop, 0);
-  spine.add(shoulder);
-  const shoulderMesh = joint(THREE, 0.16 * thickness, colors.cloth);
-  shoulderMesh.scale.set(1.08, 0.82, 1);
-  shoulder.add(shoulderMesh);
-  const upperArm = box(THREE, 0.24 * thickness, upperLength, 0.26 * thickness, colors.cloth);
-  upperArm.position.y = -upperLength / 2;
-  shoulder.add(upperArm);
-
-  const elbow = new THREE.Group();
-  elbow.name = `ELBOW_${key}`;
-  elbow.position.y = -upperLength;
-  shoulder.add(elbow);
-  elbow.add(joint(THREE, 0.13 * thickness, colors.joint));
-  const forearm = box(THREE, 0.22 * thickness, lowerLength, 0.24 * thickness, colors.cloth);
-  forearm.position.y = -lowerLength / 2;
-  elbow.add(forearm);
-
-  const wrist = new THREE.Group();
-  wrist.name = `WRIST_${key}`;
-  wrist.position.y = -lowerLength;
-  elbow.add(wrist);
-  const cuff = box(THREE, 0.27 * thickness, 0.10, 0.29 * thickness, colors.cuff);
-  wrist.add(cuff);
-  const hand = box(THREE, 0.42 * spec.fist, 0.40 * spec.fist, 0.46 * spec.fist, colors.skin);
-  hand.name = `HAND_MESH_${key}`;
-  hand.position.set(0, -0.18 * spec.fist, 0.02);
-  wrist.add(hand);
-
-  return { side, shoulder, elbow, wrist, upperArm, forearm, hand };
-}
-
-function buildLeg(THREE, pelvis, spec, side, hipY, colors) {
-  const key = side < 0 ? 'L' : 'R';
-  const thickness = spec.legThick;
-
-  const hip = new THREE.Group();
-  hip.name = `HIP_${key}`;
-  hip.position.set(side * spec.legSpread, hipY, 0);
-  pelvis.add(hip);
-  const thigh = box(THREE, 0.28 * thickness, spec.legUpper, 0.30 * thickness, colors.pants);
-  thigh.position.y = -spec.legUpper / 2;
-  hip.add(thigh);
-
-  const knee = new THREE.Group();
-  knee.name = `KNEE_${key}`;
-  knee.position.y = -spec.legUpper;
-  hip.add(knee);
-  knee.add(joint(THREE, 0.13 * thickness, colors.joint));
-  const shin = box(THREE, 0.25 * thickness, spec.legLower, 0.27 * thickness, colors.pants);
-  shin.position.y = -spec.legLower / 2;
-  knee.add(shin);
-
-  const ankle = new THREE.Group();
-  ankle.name = `ANKLE_${key}`;
-  ankle.position.y = -spec.legLower;
-  knee.add(ankle);
-  const foot = box(THREE, 0.36 * spec.shoe, 0.20 * spec.shoe, 0.52 * spec.shoe, colors.shoe);
-  foot.name = `FOOT_${key}`;
-  foot.position.set(0, -0.07 * spec.shoe, 0.11);
-  ankle.add(foot);
-  const toe = box(THREE, 0.30 * spec.shoe, 0.10, 0.08, colors.accent);
-  toe.position.set(0, -0.07 * spec.shoe, 0.11 + 0.25 * spec.shoe);
-  ankle.add(toe);
-
-  return { side, hip, knee, ankle, thigh, shin, foot };
-}
-
-function createBlockRig(THREE, options = {}) {
-  if (!THREE?.Group || !THREE?.Mesh) throw new Error('createBlockRig requires a Three.js-compatible namespace');
-  const spec = createBlockSpec(options.spec);
-  const colors = {
-    cloth: options.colors?.cloth ?? 0x3763d8,
-    pants: options.colors?.pants ?? 0x253463,
-    cuff: options.colors?.cuff ?? 0xf0f2ff,
-    skin: options.colors?.skin ?? 0xe2b986,
-    shoe: options.colors?.shoe ?? 0x121622,
-    joint: options.colors?.joint ?? 0x244aa8,
-    accent: options.colors?.accent ?? 0x55e6c1,
-  };
-  const hipY = spec.legUpper + spec.legLower;
-  const bodyTop = hipY + spec.bodyH;
-
-  const root = new THREE.Group();
-  root.name = 'ROOT';
-  const pelvis = new THREE.Group();
-  pelvis.name = 'PELVIS';
-  root.add(pelvis);
-  const spine = new THREE.Group();
-  spine.name = 'SPINE';
-  spine.position.y = hipY;
-  root.add(spine);
-
-  const body = new THREE.Group();
-  body.name = 'BODY_MESH';
-  body.position.y = spec.bodyH / 2;
-  const torso = box(THREE, spec.bodyW, spec.bodyH, spec.bodyD, colors.cloth);
-  body.add(torso);
-  const chest = box(THREE, spec.bodyW * 0.46, spec.bodyH * 0.14, spec.bodyD * 1.03, colors.accent);
-  chest.position.set(0, spec.bodyH * 0.14, 0.01);
-  body.add(chest);
-  spine.add(body);
-
-  const headPivot = new THREE.Group();
-  headPivot.name = 'HEAD';
-  headPivot.position.y = spec.bodyH;
-  spine.add(headPivot);
-  const head = box(THREE, spec.headSize, spec.headSize, spec.headSize * 0.86, colors.skin);
-  head.position.y = spec.headSize / 2;
-  headPivot.add(head);
-  const face = box(THREE, spec.headSize * 0.24, spec.headSize * 0.18, 0.05, colors.accent);
-  face.position.set(0, spec.headSize * 0.54, spec.headSize * 0.46);
-  headPivot.add(face);
-
-  const arms = {
-    L: buildArm(THREE, spine, spec, -1, colors),
-    R: buildArm(THREE, spine, spec, 1, colors),
-  };
-  const legs = {
-    L: buildLeg(THREE, pelvis, spec, -1, hipY, colors),
-    R: buildLeg(THREE, pelvis, spec, 1, hipY, colors),
-  };
-
-  return {
-    root,
-    pelvis,
-    spine,
-    headPivot,
-    spec,
-    arms,
-    legs,
-    meshes: { body, torso, head },
-    measurements: { hipY, bodyTop, baseY: 0 },
-    joints: Object.freeze({
-      ROOT: root,
-      PELVIS: pelvis,
-      SPINE: spine,
-      HEAD: headPivot,
-      SHOULDER_L: arms.L.shoulder,
-      ELBOW_L: arms.L.elbow,
-      WRIST_L: arms.L.wrist,
-      SHOULDER_R: arms.R.shoulder,
-      ELBOW_R: arms.R.elbow,
-      WRIST_R: arms.R.wrist,
-      HIP_L: legs.L.hip,
-      KNEE_L: legs.L.knee,
-      ANKLE_L: legs.L.ankle,
-      HIP_R: legs.R.hip,
-      KNEE_R: legs.R.knee,
-      ANKLE_R: legs.R.ankle,
-    }),
-    groundBox: new THREE.Box3(),
-  };
-}
-return Object.freeze({ createBlockRig });
-})();
-
 // src/character/character-sockets.js
-const __actionStudioModule4 = (() => {
+const __actionStudioModule3 = (() => {
 const CHARACTER_SOCKET_IDS = Object.freeze([
   'HAND_L',
   'HAND_R',
@@ -324,8 +105,1074 @@ function attachEquipment(sockets, socketId, object3d, calibration = {}) {
 return Object.freeze({ CHARACTER_SOCKET_IDS, WEAPON_SOCKET_ID, IDENTITY_MOUNT_CALIBRATION, normalizeMountCalibration, createCharacterSockets, requireCharacterSocket, applyMountCalibration, attachEquipment });
 })();
 
+// src/character/kaykit-rig-definition.js
+const __actionStudioModule5 = (() => {
+// Generated by build/extract-kaykit-assets.mjs. Do not edit by hand.
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  Object.values(value).forEach(deepFreeze);
+  return Object.freeze(value);
+}
+
+const KAYKIT_RIG_MEDIUM_DEFINITION = deepFreeze({
+  "format": "procedural-humanoid-rig",
+  "version": 1,
+  "id": "kaykit_rig_medium",
+  "sourceSkeleton": "Rig_Medium",
+  "bones": [
+    {
+      "id": "root",
+      "parent": null,
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "quaternion": [
+        0,
+        1.1920927533992653e-7,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "hips",
+      "parent": "root",
+      "position": [
+        0,
+        0.4056634306907654,
+        0
+      ],
+      "quaternion": [
+        0,
+        -1.1920927533992653e-7,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "spine",
+      "parent": "hips",
+      "position": [
+        0,
+        0.19197750091552734,
+        0
+      ],
+      "quaternion": [
+        0,
+        7.105427357601002e-15,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "upperleg.r",
+      "parent": "hips",
+      "position": [
+        -0.17094506323337555,
+        0.11358726024627686,
+        1.392327231286572e-8
+      ],
+      "quaternion": [
+        0.9998490810394287,
+        7.426572778967966e-8,
+        -3.172628026959501e-8,
+        0.017373191192746162
+      ],
+      "scale": [
+        1,
+        0.9999998211860657,
+        1.0000011920928955
+      ]
+    },
+    {
+      "id": "upperleg.l",
+      "parent": "hips",
+      "position": [
+        0.17094506323337555,
+        0.11358726024627686,
+        1.392327231286572e-8
+      ],
+      "quaternion": [
+        0.9998490810394287,
+        -7.132765489359372e-8,
+        -1.2042731256656225e-8,
+        0.017373191192746162
+      ],
+      "scale": [
+        1,
+        0.9999998211860657,
+        1.0000011920928955
+      ]
+    },
+    {
+      "id": "chest",
+      "parent": "spine",
+      "position": [
+        0,
+        0.37498795986175537,
+        0
+      ],
+      "quaternion": [
+        0,
+        -8.470329472543003e-22,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        0.9999999403953552,
+        1
+      ]
+    },
+    {
+      "id": "lowerleg.r",
+      "parent": "upperleg.r",
+      "position": [
+        -3.57975737941274e-9,
+        0.22707749903202057,
+        -6.140325137238278e-9
+      ],
+      "quaternion": [
+        0.1062251403927803,
+        -6.865229096320036e-8,
+        7.377025923460678e-8,
+        0.9943422079086304
+      ],
+      "scale": [
+        1,
+        1.0000004768371582,
+        1.0000001192092896
+      ]
+    },
+    {
+      "id": "lowerleg.l",
+      "parent": "upperleg.l",
+      "position": [
+        3.57975737941274e-9,
+        0.22707749903202057,
+        -6.140325137238278e-9
+      ],
+      "quaternion": [
+        0.1062251403927803,
+        6.865227675234564e-8,
+        -7.377025923460678e-8,
+        0.9943422079086304
+      ],
+      "scale": [
+        1,
+        1.0000004768371582,
+        1.0000001192092896
+      ]
+    },
+    {
+      "id": "upperarm.l",
+      "parent": "chest",
+      "position": [
+        0.21200737357139587,
+        0.13413214683532715,
+        8.40246201505579e-8
+      ],
+      "quaternion": [
+        -0.5141214728355408,
+        -0.485467791557312,
+        -0.4854677617549896,
+        0.5141218900680542
+      ],
+      "scale": [
+        0.9999993443489075,
+        0.9999993443489075,
+        0.9999997615814209
+      ]
+    },
+    {
+      "id": "upperarm.r",
+      "parent": "chest",
+      "position": [
+        -0.21200737357139587,
+        0.13413214683532715,
+        8.40246201505579e-8
+      ],
+      "quaternion": [
+        -0.514121413230896,
+        0.48546773195266724,
+        0.4854677617549896,
+        0.514121949672699
+      ],
+      "scale": [
+        0.9999993443489075,
+        0.9999993443489075,
+        0.9999997615814209
+      ]
+    },
+    {
+      "id": "head",
+      "parent": "chest",
+      "position": [
+        0,
+        0.26879656314849854,
+        0
+      ],
+      "quaternion": [
+        0,
+        4.235164736271502e-22,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "foot.r",
+      "parent": "lowerleg.r",
+      "position": [
+        -1.833922180782821e-10,
+        0.14943702518939972,
+        9.65878599323844e-10
+      ],
+      "quaternion": [
+        -0.45523902773857117,
+        1.659820298982595e-7,
+        2.250484687493781e-9,
+        0.8903692960739136
+      ],
+      "scale": [
+        1,
+        1.0000008344650269,
+        0.9999987483024597
+      ]
+    },
+    {
+      "id": "foot.l",
+      "parent": "lowerleg.l",
+      "position": [
+        1.833934670791848e-10,
+        0.14943702518939972,
+        9.65873825364838e-10
+      ],
+      "quaternion": [
+        -0.45523902773857117,
+        1.6197549967955638e-8,
+        -3.4356396838575165e-8,
+        0.8903692960739136
+      ],
+      "scale": [
+        1,
+        1.0000008344650269,
+        0.9999987483024597
+      ]
+    },
+    {
+      "id": "lowerarm.l",
+      "parent": "upperarm.l",
+      "position": [
+        -3.219664312936743e-9,
+        0.24189729988574982,
+        -1.1940561250867177e-7
+      ],
+      "quaternion": [
+        1.4942596049394297e-9,
+        -6.228115267958856e-8,
+        -0.05528552085161209,
+        0.9984706044197083
+      ],
+      "scale": [
+        1.000000238418579,
+        0.9999998807907104,
+        0.9999999403953552
+      ]
+    },
+    {
+      "id": "lowerarm.r",
+      "parent": "upperarm.r",
+      "position": [
+        -7.12192249618937e-11,
+        0.2418973296880722,
+        -1.1940561250867177e-7
+      ],
+      "quaternion": [
+        1.4942596049394297e-9,
+        6.228115267958856e-8,
+        0.05528552085161209,
+        0.9984706044197083
+      ],
+      "scale": [
+        1.000000238418579,
+        0.9999998807907104,
+        0.9999999403953552
+      ]
+    },
+    {
+      "id": "toes.r",
+      "parent": "foot.r",
+      "position": [
+        2.1323326437894252e-10,
+        0.16565002501010895,
+        5.1714001969571655e-9
+      ],
+      "quaternion": [
+        2.1219815238282536e-8,
+        0.920354962348938,
+        -0.39108410477638245,
+        6.450591172324494e-8
+      ],
+      "scale": [
+        1,
+        0.9999966025352478,
+        1.000003695487976
+      ]
+    },
+    {
+      "id": "toes.l",
+      "parent": "foot.l",
+      "position": [
+        -1.5114396845206102e-8,
+        0.16565002501010895,
+        5.171392203351388e-9
+      ],
+      "quaternion": [
+        4.775987960670136e-8,
+        0.920354962348938,
+        -0.39108410477638245,
+        5.801560831741881e-8
+      ],
+      "scale": [
+        1,
+        0.9999966025352478,
+        1.000003695487976
+      ]
+    },
+    {
+      "id": "wrist.l",
+      "parent": "lowerarm.l",
+      "position": [
+        7.426281811717672e-9,
+        0.26004382967948914,
+        6.127964108371131e-11
+      ],
+      "quaternion": [
+        5.118455659314236e-11,
+        -3.0774255366239345e-10,
+        0.02665809914469719,
+        0.9996446967124939
+      ],
+      "scale": [
+        0.9999999403953552,
+        0.9999999403953552,
+        0.9999999403953552
+      ]
+    },
+    {
+      "id": "wrist.r",
+      "parent": "lowerarm.r",
+      "position": [
+        -7.426281811717672e-9,
+        0.26004382967948914,
+        6.127964108371131e-11
+      ],
+      "quaternion": [
+        5.11842720984923e-11,
+        3.0773722459187525e-10,
+        -0.02665809914469719,
+        0.9996446967124939
+      ],
+      "scale": [
+        0.9999999403953552,
+        0.9999999403953552,
+        0.9999999403953552
+      ]
+    },
+    {
+      "id": "hand.l",
+      "parent": "wrist.l",
+      "position": [
+        9.054978988842777e-13,
+        0.07382583618164062,
+        -2.220446049250313e-16
+      ],
+      "quaternion": [
+        1.2001638571845774e-9,
+        1.358929182515567e-7,
+        -0.000005455195605463814,
+        1
+      ],
+      "scale": [
+        1,
+        0.9999999403953552,
+        0.9999999403953552
+      ]
+    },
+    {
+      "id": "hand.r",
+      "parent": "wrist.r",
+      "position": [
+        3.9968028886505635e-15,
+        0.07382583618164062,
+        -2.220446049250313e-16
+      ],
+      "quaternion": [
+        1.199916277450086e-9,
+        -9.210968698880606e-8,
+        0.000005455195605463814,
+        1
+      ],
+      "scale": [
+        1,
+        0.9999999403953552,
+        0.9999999403953552
+      ]
+    },
+    {
+      "id": "handslot.l",
+      "parent": "hand.l",
+      "position": [
+        5.138920400327152e-10,
+        0.09612506628036499,
+        -0.05750012397766113
+      ],
+      "quaternion": [
+        1.6806123159796016e-9,
+        1.6806122049572991e-9,
+        -0.7071068286895752,
+        0.7071067094802856
+      ],
+      "scale": [
+        0.9999999403953552,
+        1,
+        0.9999999403953552
+      ]
+    },
+    {
+      "id": "handslot.r",
+      "parent": "hand.r",
+      "position": [
+        -5.138920400327152e-10,
+        0.09612506628036499,
+        -0.05750012397766113
+      ],
+      "quaternion": [
+        1.6805922209428559e-9,
+        -1.6805921099205534e-9,
+        0.7071068286895752,
+        0.7071067094802856
+      ],
+      "scale": [
+        0.9999999403953552,
+        1,
+        0.9999999403953552
+      ]
+    }
+  ],
+  "sockets": {
+    "HAND_L": {
+      "parent": "handslot.l",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "HAND_R": {
+      "parent": "handslot.r",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "HEAD": {
+      "parent": "head",
+      "position": [
+        0,
+        0.24,
+        0
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "BACK": {
+      "parent": "chest",
+      "position": [
+        0,
+        0,
+        -0.18
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "HIP_L": {
+      "parent": "hips",
+      "position": [
+        -0.18,
+        0,
+        0
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "HIP_R": {
+      "parent": "hips",
+      "position": [
+        0.18,
+        0,
+        0
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  }
+});
+return Object.freeze({ KAYKIT_RIG_MEDIUM_DEFINITION });
+})();
+
+// src/character/kaykit-v3-line-appearance.js
+const __actionStudioModule6 = (() => {
+const DEFAULT_KAYKIT_V3_LINE_STYLE = Object.freeze({
+  renderStyle: 'v3-rig-line',
+  lineColor: 0x96e8ff,
+  glowColor: 0x39c7ff,
+  contourColor: 0x6fd6ff,
+  headColor: 0x9be8ff,
+  jointColor: 0xffdd7d,
+  lineOpacity: 0.95,
+  headOpacity: 0.98,
+  glowOpacity: 0.22,
+  contourOpacity: 0.76,
+  jointOpacity: 0.88,
+  jointRadius: 0.045,
+  headScale: 1,
+  headSides: 8,
+  shoulderWidth: 1,
+  pelvisWidth: 1,
+  armOutset: 0.08,
+  legOutset: 0.06,
+});
+
+const LIMB_PAIRS = Object.freeze([
+  ['hips', 'spine'],
+  ['spine', 'chest'],
+  ['chest', 'head'],
+  ['upperarm.l', 'lowerarm.l'],
+  ['lowerarm.l', 'wrist.l'],
+  ['wrist.l', 'hand.l'],
+  ['upperarm.r', 'lowerarm.r'],
+  ['lowerarm.r', 'wrist.r'],
+  ['wrist.r', 'hand.r'],
+  ['upperleg.l', 'lowerleg.l'],
+  ['lowerleg.l', 'foot.l'],
+  ['foot.l', 'toes.l'],
+  ['upperleg.r', 'lowerleg.r'],
+  ['lowerleg.r', 'foot.r'],
+  ['foot.r', 'toes.r'],
+]);
+
+const JOINT_BONE_IDS = Object.freeze([
+  'hips', 'spine', 'chest', 'head',
+  'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l',
+  'upperarm.r', 'lowerarm.r', 'wrist.r', 'hand.r',
+  'upperleg.l', 'lowerleg.l', 'foot.l',
+  'upperleg.r', 'lowerleg.r', 'foot.r',
+]);
+
+function finiteOpacity(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : fallback;
+}
+
+function createKayKitV3LineStyle(input = {}) {
+  return {
+    ...DEFAULT_KAYKIT_V3_LINE_STYLE,
+    ...input,
+    renderStyle: 'v3-rig-line',
+    lineOpacity: finiteOpacity(input.lineOpacity, DEFAULT_KAYKIT_V3_LINE_STYLE.lineOpacity),
+    headOpacity: finiteOpacity(input.headOpacity, DEFAULT_KAYKIT_V3_LINE_STYLE.headOpacity),
+    glowOpacity: finiteOpacity(input.glowOpacity, DEFAULT_KAYKIT_V3_LINE_STYLE.glowOpacity),
+    contourOpacity: finiteOpacity(input.contourOpacity, DEFAULT_KAYKIT_V3_LINE_STYLE.contourOpacity),
+    jointOpacity: finiteOpacity(input.jointOpacity, DEFAULT_KAYKIT_V3_LINE_STYLE.jointOpacity),
+    jointRadius: Math.max(0.005, Number(input.jointRadius) || DEFAULT_KAYKIT_V3_LINE_STYLE.jointRadius),
+    headSides: Math.max(3, Math.min(12, Math.round(Number(input.headSides) || DEFAULT_KAYKIT_V3_LINE_STYLE.headSides))),
+  };
+}
+
+function lineMaterial(THREE, color, opacity, glow = false) {
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+  });
+  if (glow && THREE.AdditiveBlending != null) material.blending = THREE.AdditiveBlending;
+  return material;
+}
+
+function makeSegments(THREE, segmentCount, color, opacity, name, glow = false) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segmentCount * 2 * 3), 3));
+  const line = new THREE.LineSegments(geometry, lineMaterial(THREE, color, opacity, glow));
+  line.name = name;
+  line.frustumCulled = false;
+  line.userData.appearanceRole = glow ? 'rig-glow' : 'rig-line';
+  return line;
+}
+
+function createJointNode(THREE, bone, style, scale) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(style.jointRadius * scale, 8, 6),
+    new THREE.MeshBasicMaterial({
+      color: style.jointColor,
+      transparent: true,
+      opacity: style.jointOpacity,
+      depthWrite: false,
+    }),
+  );
+  mesh.name = `RIG_NODE_${bone.name}`;
+  mesh.userData.appearanceRole = 'rig-node';
+  mesh.renderOrder = 2;
+  bone.add(mesh);
+  return mesh;
+}
+
+function setPoint(attribute, index, point) {
+  attribute.setXYZ(index, point.x, point.y, point.z);
+}
+
+function canCreateKayKitV3LineAppearance(THREE) {
+  return Boolean(
+    THREE?.LineSegments
+    && THREE?.BufferGeometry
+    && THREE?.BufferAttribute
+    && THREE?.LineBasicMaterial
+    && THREE?.MeshBasicMaterial
+    && THREE?.SphereGeometry
+    && THREE?.Vector3,
+  );
+}
+
+function createKayKitV3LineAppearance(THREE, rig, inputStyle = {}) {
+  if (!canCreateKayKitV3LineAppearance(THREE)) {
+    throw new Error('KayKit v3 line appearance requires Three.js line geometry support');
+  }
+  const style = createKayKitV3LineStyle({
+    headScale: rig.appearance?.headScale,
+    shoulderWidth: rig.appearance?.shoulderScale,
+    ...inputStyle,
+  });
+  const objects = [];
+  const limbLine = makeSegments(THREE, LIMB_PAIRS.length, style.lineColor, style.lineOpacity, 'V3_RIG_LINES');
+  const glowLine = makeSegments(THREE, LIMB_PAIRS.length, style.glowColor, style.glowOpacity, 'V3_RIG_GLOW', true);
+  const contourLine = makeSegments(THREE, 9, style.contourColor, style.contourOpacity, 'V3_BODY_CONTOUR');
+  const headLine = makeSegments(THREE, 12, style.headColor, style.headOpacity, 'V3_HEAD_POLYGON');
+  [limbLine, glowLine, contourLine, headLine].forEach((line) => {
+    rig.motionRoot.add(line);
+    objects.push(line);
+  });
+
+  const jointScale = Number(rig.appearance?.jointScale) || 1;
+  const jointNodes = JOINT_BONE_IDS.map((boneId) => createJointNode(THREE, rig.bones[boneId], style, jointScale));
+  objects.push(...jointNodes);
+
+  const localPoints = Object.fromEntries([
+    'hips', 'spine', 'chest', 'head',
+    'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l',
+    'upperarm.r', 'lowerarm.r', 'wrist.r', 'hand.r',
+    'upperleg.l', 'lowerleg.l', 'foot.l', 'toes.l',
+    'upperleg.r', 'lowerleg.r', 'foot.r', 'toes.r',
+  ].map((id) => [id, new THREE.Vector3()]));
+  const headCenterWorld = new THREE.Vector3();
+  const headCenterLocal = new THREE.Vector3();
+  const rightWorld = new THREE.Vector3();
+  const upWorld = new THREE.Vector3();
+  const polygonWorld = new THREE.Vector3();
+
+  let nodesVisible = true;
+  let glowVisible = true;
+
+  function updateLocalBonePoints() {
+    rig.root.updateMatrixWorld(true);
+    Object.entries(localPoints).forEach(([boneId, point]) => {
+      rig.bones[boneId].getWorldPosition(point);
+      rig.motionRoot.worldToLocal(point);
+    });
+  }
+
+  function updateLimbs() {
+    const limbPosition = limbLine.geometry.attributes.position;
+    const glowPosition = glowLine.geometry.attributes.position;
+    LIMB_PAIRS.forEach(([startId, endId], index) => {
+      const start = localPoints[startId];
+      const end = localPoints[endId];
+      setPoint(limbPosition, index * 2, start);
+      setPoint(limbPosition, index * 2 + 1, end);
+      setPoint(glowPosition, index * 2, start);
+      setPoint(glowPosition, index * 2 + 1, end);
+    });
+    limbPosition.needsUpdate = true;
+    glowPosition.needsUpdate = true;
+  }
+
+  function updateContour() {
+    const chest = localPoints.chest;
+    const spine = localPoints.spine;
+    const hips = localPoints.hips;
+    const shoulderL = localPoints['upperarm.l'].clone().sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
+    const shoulderR = localPoints['upperarm.r'].clone().sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
+    shoulderL.x -= style.armOutset;
+    shoulderR.x += style.armOutset;
+    const chestUpper = chest.clone().lerp(localPoints.head, 0.12);
+    const chestLower = spine.clone().lerp(chest, 0.22);
+    const spineBase = hips.clone().lerp(spine, 0.20);
+    const pelvisL = localPoints['upperleg.l'].clone().sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
+    const pelvisR = localPoints['upperleg.r'].clone().sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
+    pelvisL.x -= style.legOutset;
+    pelvisR.x += style.legOutset;
+    const segments = [
+      [shoulderL, shoulderR],
+      [shoulderL, chestUpper],
+      [chestUpper, shoulderR],
+      [shoulderL, chestLower],
+      [chestLower, shoulderR],
+      [pelvisL, pelvisR],
+      [pelvisL, spineBase],
+      [spineBase, pelvisR],
+      [chestLower, spineBase],
+    ];
+    const position = contourLine.geometry.attributes.position;
+    segments.forEach(([start, end], index) => {
+      setPoint(position, index * 2, start);
+      setPoint(position, index * 2 + 1, end);
+    });
+    position.needsUpdate = true;
+  }
+
+  function updateHead(camera) {
+    rig.bones.head.getWorldPosition(headCenterWorld);
+    headCenterLocal.copy(headCenterWorld);
+    rig.motionRoot.worldToLocal(headCenterLocal);
+    if (camera?.quaternion) {
+      rightWorld.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      upWorld.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    } else {
+      rightWorld.set(1, 0, 0);
+      upWorld.set(0, 1, 0);
+    }
+    const radius = 0.27 * style.headScale;
+    const sides = style.headSides;
+    const headPosition = headLine.geometry.attributes.position;
+    for (let index = 0; index < 12; index += 1) {
+      if (index < sides) {
+        const firstAngle = (index / sides) * Math.PI * 2;
+        const secondAngle = ((index + 1) / sides) * Math.PI * 2;
+        const first = polygonWorld.copy(headCenterWorld)
+          .addScaledVector(rightWorld, Math.cos(firstAngle) * radius)
+          .addScaledVector(upWorld, Math.sin(firstAngle) * radius)
+          .clone();
+        const second = polygonWorld.copy(headCenterWorld)
+          .addScaledVector(rightWorld, Math.cos(secondAngle) * radius)
+          .addScaledVector(upWorld, Math.sin(secondAngle) * radius)
+          .clone();
+        rig.motionRoot.worldToLocal(first);
+        rig.motionRoot.worldToLocal(second);
+        setPoint(headPosition, index * 2, first);
+        setPoint(headPosition, index * 2 + 1, second);
+      } else {
+        setPoint(headPosition, index * 2, headCenterLocal);
+        setPoint(headPosition, index * 2 + 1, headCenterLocal);
+      }
+    }
+    headPosition.needsUpdate = true;
+    headLine.geometry.setDrawRange(0, sides * 2);
+  }
+
+  function update(camera) {
+    updateLocalBonePoints();
+    updateLimbs();
+    updateContour();
+    updateHead(camera);
+  }
+
+  update();
+  return {
+    style,
+    renderStyle: 'v3-rig-line',
+    objects: Object.freeze(objects),
+    jointNodes: Object.freeze(jointNodes),
+    lines: Object.freeze({ limbs: limbLine, glow: glowLine, contour: contourLine, head: headLine }),
+    get nodesVisible() { return nodesVisible; },
+    get glowVisible() { return glowVisible; },
+    setNodesVisible(value) {
+      nodesVisible = value !== false;
+      jointNodes.forEach((node) => { node.visible = nodesVisible; });
+    },
+    setGlowVisible(value) {
+      glowVisible = value !== false;
+      glowLine.visible = glowVisible;
+    },
+    update,
+  };
+}
+return Object.freeze({ DEFAULT_KAYKIT_V3_LINE_STYLE, createKayKitV3LineStyle, canCreateKayKitV3LineAppearance, createKayKitV3LineAppearance });
+})();
+
+// src/character/procedural-kaykit-rig.js
+const __actionStudioModule4 = (() => {
+const { KAYKIT_RIG_MEDIUM_DEFINITION } = __actionStudioModule5;
+const { canCreateKayKitV3LineAppearance, createKayKitV3LineAppearance } = __actionStudioModule6;
+
+const KAYKIT_REQUIRED_BONE_IDS = Object.freeze([
+  'root', 'hips', 'spine', 'chest', 'head',
+  'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l',
+  'upperarm.r', 'lowerarm.r', 'wrist.r', 'hand.r', 'handslot.r',
+  'upperleg.l', 'lowerleg.l', 'foot.l', 'toes.l',
+  'upperleg.r', 'lowerleg.r', 'foot.r', 'toes.r',
+]);
+
+const DEFAULT_KAYKIT_APPEARANCE = Object.freeze({
+  scale: 1,
+  headScale: 1,
+  shoulderScale: 1,
+  limbThickness: 1,
+  jointScale: 1,
+  colors: Object.freeze({
+    skin: 0xe2b986,
+    cloth: 0x3763d8,
+    clothDark: 0x253463,
+    joint: 0x244aa8,
+    accent: 0x55e6c1,
+    shoe: 0x121622,
+  }),
+});
+
+function finitePositive(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function createKayKitAppearance(input = {}) {
+  return {
+    scale: finitePositive(input.scale, DEFAULT_KAYKIT_APPEARANCE.scale),
+    headScale: finitePositive(input.headScale, DEFAULT_KAYKIT_APPEARANCE.headScale),
+    shoulderScale: finitePositive(input.shoulderScale, DEFAULT_KAYKIT_APPEARANCE.shoulderScale),
+    limbThickness: finitePositive(input.limbThickness, DEFAULT_KAYKIT_APPEARANCE.limbThickness),
+    jointScale: finitePositive(input.jointScale, DEFAULT_KAYKIT_APPEARANCE.jointScale),
+    colors: { ...DEFAULT_KAYKIT_APPEARANCE.colors, ...(input.colors || {}) },
+  };
+}
+
+function validateKayKitRigDefinition(definition = KAYKIT_RIG_MEDIUM_DEFINITION) {
+  if (definition?.format !== 'procedural-humanoid-rig') throw new Error('Invalid procedural rig format');
+  const boneIds = new Set();
+  for (const bone of definition.bones || []) {
+    if (!bone?.id || boneIds.has(bone.id)) throw new Error(`Invalid or duplicate bone id: ${bone?.id}`);
+    if (bone.parent && !boneIds.has(bone.parent)) {
+      throw new Error(`Bone ${bone.id} appears before missing parent ${bone.parent}`);
+    }
+    boneIds.add(bone.id);
+  }
+  const missingBones = KAYKIT_REQUIRED_BONE_IDS.filter((id) => !boneIds.has(id));
+  if (missingBones.length) throw new Error(`KayKit rig is missing bones: ${missingBones.join(', ')}`);
+  for (const [socketId, socket] of Object.entries(definition.sockets || {})) {
+    if (!boneIds.has(socket.parent)) throw new Error(`Socket ${socketId} has missing parent ${socket.parent}`);
+  }
+  return definition;
+}
+
+function applyDefinitionTransform(THREE, object3d, definition) {
+  if (definition.matrix) {
+    const matrix = new THREE.Matrix4().fromArray(definition.matrix);
+    matrix.decompose(object3d.position, object3d.quaternion, object3d.scale);
+    return;
+  }
+  object3d.position.fromArray(definition.position || [0, 0, 0]);
+  object3d.quaternion.fromArray(definition.quaternion || [0, 0, 0, 1]);
+  object3d.scale.fromArray(definition.scale || [1, 1, 1]);
+}
+
+function snapshotTransform(object3d) {
+  return Object.freeze({
+    position: Object.freeze(object3d.position.toArray()),
+    quaternion: Object.freeze(object3d.quaternion.toArray()),
+    scale: Object.freeze(object3d.scale.toArray()),
+  });
+}
+
+function restoreProceduralKayKitRestPose(rig) {
+  for (const [boneId, transform] of Object.entries(rig.restTransforms)) {
+    const bone = rig.bones[boneId];
+    bone.position.fromArray(transform.position);
+    bone.quaternion.fromArray(transform.quaternion);
+    bone.scale.fromArray(transform.scale);
+  }
+  return rig;
+}
+
+function createBoneHierarchy(THREE, definition) {
+  const root = new THREE.Group();
+  root.name = 'PROCEDURAL_KAYKIT_RIG';
+  const motionRoot = new THREE.Group();
+  motionRoot.name = 'MOTION_ROOT';
+  root.add(motionRoot);
+  const bones = {};
+  const restTransforms = {};
+
+  for (const boneDefinition of definition.bones) {
+    const bone = new THREE.Bone();
+    bone.name = boneDefinition.id;
+    applyDefinitionTransform(THREE, bone, boneDefinition);
+    const parent = boneDefinition.parent ? bones[boneDefinition.parent] : motionRoot;
+    if (!parent) throw new Error(`Cannot create ${boneDefinition.id}: missing ${boneDefinition.parent}`);
+    parent.add(bone);
+    bones[boneDefinition.id] = bone;
+    restTransforms[boneDefinition.id] = snapshotTransform(bone);
+  }
+  return { root, motionRoot, bones, restTransforms };
+}
+
+function createSockets(THREE, definitions, bones) {
+  const sockets = {};
+  for (const [socketId, definition] of Object.entries(definitions)) {
+    const socket = new THREE.Group();
+    socket.name = socketId;
+    socket.userData.socketId = socketId;
+    socket.userData.procedural = true;
+    applyDefinitionTransform(THREE, socket, definition);
+    bones[definition.parent].add(socket);
+    sockets[socketId] = socket;
+  }
+  return Object.freeze(sockets);
+}
+
+function createProceduralKayKitRig(THREE, options = {}) {
+  if (!THREE?.Group || !THREE?.Bone || !THREE?.Mesh) {
+    throw new Error('createProceduralKayKitRig requires a Three.js-compatible namespace');
+  }
+  const definition = validateKayKitRigDefinition(options.definition || KAYKIT_RIG_MEDIUM_DEFINITION);
+  const appearance = createKayKitAppearance(options.appearance);
+  const hierarchy = createBoneHierarchy(THREE, definition);
+  const sockets = createSockets(THREE, definition.sockets, hierarchy.bones);
+  const meshes = Object.freeze([]);
+  hierarchy.root.scale.setScalar(appearance.scale);
+  hierarchy.root.userData.rigId = definition.id;
+  hierarchy.root.userData.procedural = true;
+
+  const rig = {
+    ...hierarchy,
+    definition,
+    appearance,
+    sockets,
+    meshes,
+    groundBoneIds: Object.freeze(['foot.l', 'toes.l', 'foot.r', 'toes.r']),
+    groundPointScratch: Object.freeze([
+      new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
+    ]),
+    rootPositionScratch: new THREE.Vector3(),
+    joints: Object.freeze({
+      ROOT: hierarchy.bones.root,
+      PELVIS: hierarchy.bones.hips,
+      SPINE: hierarchy.bones.spine,
+      CHEST: hierarchy.bones.chest,
+      HEAD: hierarchy.bones.head,
+      SHOULDER_L: hierarchy.bones['upperarm.l'],
+      ELBOW_L: hierarchy.bones['lowerarm.l'],
+      WRIST_L: hierarchy.bones['wrist.l'],
+      SHOULDER_R: hierarchy.bones['upperarm.r'],
+      ELBOW_R: hierarchy.bones['lowerarm.r'],
+      WRIST_R: hierarchy.bones['wrist.r'],
+      HIP_L: hierarchy.bones['upperleg.l'],
+      KNEE_L: hierarchy.bones['lowerleg.l'],
+      ANKLE_L: hierarchy.bones['foot.l'],
+      HIP_R: hierarchy.bones['upperleg.r'],
+      KNEE_R: hierarchy.bones['lowerleg.r'],
+      ANKLE_R: hierarchy.bones['foot.r'],
+    }),
+  };
+  rig.lineAppearance = canCreateKayKitV3LineAppearance(THREE)
+    ? createKayKitV3LineAppearance(THREE, rig, options.lineStyle)
+    : null;
+  rig.renderStyle = 'v3-rig-line';
+  rig.updateAppearance = (camera) => rig.lineAppearance?.update(camera);
+  return rig;
+}
+return Object.freeze({ KAYKIT_REQUIRED_BONE_IDS, DEFAULT_KAYKIT_APPEARANCE, createKayKitAppearance, validateKayKitRigDefinition, restoreProceduralKayKitRestPose, createProceduralKayKitRig });
+})();
+
 // src/animation/pose-schema.js
-const __actionStudioModule7 = (() => {
+const __actionStudioModule9 = (() => {
 // Humanoid pose schema. This array is the runtime's single source of truth;
 // consumers must iterate it instead of relying on a numeric axis count.
 
@@ -388,8 +1235,8 @@ return Object.freeze({ ROOT_POSE_KEYS, TORSO_POSE_KEYS, ARM_POSE_KEYS, LEG_POSE_
 })();
 
 // src/animation/pose-utils.js
-const __actionStudioModule6 = (() => {
-const { POSE_KEYS, defaultPoseValue } = __actionStudioModule7;
+const __actionStudioModule8 = (() => {
+const { POSE_KEYS, defaultPoseValue } = __actionStudioModule9;
 
 const NO_LIMB_LAG = Object.freeze({ aL: 0, aR: 0, lL: 0, lR: 0 });
 
@@ -446,136 +1293,2722 @@ function interpolatePose(from = {}, to = {}, value = 0, options = {}) {
 return Object.freeze({ NO_LIMB_LAG, clamp, normalizePose, normalizeLimbLags, evaluateEase, interpolatePose });
 })();
 
-// src/animation/pose-applier.js
-const __actionStudioModule5 = (() => {
-const { normalizePose } = __actionStudioModule6;
+// src/animation/kaykit-pose-adapter.js
+const __actionStudioModule7 = (() => {
+const { normalizePose } = __actionStudioModule8;
+const { restoreProceduralKayKitRestPose } = __actionStudioModule4;
 
 const DEG_TO_RAD = Math.PI / 180;
 
-function scalar(object3d, value) {
-  object3d.scale.set(value, value, value);
+function rotateDegrees(bone, x = 0, y = 0, z = 0) {
+  bone.rotateX(x * DEG_TO_RAD);
+  bone.rotateY(y * DEG_TO_RAD);
+  bone.rotateZ(z * DEG_TO_RAD);
 }
 
-function applyPoseToBlockRig(rig, inputPose = {}) {
+function stretchBone(bone, amount) {
+  const value = Math.max(0.2, Number(amount) || 1);
+  bone.scale.y *= value;
+}
+
+function applyPoseToProceduralKayKitRig(rig, inputPose = {}) {
   const pose = normalizePose(inputPose);
-  const { root, pelvis, spine, headPivot, arms, legs, meshes, measurements } = rig;
-  const baseY = measurements.baseY;
+  const { bones, motionRoot } = restoreProceduralKayKitRestPose(rig);
+  motionRoot.position.set(0, 0, pose.root_pz);
+  motionRoot.rotation.set(0, 0, 0);
+  motionRoot.scale.set(1, 1, 1);
 
-  root.rotation.set(pose.root_x * DEG_TO_RAD, pose.root_y * DEG_TO_RAD, 0);
-  root.position.set(0, baseY, pose.root_pz);
+  rotateDegrees(bones.root, pose.root_x, pose.root_y, 0);
+  rotateDegrees(bones.hips, 0, pose.pelvis_y, 0);
+  rotateDegrees(bones.spine, pose.spine_x, pose.spine_y, 0);
+  rotateDegrees(bones.head, pose.head_x, pose.head_y, 0);
+  bones.head.position.z += pose.head_pz;
+
   if (pose.sq >= 0) {
-    const sy = 1 - pose.sq;
-    const sxz = 1 / Math.sqrt(Math.max(sy, 0.1));
-    root.scale.set(sxz, sy, sxz);
+    const sy = Math.max(0.1, 1 - pose.sq);
+    const sxz = 1 / Math.sqrt(sy);
+    motionRoot.scale.set(sxz, sy, sxz);
   } else {
-    const sz = 1 - pose.sq;
-    const sxy = 1 / Math.sqrt(Math.max(sz, 0.1));
-    root.scale.set(sxy, sxy, sz);
-  }
-  scalar(meshes.body, pose.body_scale);
-  spine.rotation.set(pose.spine_x * DEG_TO_RAD, pose.spine_y * DEG_TO_RAD, 0);
-  pelvis.rotation.set(0, pose.pelvis_y * DEG_TO_RAD, 0);
-  headPivot.rotation.set(pose.head_x * DEG_TO_RAD, pose.head_y * DEG_TO_RAD, 0);
-  headPivot.position.set(0, rig.spec.bodyH, pose.head_pz);
-
-  for (const [sideKey, prefix] of [['L', 'aL'], ['R', 'aR']]) {
-    const arm = arms[sideKey];
-    const weight = 1 - pose[`${prefix}_idle`];
-    arm.shoulder.rotation.set(
-      pose[`${prefix}_sx`] * weight * DEG_TO_RAD,
-      pose[`${prefix}_sy`] * weight * DEG_TO_RAD,
-      pose[`${prefix}_sz`] * weight * arm.side * DEG_TO_RAD,
-    );
-    arm.elbow.rotation.set(-pose[`${prefix}_ex`] * weight * DEG_TO_RAD, 0, 0);
-    arm.wrist.rotation.set(
-      pose[`${prefix}_wx`] * weight * DEG_TO_RAD,
-      pose[`${prefix}_wy`] * weight * DEG_TO_RAD,
-      pose[`${prefix}_wz`] * weight * arm.side * DEG_TO_RAD,
-    );
-    scalar(arm.shoulder, pose[`${prefix}_stretch`]);
-    scalar(arm.forearm, pose[`${prefix}_scale`]);
-    scalar(arm.hand, pose[`${prefix}_scale`]);
+    const sz = Math.max(0.1, 1 - pose.sq);
+    const sxy = 1 / Math.sqrt(sz);
+    motionRoot.scale.set(sxy, sxy, sz);
   }
 
-  const squat = pose.squat;
-  for (const [sideKey, prefix] of [['L', 'lL'], ['R', 'lR']]) {
-    const leg = legs[sideKey];
+  for (const [side, prefix, sideSign] of [['l', 'aL', -1], ['r', 'aR', 1]]) {
     const weight = 1 - pose[`${prefix}_idle`];
-    const hipX = pose[`${prefix}_hx`] - squat * 0.7;
-    const kneeX = pose[`${prefix}_kx`] + squat;
-    leg.hip.rotation.set(
-      hipX * weight * DEG_TO_RAD,
-      pose[`${prefix}_hy`] * weight * leg.side * DEG_TO_RAD,
-      pose[`${prefix}_hz`] * weight * leg.side * DEG_TO_RAD,
+    rotateDegrees(
+      bones[`upperarm.${side}`],
+      pose[`${prefix}_sx`] * weight,
+      pose[`${prefix}_sy`] * weight,
+      pose[`${prefix}_sz`] * weight * sideSign,
     );
-    leg.knee.rotation.set(kneeX * weight * DEG_TO_RAD, 0, 0);
-    leg.ankle.rotation.set(
-      (-(hipX + kneeX) + pose[`${prefix}_ax`]) * weight * DEG_TO_RAD,
-      pose[`${prefix}_ty`] * weight * leg.side * DEG_TO_RAD,
+    rotateDegrees(bones[`lowerarm.${side}`], -pose[`${prefix}_ex`] * weight, 0, 0);
+    rotateDegrees(
+      bones[`wrist.${side}`],
+      pose[`${prefix}_wx`] * weight,
+      pose[`${prefix}_wy`] * weight,
+      pose[`${prefix}_wz`] * weight * sideSign,
+    );
+    stretchBone(bones[`upperarm.${side}`], pose[`${prefix}_stretch`]);
+  }
+
+  for (const [side, prefix, sideSign] of [['l', 'lL', -1], ['r', 'lR', 1]]) {
+    const weight = 1 - pose[`${prefix}_idle`];
+    const hipX = pose[`${prefix}_hx`] - pose.squat * 0.7;
+    const kneeX = pose[`${prefix}_kx`] + pose.squat;
+    rotateDegrees(
+      bones[`upperleg.${side}`],
+      hipX * weight,
+      pose[`${prefix}_hy`] * weight * sideSign,
+      pose[`${prefix}_hz`] * weight * sideSign,
+    );
+    rotateDegrees(bones[`lowerleg.${side}`], kneeX * weight, 0, 0);
+    rotateDegrees(
+      bones[`foot.${side}`],
+      (-(hipX + kneeX) + pose[`${prefix}_ax`]) * weight,
+      pose[`${prefix}_ty`] * weight * sideSign,
       0,
     );
-    if (Math.round(pose[`${prefix}_contact`]) === 1) leg.ankle.rotation.x += 55 * weight * DEG_TO_RAD;
-    scalar(leg.hip, pose[`${prefix}_stretch`]);
-    scalar(leg.shin, pose[`${prefix}_scale`]);
-    scalar(leg.foot, pose[`${prefix}_scale`]);
+    stretchBone(bones[`upperleg.${side}`], pose[`${prefix}_stretch`]);
   }
 
-  // Grounding intentionally mirrors the executable Punch Studio behavior:
-  // feet marked contact=2 do not anchor the body; if both are airborne, both
-  // are used as a stable preview fallback.
-  root.updateMatrixWorld(true);
-  rig.groundBox.makeEmpty();
-  const leftContact = Math.round(pose.lL_contact);
-  const rightContact = Math.round(pose.lR_contact);
-  let grounded = false;
-  if (leftContact !== 2) {
-    rig.groundBox.expandByObject(legs.L.foot);
-    grounded = true;
-  }
-  if (rightContact !== 2) {
-    rig.groundBox.expandByObject(legs.R.foot);
-    grounded = true;
-  }
-  if (!grounded) {
-    rig.groundBox.expandByObject(legs.L.foot);
-    rig.groundBox.expandByObject(legs.R.foot);
-  }
-  root.position.y = Number.isFinite(rig.groundBox.min.y)
-    ? baseY - rig.groundBox.min.y + pose.root_py
-    : baseY + pose.root_py;
-  root.updateMatrixWorld(true);
+  rig.root.updateMatrixWorld(true);
+  let minGroundY = Infinity;
+  rig.groundBoneIds.forEach((boneId, index) => {
+    const point = rig.groundPointScratch[index];
+    bones[boneId].getWorldPosition(point);
+    minGroundY = Math.min(minGroundY, point.y);
+  });
+  rig.root.getWorldPosition(rig.rootPositionScratch);
+  const rootScaleY = Math.max(0.001, Math.abs(rig.root.scale.y));
+  const nodeRadius = rig.lineAppearance?.style.jointRadius ?? 0;
+  motionRoot.position.y = Number.isFinite(minGroundY)
+    ? pose.root_py + (rig.rootPositionScratch.y - minGroundY + nodeRadius * rootScaleY) / rootScaleY
+    : pose.root_py;
+  rig.root.updateMatrixWorld(true);
   return pose;
 }
-return Object.freeze({ applyPoseToBlockRig });
+return Object.freeze({ applyPoseToProceduralKayKitRig });
 })();
 
-// src/character/block-character.js
-const __actionStudioModule1 = (() => {
-const { createBlockRig } = __actionStudioModule2;
-const { createCharacterSockets, attachEquipment } = __actionStudioModule4;
-const { applyPoseToBlockRig } = __actionStudioModule5;
+// src/animation/kaykit-animation-library.js
+const __actionStudioModule10 = (() => {
+const KAYKIT_ANIMATION_PACKS = Object.freeze([
+  Object.freeze({ id: 'general', file: 'general.glb' }),
+  Object.freeze({ id: 'basic', file: 'basic.glb' }),
+  Object.freeze({ id: 'advanced', file: 'advanced.glb' }),
+  Object.freeze({ id: 'melee', file: 'melee.glb' }),
+]);
 
-function createBlockCharacter(THREE, options = {}) {
-  const rig = createBlockRig(THREE, options);
-  const sockets = createCharacterSockets(THREE, rig);
+function loadGlb(loader, url) {
+  return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+}
+
+function disposePackScene(scene) {
+  scene?.traverse?.((object3d) => {
+    if (!object3d.isMesh) return;
+    object3d.geometry?.dispose?.();
+    const materials = Array.isArray(object3d.material) ? object3d.material : [object3d.material];
+    materials.forEach((material) => material?.dispose?.());
+  });
+}
+
+function loadKayKitAnimationLibrary(loader, options = {}) {
+  if (!loader?.load) throw new Error('loadKayKitAnimationLibrary requires a GLTFLoader instance');
+  const baseUrl = String(options.baseUrl || '../../assets/kaykit/animations/').replace(/\/?$/, '/');
+  const selected = new Set(options.packIds || KAYKIT_ANIMATION_PACKS.map((pack) => pack.id));
+  const packs = KAYKIT_ANIMATION_PACKS.filter((pack) => selected.has(pack.id));
+  return Promise.all(packs.map(async (pack) => {
+    const gltf = await loadGlb(loader, `${baseUrl}${pack.file}`);
+    const result = { packId: pack.id, clips: gltf.animations || [] };
+    disposePackScene(gltf.scene);
+    return result;
+  })).then((loaded) => {
+    const clips = new Map();
+    const duplicates = [];
+    loaded.forEach((pack) => {
+      pack.clips.forEach((clip) => {
+        if (clips.has(clip.name)) duplicates.push({ name: clip.name, ignoredPack: pack.packId });
+        else clips.set(clip.name, clip);
+      });
+    });
+    return { clips, packs: loaded, duplicates };
+  });
+}
+
+function clipTargetName(trackName) {
+  const propertyIndex = trackName.lastIndexOf('.');
+  return propertyIndex < 0 ? trackName : trackName.slice(0, propertyIndex);
+}
+
+function validateKayKitClipBindings(clips, boneIds) {
+  const known = new Set(boneIds);
+  const missing = new Map();
+  for (const clip of clips.values ? clips.values() : clips) {
+    const targets = [...new Set(clip.tracks.map((track) => clipTargetName(track.name)))];
+    const unbound = targets.filter((target) => !known.has(target));
+    if (unbound.length) missing.set(clip.name, unbound);
+  }
+  return { valid: missing.size === 0, missing };
+}
+
+function createKayKitAnimationController(THREE, object3d) {
+  if (!THREE?.AnimationMixer) throw new Error('KayKit animation controller requires THREE.AnimationMixer');
+  const mixer = new THREE.AnimationMixer(object3d);
+  const clips = new Map();
+  const actions = new Map();
+  let currentAction = null;
+  let currentClipName = null;
+
+  function preparedClip(name, inPlace) {
+    const source = clips.get(name);
+    if (!source) return null;
+    const key = `${name}|${inPlace ? 'in-place' : 'root-motion'}`;
+    if (!actions.has(key)) {
+      const clip = source.clone();
+      clip.name = key;
+      if (inPlace) {
+        clip.tracks = clip.tracks.filter((track) => track.name !== 'root.position');
+        clip.resetDuration();
+      }
+      actions.set(key, mixer.clipAction(clip, object3d));
+    }
+    return actions.get(key);
+  }
+
   return {
-    object3d: rig.root,
-    rig,
-    sockets,
-    applyPose(pose) {
-      return applyPoseToBlockRig(rig, pose);
+    mixer,
+    clips,
+    get currentClipName() { return currentClipName; },
+    register(source) {
+      const iterable = source?.values ? source.values() : source;
+      for (const clip of iterable || []) if (!clips.has(clip.name)) clips.set(clip.name, clip);
+      return clips.size;
     },
-    attach(socketId, object3d, calibration) {
-      return attachEquipment(sockets, socketId, object3d, calibration);
+    play(name, options = {}) {
+      const action = preparedClip(name, options.inPlace !== false);
+      if (!action) throw new Error(`Unknown KayKit animation: ${name}`);
+      const fadeSeconds = Math.max(0, Number(options.fadeSeconds ?? 0.12));
+      if (currentAction && currentAction !== action) currentAction.fadeOut(fadeSeconds);
+      action.enabled = true;
+      action.paused = false;
+      action.reset();
+      action.setEffectiveWeight(1);
+      action.setEffectiveTimeScale(Number(options.speed) || 1);
+      if (options.loop === false) {
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      } else {
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        action.clampWhenFinished = false;
+      }
+      action.fadeIn(fadeSeconds).play();
+      currentAction = action;
+      currentClipName = name;
+      return action;
+    },
+    stop(fadeSeconds = 0) {
+      if (currentAction && fadeSeconds > 0) currentAction.fadeOut(fadeSeconds);
+      else mixer.stopAllAction();
+      currentAction = null;
+      currentClipName = null;
+    },
+    update(deltaSeconds) {
+      mixer.update(Math.max(0, Number(deltaSeconds) || 0));
     },
   };
 }
-return Object.freeze({ createBlockCharacter });
+return Object.freeze({ KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary, validateKayKitClipBindings, createKayKitAnimationController });
+})();
+
+// src/character/procedural-kaykit-character.js
+const __actionStudioModule2 = (() => {
+const { attachEquipment } = __actionStudioModule3;
+const { createProceduralKayKitRig, restoreProceduralKayKitRestPose } = __actionStudioModule4;
+const { applyPoseToProceduralKayKitRig } = __actionStudioModule7;
+const { createKayKitAnimationController, validateKayKitClipBindings } = __actionStudioModule10;
+
+function createProceduralKayKitCharacter(THREE, options = {}) {
+  const rig = createProceduralKayKitRig(THREE, options);
+  const animation = createKayKitAnimationController(THREE, rig.root);
+  let mode = 'pose';
+
+  function resetForAnimation() {
+    restoreProceduralKayKitRestPose(rig);
+    rig.motionRoot.position.set(0, 0, 0);
+    rig.motionRoot.rotation.set(0, 0, 0);
+    rig.motionRoot.scale.set(1, 1, 1);
+    rig.root.updateMatrixWorld(true);
+    rig.updateAppearance();
+  }
+
+  return {
+    object3d: rig.root,
+    rig,
+    sockets: rig.sockets,
+    animation,
+    get mode() { return mode; },
+    applyPose(pose) {
+      if (mode !== 'pose') animation.stop();
+      mode = 'pose';
+      const result = applyPoseToProceduralKayKitRig(rig, pose);
+      rig.updateAppearance();
+      return result;
+    },
+    setRigNodesVisible(value) { rig.lineAppearance?.setNodesVisible(value); },
+    setRigGlowVisible(value) { rig.lineAppearance?.setGlowVisible(value); },
+    attach(socketId, object3d, calibration) {
+      return attachEquipment(rig.sockets, socketId, object3d, calibration);
+    },
+    registerAnimations(source, registerOptions = {}) {
+      const clips = source?.clips || source;
+      const report = validateKayKitClipBindings(clips, Object.keys(rig.bones));
+      if (registerOptions.strict !== false && !report.valid) {
+        const summary = [...report.missing.entries()]
+          .map(([clipName, targets]) => `${clipName}: ${targets.join(', ')}`)
+          .join('; ');
+        throw new Error(`KayKit animation targets do not match procedural rig: ${summary}`);
+      }
+      animation.register(clips);
+      return report;
+    },
+    playAnimation(name, playOptions = {}) {
+      if (mode !== 'kaykit') resetForAnimation();
+      mode = 'kaykit';
+      return animation.play(name, playOptions);
+    },
+    stopAnimation() {
+      animation.stop();
+      resetForAnimation();
+      mode = 'pose';
+    },
+    update(deltaSeconds, camera) {
+      if (mode === 'kaykit') animation.update(deltaSeconds);
+      rig.updateAppearance(camera);
+    },
+  };
+}
+return Object.freeze({ createProceduralKayKitCharacter });
+})();
+
+// src/character/default-character.js
+const __actionStudioModule1 = (() => {
+const { createProceduralKayKitCharacter } = __actionStudioModule2;
+
+const DEFAULT_CHARACTER_RIG_ID = 'kaykit_rig_medium';
+
+function createDefaultCharacter(THREE, options = {}) {
+  return createProceduralKayKitCharacter(THREE, options);
+}
+return Object.freeze({ DEFAULT_CHARACTER_RIG_ID, createDefaultCharacter });
+})();
+
+// src/character/v3-sword-geometry-definition.js
+const __actionStudioModule13 = (() => {
+// Generated by build/extract-v3-sword-geometry.mjs. Do not edit by hand.
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  Object.values(value).forEach(deepFreeze);
+  return Object.freeze(value);
+}
+
+const V3_SWORD_GEOMETRY_DEFINITION = deepFreeze({
+  "format": "procedural-v3-sword-source-geometry",
+  "version": 1,
+  "id": "v3_sword_1handed_exact_edges",
+  "source": "tools/kaykit_combat_lab_v3_procedural_character_generator.html#EMBED.sword",
+  "sourceObject": "sword_1handed",
+  "coordinateTransform": "rotate-z-pi-for-action-studio-hand-r-mount",
+  "vertexCount": 358,
+  "triangleCount": 300,
+  "bounds": {
+    "min": [
+      -0.2517259120941162,
+      -1.4094958305358887,
+      -0.06531673669815063
+    ],
+    "max": [
+      0.251718670129776,
+      0.36576569080352783,
+      0.06531671434640884
+    ]
+  },
+  "positions": [
+    -0.02182917855679989,
+    0.1369999796152115,
+    0.045270804315805435,
+    -0.02182917855679989,
+    0.1369999796152115,
+    0.045270804315805435,
+    -0.02182917855679989,
+    0.1369999796152115,
+    0.045270804315805435,
+    -0.02182917855679989,
+    0.1369999796152115,
+    0.045270804315805435,
+    -0.02182917855679989,
+    0.1369999796152115,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    0.1369999796152115,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    0.1369999796152115,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    0.1369999796152115,
+    -0.04527086392045021,
+    -0.04527686536312103,
+    0.1369999796152115,
+    -0.013689803890883923,
+    -0.04527686536312103,
+    0.1369999796152115,
+    -0.013689803890883923,
+    0.04526480287313461,
+    0.1369999796152115,
+    -0.013689805753529072,
+    0.04526480287313461,
+    0.1369999796152115,
+    -0.013689805753529072,
+    0.021815160289406776,
+    0.1369999796152115,
+    -0.04527086392045021,
+    0.021815160289406776,
+    0.1369999796152115,
+    -0.04527086392045021,
+    0.021815160289406776,
+    0.1369999796152115,
+    -0.04527086392045021,
+    0.021815160289406776,
+    0.1369999796152115,
+    -0.04527086392045021,
+    0.04526480287313461,
+    0.1369999796152115,
+    0.013689743354916573,
+    0.04526480287313461,
+    0.1369999796152115,
+    0.013689743354916573,
+    0.021815160289406776,
+    0.1369999796152115,
+    0.045270804315805435,
+    0.021815160289406776,
+    0.1369999796152115,
+    0.045270804315805435,
+    0.021815160289406776,
+    0.1369999796152115,
+    0.045270804315805435,
+    0.021815160289406776,
+    0.1369999796152115,
+    0.045270804315805435,
+    0.04526480287313461,
+    -0.13699635863304138,
+    0.013689747080206871,
+    0.021815160289406776,
+    -0.13699635863304138,
+    0.045270804315805435,
+    0.021815160289406776,
+    -0.13699635863304138,
+    0.045270804315805435,
+    0.021815160289406776,
+    -0.13699635863304138,
+    -0.04527086392045021,
+    0.021815160289406776,
+    -0.13699635863304138,
+    -0.04527086392045021,
+    0.04526480287313461,
+    -0.13699635863304138,
+    -0.013689802028238773,
+    -0.02182917855679989,
+    -0.13699635863304138,
+    0.045270804315805435,
+    -0.02182917855679989,
+    -0.13699635863304138,
+    0.045270804315805435,
+    -0.04527686536312103,
+    -0.13699635863304138,
+    0.013689742423593998,
+    -0.04527686536312103,
+    -0.13699635863304138,
+    -0.013689806684851646,
+    -0.02182917855679989,
+    -0.13699635863304138,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    -0.13699635863304138,
+    -0.04527086392045021,
+    -0.04527686536312103,
+    0.1369999796152115,
+    0.013689746148884296,
+    -0.04527686536312103,
+    0.1369999796152115,
+    0.013689746148884296,
+    0.0000056617759582877625,
+    0.14651724696159363,
+    0.04273898899555206,
+    0.0000056613030210428406,
+    0.1465170979499817,
+    -0.04273887351155281,
+    -0.06372853368520737,
+    0.15235404670238495,
+    5.3676387778978096e-8,
+    0.06374015659093857,
+    0.15235407650470734,
+    4.973968259491812e-8,
+    0.000005933991360507207,
+    0.19827549159526825,
+    0.044997233897447586,
+    0.000005933991360507207,
+    0.19827549159526825,
+    0.044997233897447586,
+    0.000005933991360507207,
+    0.19827549159526825,
+    0.044997233897447586,
+    0.0000059312774283171166,
+    0.25139498710632324,
+    0.024714257568120956,
+    -0.03888023644685745,
+    0.21250882744789124,
+    0.044997215270996094,
+    -0.03888023644685745,
+    0.21250882744789124,
+    0.044997215270996094,
+    -0.05311357229948044,
+    0.25139498710632324,
+    0.04499717801809311,
+    -0.05311357229948044,
+    0.25139498710632324,
+    0.04499717801809311,
+    -0.05311357229948044,
+    0.25139498710632324,
+    0.04499717801809311,
+    -0.03888024017214775,
+    0.29028114676475525,
+    0.04499713331460953,
+    -0.03888024017214775,
+    0.29028114676475525,
+    0.04499713331460953,
+    0.000005933991360507207,
+    0.30451449751853943,
+    0.044997137039899826,
+    0.000005933991360507207,
+    0.30451449751853943,
+    0.044997137039899826,
+    0.000005933991360507207,
+    0.30451449751853943,
+    0.044997137039899826,
+    0.038892101496458054,
+    0.29028114676475525,
+    0.044997166842222214,
+    0.038892101496458054,
+    0.29028114676475525,
+    0.044997166842222214,
+    0.053125422447919846,
+    0.25139498710632324,
+    0.04499721899628639,
+    0.053125422447919846,
+    0.25139498710632324,
+    0.04499721899628639,
+    0.053125422447919846,
+    0.25139498710632324,
+    0.04499721899628639,
+    0.03889209404587746,
+    0.21250882744789124,
+    0.04499724134802818,
+    0.03889209404587746,
+    0.21250882744789124,
+    0.04499724134802818,
+    0.00000589864794164896,
+    0.1982753425836563,
+    -0.04499732702970505,
+    0.00000589864794164896,
+    0.1982753425836563,
+    -0.04499732702970505,
+    0.00000589864794164896,
+    0.1982753425836563,
+    -0.04499732702970505,
+    0.00000589864794164896,
+    0.1982753425836563,
+    -0.04499732702970505,
+    0.000005892781246075174,
+    0.2513948380947113,
+    -0.024714531376957893,
+    0.000005892781246075174,
+    0.2513948380947113,
+    -0.024714531376957893,
+    -0.03888026997447014,
+    0.2125086635351181,
+    -0.044997312128543854,
+    -0.03888026997447014,
+    0.2125086635351181,
+    -0.044997312128543854,
+    -0.05311361700296402,
+    0.2513948380947113,
+    -0.04499730095267296,
+    -0.05311361700296402,
+    0.2513948380947113,
+    -0.04499730095267296,
+    -0.05311361700296402,
+    0.2513948380947113,
+    -0.04499730095267296,
+    -0.05311361700296402,
+    0.2513948380947113,
+    -0.04499730095267296,
+    -0.038880277425050735,
+    0.2902810275554657,
+    -0.04499728977680206,
+    -0.038880277425050735,
+    0.2902810275554657,
+    -0.04499728977680206,
+    0.0000058991831792809535,
+    0.3045143187046051,
+    -0.04499731585383415,
+    0.0000058991831792809535,
+    0.3045143187046051,
+    -0.04499731585383415,
+    0.0000058991831792809535,
+    0.3045143187046051,
+    -0.04499731585383415,
+    0.0000058991831792809535,
+    0.3045143187046051,
+    -0.04499731585383415,
+    0.038892071694135666,
+    0.2902810275554657,
+    -0.04499734565615654,
+    0.038892071694135666,
+    0.2902810275554657,
+    -0.04499734565615654,
+    0.05312538146972656,
+    0.2513948380947113,
+    -0.04499736800789833,
+    0.05312538146972656,
+    0.2513948380947113,
+    -0.04499736800789833,
+    0.05312538146972656,
+    0.2513948380947113,
+    -0.04499736800789833,
+    0.05312538146972656,
+    0.2513948380947113,
+    -0.04499736800789833,
+    0.03889206051826477,
+    0.2125086784362793,
+    -0.04499734938144684,
+    0.03889206051826477,
+    0.2125086784362793,
+    -0.04499734938144684,
+    -0.052435118705034256,
+    0.1605686992406845,
+    0.03606567159295082,
+    -0.052435118705034256,
+    0.1605686992406845,
+    0.03606567159295082,
+    -0.09082445502281189,
+    0.19895800948143005,
+    0.036065634340047836,
+    -0.09082445502281189,
+    0.19895800948143005,
+    0.036065634340047836,
+    -0.10487592220306396,
+    0.25139880180358887,
+    0.03606560081243515,
+    -0.10487592220306396,
+    0.25139880180358887,
+    0.03606560081243515,
+    -0.0908244401216507,
+    0.3038395941257477,
+    0.03606555983424187,
+    -0.0908244401216507,
+    0.3038395941257477,
+    0.03606555983424187,
+    -0.05243512988090515,
+    0.3422289192676544,
+    0.03606554493308067,
+    -0.05243512988090515,
+    0.3422289192676544,
+    0.03606554493308067,
+    0.000005665353910444537,
+    0.3562803864479065,
+    0.03606555610895157,
+    0.000005665353910444537,
+    0.3562803864479065,
+    0.03606555610895157,
+    0.05244643613696098,
+    0.34222888946533203,
+    0.03606557473540306,
+    0.05244643613696098,
+    0.34222888946533203,
+    0.03606557473540306,
+    0.09083573520183563,
+    0.3038395643234253,
+    0.03606562316417694,
+    0.09083573520183563,
+    0.3038395643234253,
+    0.03606562316417694,
+    0.10488720238208771,
+    0.25139880180358887,
+    0.03606565296649933,
+    0.10488720238208771,
+    0.25139880180358887,
+    0.03606565296649933,
+    0.09083573520183563,
+    0.19895803928375244,
+    0.03606567531824112,
+    0.09083573520183563,
+    0.19895803928375244,
+    0.03606567531824112,
+    0.05244644731283188,
+    0.1605687290430069,
+    0.036065686494112015,
+    0.05244644731283188,
+    0.1605687290430069,
+    0.036065686494112015,
+    -0.052435118705034256,
+    0.16056855022907257,
+    -0.03606559336185455,
+    -0.052435118705034256,
+    0.16056855022907257,
+    -0.03606559336185455,
+    -0.0908244401216507,
+    0.19895786046981812,
+    -0.03606559336185455,
+    -0.0908244401216507,
+    0.19895786046981812,
+    -0.03606559336185455,
+    -0.10487592965364456,
+    0.25139865279197693,
+    -0.036065611988306046,
+    -0.10487592965364456,
+    0.25139865279197693,
+    -0.036065611988306046,
+    -0.09082445502281189,
+    0.30383944511413574,
+    -0.03606561943888664,
+    -0.09082445502281189,
+    0.30383944511413574,
+    -0.03606561943888664,
+    -0.05243513360619545,
+    0.34222880005836487,
+    -0.03606564551591873,
+    -0.05243513360619545,
+    0.34222880005836487,
+    -0.03606564551591873,
+    0.000005665590833814349,
+    0.35628023743629456,
+    -0.036065660417079926,
+    0.000005665590833814349,
+    0.35628023743629456,
+    -0.036065660417079926,
+    0.05244643986225128,
+    0.3422287404537201,
+    -0.03606567531824112,
+    0.05244643986225128,
+    0.3422287404537201,
+    -0.03606567531824112,
+    0.09083574265241623,
+    0.30383941531181335,
+    -0.036065682768821716,
+    0.09083574265241623,
+    0.30383941531181335,
+    -0.036065682768821716,
+    0.10488720238208771,
+    0.25139865279197693,
+    -0.036065660417079926,
+    0.10488720238208771,
+    0.25139865279197693,
+    -0.036065660417079926,
+    0.09083573520183563,
+    0.1989578902721405,
+    -0.036065634340047836,
+    0.09083573520183563,
+    0.1989578902721405,
+    -0.036065634340047836,
+    0.05244643986225128,
+    0.16056859493255615,
+    -0.03606561943888664,
+    0.05244643986225128,
+    0.16056859493255615,
+    -0.03606561943888664,
+    0.09905032813549042,
+    0.19421526789665222,
+    3.091032141355754e-8,
+    0.11437259614467621,
+    0.2513987123966217,
+    -5.906255040599717e-9,
+    0.09905032813549042,
+    0.30858221650123596,
+    -3.5689254218596034e-8,
+    0.05718913674354553,
+    0.35044339299201965,
+    -6.287369558322098e-8,
+    0.000005667568075296003,
+    0.36576569080352783,
+    -7.22001374242609e-8,
+    -0.0571778267621994,
+    0.35044342279434204,
+    -6.622234138831118e-8,
+    -0.09903904795646667,
+    0.30858221650123596,
+    -3.876276721825889e-8,
+    -0.11436131596565247,
+    0.2513987421989441,
+    -2.251894670735055e-9,
+    -0.09903904795646667,
+    0.19421523809432983,
+    3.087975031235146e-8,
+    0.026042338460683823,
+    0.050413984805345535,
+    0.05404042452573776,
+    0.026042338460683823,
+    0.050413984805345535,
+    0.05404042452573776,
+    0.026042338460683823,
+    0.050413984805345535,
+    0.05404042452573776,
+    0.021815160289406776,
+    0.04092174023389816,
+    0.045270804315805435,
+    0.021815160289406776,
+    0.04092174023389816,
+    0.045270804315805435,
+    0.021815160289406776,
+    0.04092174023389816,
+    0.045270804315805435,
+    0.026042338460683823,
+    -0.040918122977018356,
+    0.05404042452573776,
+    0.026042338460683823,
+    -0.040918122977018356,
+    0.05404042452573776,
+    0.026042338460683823,
+    -0.040918122977018356,
+    0.05404042452573776,
+    0.021815160289406776,
+    -0.05041036754846573,
+    0.045270804315805435,
+    0.021815160289406776,
+    -0.05041036754846573,
+    0.045270804315805435,
+    0.021815160289406776,
+    -0.05041036754846573,
+    0.045270804315805435,
+    0.0540345199406147,
+    0.050413984805345535,
+    -0.016341714188456535,
+    0.0540345199406147,
+    0.050413984805345535,
+    -0.016341714188456535,
+    0.04526480287313461,
+    0.04092174023389816,
+    -0.013689804822206497,
+    0.04526480287313461,
+    0.04092174023389816,
+    -0.013689804822206497,
+    0.0540345199406147,
+    -0.040918122977018356,
+    -0.016341714188456535,
+    0.0540345199406147,
+    -0.040918122977018356,
+    -0.016341714188456535,
+    0.0540345199406147,
+    -0.040918122977018356,
+    -0.016341714188456535,
+    0.0540345199406147,
+    -0.040918122977018356,
+    -0.016341714188456535,
+    0.04526480287313461,
+    -0.05041036754846573,
+    -0.013689803890883923,
+    0.04526480287313461,
+    -0.05041036754846573,
+    -0.013689803890883923,
+    -0.026056544855237007,
+    0.050413984805345535,
+    -0.054040487855672836,
+    -0.026056544855237007,
+    0.050413984805345535,
+    -0.054040487855672836,
+    -0.026056544855237007,
+    0.050413984805345535,
+    -0.054040487855672836,
+    -0.02182917855679989,
+    0.04092174023389816,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    0.04092174023389816,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    0.04092174023389816,
+    -0.04527086392045021,
+    -0.026056544855237007,
+    -0.040918122977018356,
+    -0.054040487855672836,
+    -0.026056544855237007,
+    -0.040918122977018356,
+    -0.054040487855672836,
+    -0.026056544855237007,
+    -0.040918122977018356,
+    -0.054040487855672836,
+    -0.02182917855679989,
+    -0.05041036754846573,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    -0.05041036754846573,
+    -0.04527086392045021,
+    -0.02182917855679989,
+    -0.05041036754846573,
+    -0.04527086392045021,
+    -0.0540463924407959,
+    0.050413984805345535,
+    0.01634165458381176,
+    -0.0540463924407959,
+    0.050413984805345535,
+    0.01634165458381176,
+    -0.04527686536312103,
+    0.04092174023389816,
+    0.013689744286239147,
+    -0.04527686536312103,
+    0.04092174023389816,
+    0.013689744286239147,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    0.01634165272116661,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    0.01634165272116661,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    0.01634165272116661,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    0.01634165272116661,
+    -0.04527686536312103,
+    -0.05041036754846573,
+    0.013689743354916573,
+    -0.04527686536312103,
+    -0.05041036754846573,
+    0.013689743354916573,
+    -0.02182917855679989,
+    -0.05041036754846573,
+    0.045270804315805435,
+    -0.02182917855679989,
+    -0.05041036754846573,
+    0.045270804315805435,
+    -0.02182917855679989,
+    -0.05041036754846573,
+    0.045270804315805435,
+    -0.02182917855679989,
+    -0.05041036754846573,
+    0.045270804315805435,
+    -0.026056544855237007,
+    -0.040918122977018356,
+    0.05404042452573776,
+    -0.026056544855237007,
+    -0.040918122977018356,
+    0.05404042452573776,
+    -0.026056544855237007,
+    -0.040918122977018356,
+    0.05404042452573776,
+    -0.02182917855679989,
+    0.04092174023389816,
+    0.045270804315805435,
+    -0.02182917855679989,
+    0.04092174023389816,
+    0.045270804315805435,
+    -0.02182917855679989,
+    0.04092174023389816,
+    0.045270804315805435,
+    -0.026056544855237007,
+    0.050413984805345535,
+    0.05404042452573776,
+    -0.026056544855237007,
+    0.050413984805345535,
+    0.05404042452573776,
+    -0.026056544855237007,
+    0.050413984805345535,
+    0.05404042452573776,
+    -0.04527686536312103,
+    -0.05041036754846573,
+    -0.013689805753529072,
+    -0.04527686536312103,
+    -0.05041036754846573,
+    -0.013689805753529072,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    -0.016341716051101685,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    -0.016341716051101685,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    -0.016341716051101685,
+    -0.0540463924407959,
+    -0.040918122977018356,
+    -0.016341716051101685,
+    -0.04527686536312103,
+    0.04092174023389816,
+    -0.013689804822206497,
+    -0.04527686536312103,
+    0.04092174023389816,
+    -0.013689804822206497,
+    -0.0540463924407959,
+    0.050413984805345535,
+    -0.016341714188456535,
+    -0.0540463924407959,
+    0.050413984805345535,
+    -0.016341714188456535,
+    0.021815160289406776,
+    -0.05041036754846573,
+    -0.04527086392045021,
+    0.021815160289406776,
+    -0.05041036754846573,
+    -0.04527086392045021,
+    0.021815160289406776,
+    -0.05041036754846573,
+    -0.04527086392045021,
+    0.026042338460683823,
+    -0.040918122977018356,
+    -0.054040487855672836,
+    0.026042338460683823,
+    -0.040918122977018356,
+    -0.054040487855672836,
+    0.026042338460683823,
+    -0.040918122977018356,
+    -0.054040487855672836,
+    0.021815160289406776,
+    0.04092174023389816,
+    -0.04527086392045021,
+    0.021815160289406776,
+    0.04092174023389816,
+    -0.04527086392045021,
+    0.021815160289406776,
+    0.04092174023389816,
+    -0.04527086392045021,
+    0.026042338460683823,
+    0.050413984805345535,
+    -0.054040487855672836,
+    0.026042338460683823,
+    0.050413984805345535,
+    -0.054040487855672836,
+    0.026042338460683823,
+    0.050413984805345535,
+    -0.054040487855672836,
+    0.0540345199406147,
+    -0.040918122977018356,
+    0.01634165458381176,
+    0.0540345199406147,
+    -0.040918122977018356,
+    0.01634165458381176,
+    0.0540345199406147,
+    -0.040918122977018356,
+    0.01634165458381176,
+    0.0540345199406147,
+    -0.040918122977018356,
+    0.01634165458381176,
+    0.04526480287313461,
+    -0.05041036754846573,
+    0.013689746148884296,
+    0.04526480287313461,
+    -0.05041036754846573,
+    0.013689746148884296,
+    0.0540345199406147,
+    0.050413984805345535,
+    0.01634165458381176,
+    0.0540345199406147,
+    0.050413984805345535,
+    0.01634165458381176,
+    0.04526480287313461,
+    0.04092174023389816,
+    0.013689744286239147,
+    0.04526480287313461,
+    0.04092174023389816,
+    0.013689744286239147,
+    0.000011358623851265293,
+    -0.23338711261749268,
+    0.0478508435189724,
+    0.000011358623851265293,
+    -0.23338711261749268,
+    0.0478508435189724,
+    0.000011358623851265293,
+    -1.2841719388961792,
+    0.035393908619880676,
+    0.000011358623851265293,
+    -1.2841719388961792,
+    0.035393908619880676,
+    0.15694290399551392,
+    -0.23338711261749268,
+    2.4463133740937337e-9,
+    0.15694290399551392,
+    -0.23338711261749268,
+    2.4463133740937337e-9,
+    0.11608917266130447,
+    -1.2841719388961792,
+    -1.6805472569103586e-9,
+    0.11608917266130447,
+    -1.2841719388961792,
+    -1.6805472569103586e-9,
+    -0.1569201946258545,
+    -0.23338711261749268,
+    2.4463133740937337e-9,
+    -0.1569201946258545,
+    -0.23338711261749268,
+    2.4463133740937337e-9,
+    -0.11606645584106445,
+    -1.2841719388961792,
+    -1.6805472569103586e-9,
+    -0.11606645584106445,
+    -1.2841719388961792,
+    -1.6805472569103586e-9,
+    0.000011358623851265293,
+    -0.23338711261749268,
+    -0.047850847244262695,
+    0.000011358623851265293,
+    -0.23338711261749268,
+    -0.047850847244262695,
+    0.000011358623851265293,
+    -1.2841719388961792,
+    -0.035393912345170975,
+    0.000011358623851265293,
+    -1.2841719388961792,
+    -0.035393912345170975,
+    0.000011358623851265293,
+    -1.4094958305358887,
+    1.1173710845469031e-9,
+    0.000011358623851265293,
+    -1.4094958305358887,
+    1.1173710845469031e-9,
+    0.000011358623851265293,
+    -1.4094958305358887,
+    1.1173710845469031e-9,
+    0.000011358623851265293,
+    -1.4094958305358887,
+    1.1173710845469031e-9,
+    0.000011358623851265293,
+    -1.1988228559494019,
+    0.0478508435189724,
+    0.000011358623851265293,
+    -1.1988228559494019,
+    0.0478508435189724,
+    0.15694290399551392,
+    -1.1988228559494019,
+    2.4463133740937337e-9,
+    0.15694290399551392,
+    -1.1988228559494019,
+    2.4463133740937337e-9,
+    0.000011358623851265293,
+    -1.1988228559494019,
+    -0.047850847244262695,
+    0.000011358623851265293,
+    -1.1988228559494019,
+    -0.047850847244262695,
+    -0.1569201946258545,
+    -1.1988228559494019,
+    2.4463133740937337e-9,
+    -0.1569201946258545,
+    -1.1988228559494019,
+    2.4463133740937337e-9,
+    0.23042632639408112,
+    -0.15003573894500732,
+    0.03520481288433075,
+    0.23042632639408112,
+    -0.15003573894500732,
+    0.03520481288433075,
+    0.22263279557228088,
+    -0.17912159860134125,
+    0.06531671434640884,
+    0.22263279557228088,
+    -0.17912159860134125,
+    0.06531671434640884,
+    0.22263279557228088,
+    -0.17912159860134125,
+    0.06531671434640884,
+    0.251718670129776,
+    -0.18691514432430267,
+    0.03520481288433075,
+    0.251718670129776,
+    -0.18691514432430267,
+    0.03520481288433075,
+    0.2044094353914261,
+    -0.2471321076154709,
+    0.06531671434640884,
+    0.2044094353914261,
+    -0.2471321076154709,
+    0.06531671434640884,
+    0.19661590456962585,
+    -0.2762179672718048,
+    0.03520481288433075,
+    0.2334953099489212,
+    -0.2549256384372711,
+    0.03520481660962105,
+    0.2334953099489212,
+    -0.2549256384372711,
+    0.03520481660962105,
+    0.2334953099489212,
+    -0.2549256384372711,
+    0.03520481660962105,
+    0.23042632639408112,
+    -0.15003573894500732,
+    -0.03520483151078224,
+    0.23042632639408112,
+    -0.15003573894500732,
+    -0.03520483151078224,
+    0.251718670129776,
+    -0.18691514432430267,
+    -0.03520483151078224,
+    0.251718670129776,
+    -0.18691514432430267,
+    -0.03520483151078224,
+    0.22263279557228088,
+    -0.17912159860134125,
+    -0.06531672924757004,
+    0.22263279557228088,
+    -0.17912159860134125,
+    -0.06531672924757004,
+    0.22263279557228088,
+    -0.17912159860134125,
+    -0.06531672924757004,
+    0.19661590456962585,
+    -0.2762179672718048,
+    -0.03520483151078224,
+    0.2044094353914261,
+    -0.2471321076154709,
+    -0.06531673669815063,
+    0.2044094353914261,
+    -0.2471321076154709,
+    -0.06531673669815063,
+    0.2334953099489212,
+    -0.2549256384372711,
+    -0.03520483523607254,
+    0.2334953099489212,
+    -0.2549256384372711,
+    -0.03520483523607254,
+    0.2334953099489212,
+    -0.2549256384372711,
+    -0.03520483523607254,
+    -0.23043356835842133,
+    -0.15003414452075958,
+    0.03520481288433075,
+    -0.23043356835842133,
+    -0.15003414452075958,
+    0.03520481288433075,
+    -0.2517259120941162,
+    -0.18691354990005493,
+    0.03520481288433075,
+    -0.2517259120941162,
+    -0.18691354990005493,
+    0.03520481288433075,
+    -0.2517259120941162,
+    -0.18691354990005493,
+    0.03520481288433075,
+    -0.2226400226354599,
+    -0.1791200041770935,
+    0.06531671434640884,
+    -0.2226400226354599,
+    -0.1791200041770935,
+    0.06531671434640884,
+    -0.2226400226354599,
+    -0.1791200041770935,
+    0.06531671434640884,
+    -0.19662313163280487,
+    -0.2762163579463959,
+    0.03520481288433075,
+    -0.2044166624546051,
+    -0.24713052809238434,
+    0.06531671434640884,
+    -0.2044166624546051,
+    -0.24713052809238434,
+    0.06531671434640884,
+    -0.2335025519132614,
+    -0.25492405891418457,
+    0.03520481660962105,
+    -0.2335025519132614,
+    -0.25492405891418457,
+    0.03520481660962105,
+    -0.2335025519132614,
+    -0.25492405891418457,
+    0.03520481660962105,
+    -0.23043356835842133,
+    -0.15003414452075958,
+    -0.03520483151078224,
+    -0.23043356835842133,
+    -0.15003414452075958,
+    -0.03520483151078224,
+    -0.2226400226354599,
+    -0.1791200041770935,
+    -0.06531673669815063,
+    -0.2226400226354599,
+    -0.1791200041770935,
+    -0.06531673669815063,
+    -0.2226400226354599,
+    -0.1791200041770935,
+    -0.06531673669815063,
+    -0.2517259120941162,
+    -0.18691354990005493,
+    -0.03520483151078224,
+    -0.2517259120941162,
+    -0.18691354990005493,
+    -0.03520483151078224,
+    -0.2517259120941162,
+    -0.18691354990005493,
+    -0.03520483151078224,
+    -0.19662314653396606,
+    -0.2762163579463959,
+    -0.03520483151078224,
+    -0.2335025668144226,
+    -0.25492405891418457,
+    -0.03520483523607254,
+    -0.2335025668144226,
+    -0.25492405891418457,
+    -0.03520483523607254,
+    -0.2335025668144226,
+    -0.25492405891418457,
+    -0.03520483523607254,
+    -0.2044166624546051,
+    -0.24713052809238434,
+    -0.06531673669815063,
+    -0.2044166624546051,
+    -0.24713052809238434,
+    -0.06531673669815063,
+    -0.07106439769268036,
+    -0.12109408527612686,
+    -0.03520483151078224,
+    0.07105737179517746,
+    -0.12109408527612686,
+    -0.03520483151078224,
+    0.07105737179517746,
+    -0.15120598673820496,
+    -0.06531672924757004,
+    0.07105737179517746,
+    -0.15120598673820496,
+    -0.06531672924757004,
+    -0.07106439769268036,
+    -0.15120598673820496,
+    -0.06531673669815063,
+    -0.07106439769268036,
+    -0.15120598673820496,
+    -0.06531673669815063,
+    -0.000003512948751449585,
+    -0.25172752141952515,
+    -0.03520483151078224,
+    -0.000003512948751449585,
+    -0.22161564230918884,
+    -0.06531673669815063,
+    -0.000003512948751449585,
+    -0.22161564230918884,
+    -0.06531673669815063,
+    0.07105737179517746,
+    -0.12109408527612686,
+    0.03520481288433075,
+    -0.07106439769268036,
+    -0.12109408527612686,
+    0.03520481288433075,
+    -0.07106439769268036,
+    -0.15120598673820496,
+    0.06531671434640884,
+    -0.07106439769268036,
+    -0.15120598673820496,
+    0.06531671434640884,
+    0.07105737179517746,
+    -0.15120598673820496,
+    0.06531671434640884,
+    0.07105737179517746,
+    -0.15120598673820496,
+    0.06531671434640884,
+    -0.000003512948751449585,
+    -0.25172752141952515,
+    0.03520481288433075,
+    -0.000003512948751449585,
+    -0.22161564230918884,
+    0.06531671434640884,
+    -0.000003512948751449585,
+    -0.22161564230918884,
+    0.06531671434640884,
+    0.000011358623851265293,
+    -0.7161064147949219,
+    -0.047850847244262695,
+    0.000011358623851265293,
+    -0.7161064147949219,
+    -0.047850847244262695,
+    0.000011358623851265293,
+    -0.7161063551902771,
+    0.0478508435189724,
+    0.000011358623851265293,
+    -0.7161063551902771,
+    0.0478508435189724,
+    -0.1569201946258545,
+    -0.7748923301696777,
+    1.6663683766182658e-8,
+    -0.1569201946258545,
+    -0.7748923301696777,
+    1.6663683766182658e-8,
+    -0.1569201946258545,
+    -0.7748923301696777,
+    1.6663683766182658e-8,
+    -0.11143078655004501,
+    -0.7993602156639099,
+    -0.01387040689587593,
+    -0.11143078655004501,
+    -0.7993602156639099,
+    -0.01387040689587593,
+    -0.11143078655004501,
+    -0.7993602156639099,
+    -0.01387040689587593,
+    -0.1569201946258545,
+    -0.8917946219444275,
+    1.5679120224376675e-8,
+    -0.1569201946258545,
+    -0.8917946219444275,
+    1.5679120224376675e-8,
+    -0.1569201946258545,
+    -0.8917946219444275,
+    1.5679120224376675e-8,
+    -0.11143080145120621,
+    -0.7993602156639099,
+    0.013870429247617722,
+    -0.11143080145120621,
+    -0.7993602156639099,
+    0.013870429247617722,
+    -0.11143080145120621,
+    -0.7993602156639099,
+    0.013870429247617722,
+    -0.11143080145120621,
+    -0.7993602156639099,
+    0.013870429247617722,
+    0.15694290399551392,
+    -0.540512204170227,
+    -1.0790259352688736e-8,
+    0.15694290399551392,
+    -0.540512204170227,
+    -1.0790259352688736e-8,
+    0.15694290399551392,
+    -0.540512204170227,
+    -1.0790259352688736e-8,
+    0.11152675002813339,
+    -0.6327977776527405,
+    0.013848076574504375,
+    0.11152675002813339,
+    -0.6327977776527405,
+    0.013848076574504375,
+    0.11152675002813339,
+    -0.6327977776527405,
+    0.013848076574504375,
+    0.15694290399551392,
+    -0.6572262644767761,
+    -1.1773195751629828e-8,
+    0.15694290399551392,
+    -0.6572262644767761,
+    -1.1773195751629828e-8,
+    0.15694290399551392,
+    -0.6572262644767761,
+    -1.1773195751629828e-8,
+    0.11152675002813339,
+    -0.6327978372573853,
+    -0.013848095200955868,
+    0.11152675002813339,
+    -0.6327978372573853,
+    -0.013848095200955868,
+    0.11152675002813339,
+    -0.6327978372573853,
+    -0.013848095200955868
+  ],
+  "indices": [
+    17,
+    226,
+    153,
+    17,
+    153,
+    11,
+    9,
+    206,
+    175,
+    9,
+    175,
+    35,
+    186,
+    28,
+    24,
+    186,
+    24,
+    151,
+    15,
+    218,
+    163,
+    15,
+    163,
+    6,
+    228,
+    222,
+    158,
+    228,
+    158,
+    155,
+    215,
+    212,
+    169,
+    215,
+    169,
+    166,
+    204,
+    202,
+    180,
+    204,
+    180,
+    177,
+    43,
+    46,
+    44,
+    87,
+    45,
+    89,
+    43,
+    49,
+    46,
+    43,
+    51,
+    49,
+    91,
+    48,
+    93,
+    43,
+    55,
+    51,
+    43,
+    58,
+    55,
+    36,
+    42,
+    87,
+    43,
+    60,
+    58,
+    43,
+    41,
+    60,
+    97,
+    52,
+    99,
+    65,
+    64,
+    68,
+    65,
+    68,
+    71,
+    103,
+    56,
+    105,
+    66,
+    72,
+    74,
+    66,
+    74,
+    78,
+    99,
+    54,
+    101,
+    65,
+    76,
+    79,
+    65,
+    79,
+    82,
+    105,
+    59,
+    107,
+    66,
+    81,
+    85,
+    66,
+    85,
+    61,
+    93,
+    50,
+    95,
+    83,
+    125,
+    127,
+    73,
+    115,
+    117,
+    59,
+    40,
+    107,
+    52,
+    97,
+    95,
+    62,
+    129,
+    37,
+    75,
+    119,
+    121,
+    67,
+    109,
+    111,
+    42,
+    45,
+    87,
+    54,
+    57,
+    101,
+    48,
+    91,
+    89,
+    84,
+    123,
+    125,
+    70,
+    113,
+    115,
+    131,
+    106,
+    108,
+    131,
+    132,
+    104,
+    131,
+    104,
+    106,
+    132,
+    133,
+    102,
+    132,
+    102,
+    104,
+    133,
+    134,
+    100,
+    133,
+    100,
+    102,
+    134,
+    135,
+    98,
+    134,
+    98,
+    100,
+    135,
+    136,
+    96,
+    135,
+    96,
+    98,
+    136,
+    137,
+    94,
+    136,
+    94,
+    96,
+    137,
+    138,
+    92,
+    137,
+    92,
+    94,
+    138,
+    139,
+    90,
+    138,
+    90,
+    92,
+    139,
+    38,
+    88,
+    48,
+    50,
+    93,
+    56,
+    103,
+    101,
+    69,
+    111,
+    113,
+    80,
+    121,
+    123,
+    63,
+    37,
+    109,
+    45,
+    47,
+    89,
+    52,
+    54,
+    99,
+    42,
+    36,
+    107,
+    77,
+    117,
+    119,
+    86,
+    127,
+    129,
+    50,
+    53,
+    95,
+    56,
+    59,
+    105,
+    110,
+    38,
+    139,
+    114,
+    112,
+    139,
+    114,
+    139,
+    138,
+    116,
+    114,
+    138,
+    116,
+    138,
+    137,
+    118,
+    116,
+    137,
+    118,
+    137,
+    136,
+    120,
+    118,
+    136,
+    120,
+    136,
+    135,
+    122,
+    120,
+    135,
+    122,
+    135,
+    134,
+    124,
+    122,
+    134,
+    124,
+    134,
+    133,
+    126,
+    124,
+    133,
+    126,
+    133,
+    132,
+    128,
+    126,
+    132,
+    128,
+    132,
+    131,
+    130,
+    128,
+    131,
+    34,
+    88,
+    38,
+    38,
+    8,
+    34,
+    16,
+    108,
+    19,
+    0,
+    18,
+    36,
+    0,
+    36,
+    87,
+    1,
+    88,
+    34,
+    38,
+    110,
+    8,
+    5,
+    8,
+    110,
+    109,
+    37,
+    4,
+    4,
+    37,
+    12,
+    37,
+    129,
+    12,
+    10,
+    39,
+    16,
+    36,
+    18,
+    107,
+    16,
+    39,
+    108,
+    39,
+    10,
+    130,
+    13,
+    130,
+    10,
+    90,
+    139,
+    88,
+    112,
+    110,
+    139,
+    39,
+    131,
+    108,
+    39,
+    130,
+    131,
+    198,
+    31,
+    30,
+    198,
+    30,
+    183,
+    196,
+    3,
+    35,
+    196,
+    35,
+    175,
+    209,
+    26,
+    32,
+    209,
+    32,
+    172,
+    206,
+    9,
+    7,
+    206,
+    7,
+    164,
+    224,
+    22,
+    27,
+    224,
+    27,
+    161,
+    217,
+    14,
+    11,
+    217,
+    11,
+    153,
+    211,
+    214,
+    155,
+    211,
+    155,
+    159,
+    25,
+    208,
+    161,
+    25,
+    161,
+    27,
+    192,
+    189,
+    148,
+    192,
+    148,
+    145,
+    20,
+    141,
+    226,
+    20,
+    226,
+    17,
+    201,
+    204,
+    167,
+    201,
+    167,
+    170,
+    31,
+    198,
+    173,
+    31,
+    173,
+    33,
+    190,
+    193,
+    177,
+    190,
+    177,
+    181,
+    29,
+    187,
+    183,
+    29,
+    183,
+    30,
+    144,
+    147,
+    221,
+    144,
+    221,
+    228,
+    150,
+    23,
+    22,
+    150,
+    22,
+    224,
+    188,
+    179,
+    182,
+    188,
+    182,
+    185,
+    194,
+    174,
+    176,
+    194,
+    176,
+    191,
+    199,
+    168,
+    171,
+    199,
+    171,
+    197,
+    205,
+    162,
+    165,
+    205,
+    165,
+    203,
+    210,
+    157,
+    160,
+    210,
+    160,
+    207,
+    216,
+    152,
+    154,
+    216,
+    154,
+    213,
+    227,
+    154,
+    152,
+    227,
+    152,
+    225,
+    223,
+    160,
+    156,
+    223,
+    156,
+    220,
+    143,
+    227,
+    225,
+    143,
+    225,
+    140,
+    149,
+    223,
+    219,
+    149,
+    219,
+    146,
+    213,
+    165,
+    162,
+    213,
+    162,
+    216,
+    207,
+    171,
+    168,
+    207,
+    168,
+    210,
+    203,
+    176,
+    174,
+    203,
+    174,
+    205,
+    197,
+    182,
+    178,
+    197,
+    178,
+    200,
+    191,
+    143,
+    140,
+    191,
+    140,
+    194,
+    184,
+    149,
+    146,
+    184,
+    146,
+    188,
+    2,
+    195,
+    142,
+    2,
+    142,
+    21,
+    43,
+    44,
+    41,
+    67,
+    63,
+    109,
+    62,
+    86,
+    129,
+    86,
+    83,
+    127,
+    84,
+    80,
+    123,
+    80,
+    75,
+    121,
+    77,
+    73,
+    117,
+    73,
+    70,
+    115,
+    69,
+    67,
+    111,
+    250,
+    232,
+    235,
+    250,
+    235,
+    251,
+    252,
+    236,
+    243,
+    252,
+    243,
+    253,
+    254,
+    244,
+    239,
+    254,
+    239,
+    256,
+    255,
+    240,
+    231,
+    255,
+    231,
+    249,
+    239,
+    244,
+    248,
+    235,
+    232,
+    247,
+    231,
+    240,
+    246,
+    243,
+    236,
+    245,
+    254,
+    256,
+    340,
+    250,
+    251,
+    352,
+    346,
+    349,
+    355,
+    324,
+    328,
+    265,
+    324,
+    265,
+    259,
+    303,
+    308,
+    296,
+    303,
+    296,
+    286,
+    317,
+    277,
+    266,
+    317,
+    266,
+    326,
+    262,
+    268,
+    281,
+    262,
+    281,
+    272,
+    315,
+    319,
+    310,
+    315,
+    310,
+    299,
+    257,
+    260,
+    263,
+    264,
+    266,
+    267,
+    270,
+    273,
+    275,
+    277,
+    278,
+    280,
+    283,
+    287,
+    289,
+    291,
+    292,
+    294,
+    297,
+    300,
+    304,
+    305,
+    306,
+    309,
+    270,
+    257,
+    263,
+    270,
+    263,
+    273,
+    259,
+    265,
+    269,
+    259,
+    269,
+    262,
+    266,
+    277,
+    280,
+    266,
+    280,
+    267,
+    279,
+    274,
+    272,
+    279,
+    272,
+    282,
+    312,
+    271,
+    276,
+    312,
+    276,
+    314,
+    317,
+    305,
+    309,
+    317,
+    309,
+    318,
+    307,
+    302,
+    299,
+    307,
+    299,
+    310,
+    283,
+    297,
+    304,
+    283,
+    304,
+    287,
+    305,
+    291,
+    294,
+    305,
+    294,
+    306,
+    293,
+    288,
+    285,
+    293,
+    285,
+    295,
+    321,
+    284,
+    290,
+    321,
+    290,
+    323,
+    326,
+    266,
+    264,
+    326,
+    264,
+    327,
+    311,
+    298,
+    284,
+    311,
+    284,
+    321,
+    271,
+    312,
+    320,
+    271,
+    320,
+    258,
+    312,
+    311,
+    321,
+    312,
+    321,
+    320,
+    291,
+    326,
+    327,
+    291,
+    327,
+    292,
+    258,
+    320,
+    325,
+    258,
+    325,
+    261,
+    320,
+    321,
+    323,
+    320,
+    323,
+    325,
+    277,
+    317,
+    318,
+    277,
+    318,
+    278,
+    298,
+    311,
+    316,
+    298,
+    316,
+    301,
+    311,
+    312,
+    314,
+    311,
+    314,
+    316,
+    274,
+    279,
+    319,
+    274,
+    319,
+    313,
+    313,
+    319,
+    315,
+    305,
+    317,
+    326,
+    305,
+    326,
+    291,
+    288,
+    293,
+    328,
+    288,
+    328,
+    322,
+    322,
+    328,
+    324,
+    353,
+    252,
+    253,
+    230,
+    332,
+    350,
+    339,
+    255,
+    249,
+    242,
+    330,
+    337,
+    242,
+    337,
+    335,
+    338,
+    341,
+    344,
+    334,
+    345,
+    331,
+    334,
+    331,
+    229,
+    351,
+    354,
+    357,
+    241,
+    356,
+    329,
+    333,
+    336,
+    342,
+    343,
+    339,
+    249,
+    343,
+    249,
+    331,
+    330,
+    254,
+    340,
+    330,
+    340,
+    337,
+    237,
+    334,
+    229,
+    238,
+    242,
+    335,
+    233,
+    230,
+    350,
+    233,
+    350,
+    347,
+    332,
+    250,
+    352,
+    332,
+    352,
+    350,
+    356,
+    353,
+    253,
+    356,
+    253,
+    329,
+    234,
+    348,
+    356,
+    234,
+    356,
+    241
+  ],
+  "rigNodes": [
+    {
+      "id": "weapon.root",
+      "parent": null,
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pommel",
+      "parent": "weapon.root",
+      "position": [
+        0,
+        0.275,
+        0
+      ]
+    },
+    {
+      "id": "grip",
+      "parent": "weapon.root",
+      "position": [
+        0,
+        0.055,
+        0
+      ]
+    },
+    {
+      "id": "secondary_grip",
+      "parent": "grip",
+      "position": [
+        0,
+        0.08,
+        0
+      ]
+    },
+    {
+      "id": "guard",
+      "parent": "weapon.root",
+      "position": [
+        0,
+        -0.2,
+        0
+      ]
+    },
+    {
+      "id": "guard.l",
+      "parent": "guard",
+      "position": [
+        0.2517259120941162,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "guard.r",
+      "parent": "guard",
+      "position": [
+        -0.2517259120941162,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "blade.root",
+      "parent": "guard",
+      "position": [
+        0,
+        -0.1,
+        0
+      ]
+    },
+    {
+      "id": "blade.mid",
+      "parent": "blade.root",
+      "position": [
+        0,
+        -0.55,
+        0
+      ]
+    },
+    {
+      "id": "parry.point",
+      "parent": "blade.mid",
+      "position": [
+        0,
+        0.15,
+        0
+      ]
+    },
+    {
+      "id": "blade.tip",
+      "parent": "blade.mid",
+      "position": [
+        0,
+        -0.5594958305358887,
+        0
+      ]
+    }
+  ]
+});
+return Object.freeze({ V3_SWORD_GEOMETRY_DEFINITION });
+})();
+
+// src/character/procedural-v3-longsword.js
+const __actionStudioModule12 = (() => {
+const { WEAPON_SOCKET_ID } = __actionStudioModule3;
+const { V3_SWORD_GEOMETRY_DEFINITION } = __actionStudioModule13;
+
+const V3_LONGSWORD_REQUIRED_NODE_IDS = Object.freeze([
+  'weapon.root',
+  'pommel',
+  'grip',
+  'secondary_grip',
+  'guard',
+  'guard.l',
+  'guard.r',
+  'blade.root',
+  'blade.mid',
+  'parry.point',
+  'blade.tip',
+]);
+
+const V3_LONGSWORD_DEFINITION = Object.freeze({
+  format: 'procedural-weapon-rig',
+  version: 2,
+  id: 'v3_procedural_longsword',
+  weaponType: 'longsword',
+  sourceGeometryId: V3_SWORD_GEOMETRY_DEFINITION.id,
+  nodes: V3_SWORD_GEOMETRY_DEFINITION.rigNodes,
+});
+
+const DEFAULT_V3_LONGSWORD_STYLE = Object.freeze({
+  outlineColor: 0xf7fbff,
+  skeletonColor: 0x96e8ff,
+  glowColor: 0x39c7ff,
+  jointColor: 0xffdd7d,
+  outlineOpacity: 0.98,
+  skeletonOpacity: 0.95,
+  glowOpacity: 0.22,
+  jointOpacity: 0.88,
+  jointRadius: 0.026,
+});
+
+const SKELETON_LINKS = Object.freeze([
+  ['pommel', 'weapon.root'],
+  ['weapon.root', 'grip'],
+  ['grip', 'secondary_grip'],
+  ['grip', 'guard'],
+  ['guard', 'guard.l'],
+  ['guard', 'guard.r'],
+  ['guard', 'blade.root'],
+  ['blade.root', 'blade.mid'],
+  ['blade.mid', 'parry.point'],
+  ['blade.mid', 'blade.tip'],
+]);
+
+const JOINT_NODE_IDS = Object.freeze([
+  'pommel', 'grip', 'secondary_grip', 'guard', 'guard.l', 'guard.r',
+  'blade.root', 'blade.mid', 'parry.point', 'blade.tip',
+]);
+
+function finitePositive(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function finiteOpacity(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : fallback;
+}
+
+function createV3LongswordStyle(input = {}) {
+  return {
+    ...DEFAULT_V3_LONGSWORD_STYLE,
+    ...input,
+    outlineOpacity: finiteOpacity(input.outlineOpacity, DEFAULT_V3_LONGSWORD_STYLE.outlineOpacity),
+    skeletonOpacity: finiteOpacity(input.skeletonOpacity, DEFAULT_V3_LONGSWORD_STYLE.skeletonOpacity),
+    glowOpacity: finiteOpacity(input.glowOpacity, DEFAULT_V3_LONGSWORD_STYLE.glowOpacity),
+    jointOpacity: finiteOpacity(input.jointOpacity, DEFAULT_V3_LONGSWORD_STYLE.jointOpacity),
+    jointRadius: finitePositive(input.jointRadius, DEFAULT_V3_LONGSWORD_STYLE.jointRadius),
+  };
+}
+
+function validateV3LongswordDefinition(definition = V3_LONGSWORD_DEFINITION) {
+  if (definition?.format !== 'procedural-weapon-rig') throw new Error('Invalid procedural weapon rig format');
+  if (definition.sourceGeometryId !== V3_SWORD_GEOMETRY_DEFINITION.id) {
+    throw new Error('V3 longsword source geometry does not match the extracted v3 weapon');
+  }
+  const ids = new Set();
+  for (const node of definition.nodes || []) {
+    if (!node?.id || ids.has(node.id)) throw new Error('Invalid or duplicate weapon node: ' + node?.id);
+    if (node.parent && !ids.has(node.parent)) throw new Error('Weapon node ' + node.id + ' appears before ' + node.parent);
+    ids.add(node.id);
+  }
+  const missing = V3_LONGSWORD_REQUIRED_NODE_IDS.filter((id) => !ids.has(id));
+  if (missing.length) throw new Error('V3 longsword rig is missing nodes: ' + missing.join(', '));
+  return definition;
+}
+
+function createWeaponHierarchy(THREE, definition) {
+  const object3d = new THREE.Group();
+  object3d.name = 'V3_PROCEDURAL_LONGSWORD';
+  object3d.userData.weaponType = definition.weaponType;
+  object3d.userData.weaponRigId = definition.id;
+  object3d.userData.sourceGeometryId = definition.sourceGeometryId;
+  object3d.userData.procedural = true;
+  object3d.userData.renderStyle = 'v3-rig-line';
+  const bones = {};
+  for (const node of definition.nodes) {
+    const bone = new THREE.Bone();
+    bone.name = node.id;
+    bone.position.fromArray(node.position);
+    bone.userData.weaponNodeId = node.id;
+    (node.parent ? bones[node.parent] : object3d).add(bone);
+    bones[node.id] = bone;
+  }
+  return { object3d, bones: Object.freeze(bones) };
+}
+
+function lineMaterial(THREE, color, opacity, glow = false) {
+  const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+  if (glow && THREE.AdditiveBlending != null) material.blending = THREE.AdditiveBlending;
+  return material;
+}
+
+function makeSegments(THREE, segmentCount, color, opacity, name, glow = false) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segmentCount * 2 * 3), 3));
+  const line = new THREE.LineSegments(geometry, lineMaterial(THREE, color, opacity, glow));
+  line.name = name;
+  line.frustumCulled = false;
+  line.userData.appearanceRole = glow ? 'weapon-glow' : 'weapon-line';
+  return line;
+}
+
+function createExactV3Outline(THREE, style) {
+  const sourceGeometry = new THREE.BufferGeometry();
+  sourceGeometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array(V3_SWORD_GEOMETRY_DEFINITION.positions), 3),
+  );
+  sourceGeometry.setIndex(
+    new THREE.BufferAttribute(new Uint16Array(V3_SWORD_GEOMETRY_DEFINITION.indices), 1),
+  );
+  const edgeGeometry = new THREE.EdgesGeometry(sourceGeometry, 1);
+  sourceGeometry.dispose();
+  const line = new THREE.LineSegments(
+    edgeGeometry,
+    lineMaterial(THREE, style.outlineColor, style.outlineOpacity),
+  );
+  line.name = 'V3_WEAPON_OUTLINE';
+  line.frustumCulled = false;
+  line.userData.appearanceRole = 'weapon-line';
+  line.userData.exactV3Source = true;
+  line.userData.sourceGeometryId = V3_SWORD_GEOMETRY_DEFINITION.id;
+  line.userData.sourceVertexCount = V3_SWORD_GEOMETRY_DEFINITION.vertexCount;
+  line.userData.sourceTriangleCount = V3_SWORD_GEOMETRY_DEFINITION.triangleCount;
+  return line;
+}
+
+function setPoint(attribute, index, point) {
+  attribute.setXYZ(index, point.x, point.y, point.z);
+}
+
+function writeSegments(line, segments) {
+  const attribute = line.geometry.attributes.position;
+  if (segments.length * 2 !== attribute.count) {
+    throw new Error(line.name + ' expected ' + attribute.count / 2 + ' segments, received ' + segments.length);
+  }
+  segments.forEach(([start, end], index) => {
+    setPoint(attribute, index * 2, start);
+    setPoint(attribute, index * 2 + 1, end);
+  });
+  attribute.needsUpdate = true;
+}
+
+function createJointNode(THREE, bone, style) {
+  const node = new THREE.Mesh(
+    new THREE.SphereGeometry(style.jointRadius, 8, 6),
+    new THREE.MeshBasicMaterial({
+      color: style.jointColor,
+      transparent: true,
+      opacity: style.jointOpacity,
+      depthWrite: false,
+    }),
+  );
+  node.name = 'WEAPON_NODE_' + bone.name;
+  node.userData.appearanceRole = 'weapon-node';
+  node.renderOrder = 3;
+  bone.add(node);
+  return node;
+}
+
+function canCreateProceduralV3Longsword(THREE) {
+  return Boolean(
+    THREE?.Group
+    && THREE?.Bone
+    && THREE?.Vector3
+    && THREE?.LineSegments
+    && THREE?.BufferGeometry
+    && THREE?.BufferAttribute
+    && THREE?.EdgesGeometry
+    && THREE?.LineBasicMaterial
+    && THREE?.Mesh
+    && THREE?.MeshBasicMaterial
+    && THREE?.SphereGeometry,
+  );
+}
+
+function createProceduralV3Longsword(THREE, options = {}) {
+  if (!canCreateProceduralV3Longsword(THREE)) {
+    throw new Error('Procedural v3 longsword requires a Three.js-compatible namespace');
+  }
+  const definition = validateV3LongswordDefinition(options.definition || V3_LONGSWORD_DEFINITION);
+  const style = createV3LongswordStyle(options.style);
+  const { object3d, bones } = createWeaponHierarchy(THREE, definition);
+  const skeletonLine = makeSegments(THREE, SKELETON_LINKS.length, style.skeletonColor, style.skeletonOpacity, 'V3_WEAPON_SKELETON');
+  const glowLine = makeSegments(THREE, SKELETON_LINKS.length, style.glowColor, style.glowOpacity, 'V3_WEAPON_GLOW', true);
+  const outlineLine = createExactV3Outline(THREE, style);
+  object3d.add(outlineLine, skeletonLine, glowLine);
+  const jointNodes = JOINT_NODE_IDS.map((nodeId) => createJointNode(THREE, bones[nodeId], style));
+  const localPoints = Object.fromEntries(V3_LONGSWORD_REQUIRED_NODE_IDS.map((nodeId) => [nodeId, new THREE.Vector3()]));
+  let nodesVisible = true;
+  let glowVisible = true;
+
+  function updateLocalPoints() {
+    object3d.updateMatrixWorld(true);
+    Object.entries(localPoints).forEach(([nodeId, point]) => {
+      bones[nodeId].getWorldPosition(point);
+      object3d.worldToLocal(point);
+    });
+  }
+
+  function updateSkeleton() {
+    const segments = SKELETON_LINKS.map(([startId, endId]) => [localPoints[startId], localPoints[endId]]);
+    writeSegments(skeletonLine, segments);
+    writeSegments(glowLine, segments);
+  }
+
+  function update() {
+    updateLocalPoints();
+    updateSkeleton();
+  }
+
+  update();
+  const sockets = Object.freeze({
+    PRIMARY_GRIP: bones['weapon.root'],
+    SECONDARY_GRIP: bones.secondary_grip,
+    PARRY_POINT: bones['parry.point'],
+    TRAIL_BASE: bones['blade.root'],
+    TRAIL_TIP: bones['blade.tip'],
+  });
+  return {
+    id: definition.id,
+    definition,
+    sourceGeometry: V3_SWORD_GEOMETRY_DEFINITION,
+    style,
+    object3d,
+    bones,
+    sockets,
+    jointNodes: Object.freeze(jointNodes),
+    lines: Object.freeze({ outline: outlineLine, skeleton: skeletonLine, glow: glowLine }),
+    blade: outlineLine,
+    bladeBase: bones['blade.root'],
+    bladeMid: bones['blade.mid'],
+    parryPoint: bones['parry.point'],
+    tip: bones['blade.tip'],
+    trailBase: bones['blade.root'],
+    trailTip: bones['blade.tip'],
+    secondaryGrip: bones.secondary_grip,
+    socketId: WEAPON_SOCKET_ID,
+    get nodesVisible() { return nodesVisible; },
+    get glowVisible() { return glowVisible; },
+    setNodesVisible(value) {
+      nodesVisible = value !== false;
+      jointNodes.forEach((node) => { node.visible = nodesVisible; });
+    },
+    setGlowVisible(value) {
+      glowVisible = value !== false;
+      glowLine.visible = glowVisible;
+    },
+    getSweepSegment(startTarget = new THREE.Vector3(), endTarget = new THREE.Vector3()) {
+      bones['blade.root'].getWorldPosition(startTarget);
+      bones['blade.tip'].getWorldPosition(endTarget);
+      return { start: startTarget, end: endTarget };
+    },
+    update,
+  };
+}
+return Object.freeze({ V3_LONGSWORD_REQUIRED_NODE_IDS, V3_LONGSWORD_DEFINITION, DEFAULT_V3_LONGSWORD_STYLE, createV3LongswordStyle, validateV3LongswordDefinition, canCreateProceduralV3Longsword, createProceduralV3Longsword });
 })();
 
 // src/character/debug-sword.js
-const __actionStudioModule8 = (() => {
-const { WEAPON_SOCKET_ID } = __actionStudioModule4;
+const __actionStudioModule11 = (() => {
+const { WEAPON_SOCKET_ID } = __actionStudioModule3;
+const { createProceduralV3Longsword } = __actionStudioModule12;
 
 const DEFAULT_SWORD_MOUNT = Object.freeze({
   position: Object.freeze({ x: 0, y: 0, z: 0 }),
@@ -583,35 +4016,11 @@ const DEFAULT_SWORD_MOUNT = Object.freeze({
   scale: Object.freeze({ x: 1, y: 1, z: 1 }),
 });
 
-function createDebugSword(THREE) {
-  const object3d = new THREE.Group();
-  object3d.name = 'DEBUG_SWORD';
-  object3d.userData.weaponType = 'debug-sword';
-
-  const bladeMaterial = new THREE.MeshStandardMaterial({
-    color: 0xcce9ff,
-    roughness: 0.22,
-    metalness: 0.82,
-    emissive: 0x102a44,
+function createDebugSword(THREE, options = {}) {
+  return createProceduralV3Longsword(THREE, {
+    definition: options.definition,
+    style: options.style,
   });
-  const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x161b2b, roughness: 0.8, metalness: 0.1 });
-  const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x55e6c1, roughness: 0.35, metalness: 0.55 });
-
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.34, 0.11), darkMaterial);
-  grip.position.y = -0.12;
-  object3d.add(grip);
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.08, 0.12), accentMaterial);
-  guard.position.y = -0.34;
-  object3d.add(guard);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.10, 0.065), bladeMaterial);
-  blade.position.y = -0.91;
-  object3d.add(blade);
-  const tip = new THREE.Group();
-  tip.name = 'DEBUG_SWORD_TIP';
-  tip.position.y = -1.48;
-  object3d.add(tip);
-
-  return { id: 'debug-sword', object3d, blade, tip, socketId: WEAPON_SOCKET_ID };
 }
 
 function mountDebugSword(character, weapon, calibration = DEFAULT_SWORD_MOUNT) {
@@ -621,9 +4030,19 @@ function mountDebugSword(character, weapon, calibration = DEFAULT_SWORD_MOUNT) {
 return Object.freeze({ DEFAULT_SWORD_MOUNT, createDebugSword, mountDebugSword });
 })();
 
+// src/character/default-character-mount.js
+const __actionStudioModule14 = (() => {
+const DEFAULT_KAYKIT_SWORD_MOUNT = Object.freeze({
+  position: Object.freeze({ x: 0, y: 0, z: 0 }),
+  rotation: Object.freeze({ x: 0, y: 0, z: Math.PI }),
+  scale: Object.freeze({ x: 1, y: 1, z: 1 }),
+});
+return Object.freeze({ DEFAULT_KAYKIT_SWORD_MOUNT });
+})();
+
 // src/animation/animation-clip.js
-const __actionStudioModule9 = (() => {
-const { normalizePose, evaluateEase, interpolatePose } = __actionStudioModule6;
+const __actionStudioModule15 = (() => {
+const { normalizePose, evaluateEase, interpolatePose } = __actionStudioModule8;
 
 const SUPPORTED_EASES = Object.freeze(['lin', 'in', 'out', 'in-out']);
 
@@ -773,8 +4192,8 @@ return Object.freeze({ SUPPORTED_EASES, normalizeTimeline, createAnimationClip, 
 })();
 
 // src/animation/clip-player.js
-const __actionStudioModule10 = (() => {
-const { evaluateClip } = __actionStudioModule9;
+const __actionStudioModule16 = (() => {
+const { evaluateClip } = __actionStudioModule15;
 
 class ClipPlayer {
   constructor(clip = null) {
@@ -830,7 +4249,7 @@ return Object.freeze({ ClipPlayer });
 })();
 
 // src/combat/action-definition.js
-const __actionStudioModule12 = (() => {
+const __actionStudioModule18 = (() => {
 const ACTION_WINDOW_TYPES = Object.freeze([
   'active',
   'cancel',
@@ -881,10 +4300,10 @@ return Object.freeze({ ACTION_WINDOW_TYPES, ACTION_AUTHORITY_NOTE, normalizeFram
 })();
 
 // src/animation/action-templates.js
-const __actionStudioModule11 = (() => {
-const { createAnimationClip } = __actionStudioModule9;
-const { normalizePose } = __actionStudioModule6;
-const { createActionDefinition } = __actionStudioModule12;
+const __actionStudioModule17 = (() => {
+const { createAnimationClip } = __actionStudioModule15;
+const { normalizePose } = __actionStudioModule8;
+const { createActionDefinition } = __actionStudioModule18;
 
 const T_POSE = Object.freeze(normalizePose({ aL_sz: 90, aR_sz: 90 }));
 
@@ -1035,9 +4454,9 @@ return Object.freeze({ T_POSE, IDLE_POSE, createTPoseTemplate, createIdleTemplat
 })();
 
 // src/animation/legacy-punch-import.js
-const __actionStudioModule13 = (() => {
-const { LEGACY_NON_HUMANOID_POSE_KEYS, POSE_KEYS } = __actionStudioModule7;
-const { createAnimationClip } = __actionStudioModule9;
+const __actionStudioModule19 = (() => {
+const { LEGACY_NON_HUMANOID_POSE_KEYS, POSE_KEYS } = __actionStudioModule9;
+const { createAnimationClip } = __actionStudioModule15;
 
 function importLegacyPunchSnapshot(snapshot = {}) {
   const phases = snapshot.phases || snapshot.PHASES || {};
@@ -1069,22 +4488,24 @@ return Object.freeze({ importLegacyPunchSnapshot });
 
 // tools/action-studio/action-studio.js
 const __actionStudioModule0 = (() => {
-const { createBlockCharacter } = __actionStudioModule1;
-const { createDebugSword, mountDebugSword, DEFAULT_SWORD_MOUNT } = __actionStudioModule8;
-const { applyMountCalibration, normalizeMountCalibration } = __actionStudioModule4;
-const { POSE_KEYS } = __actionStudioModule7;
-const { normalizePose } = __actionStudioModule6;
-const { createAnimationClip, clipMarkerSummary } = __actionStudioModule9;
-const { ClipPlayer } = __actionStudioModule10;
-const { ACTION_TEMPLATE_FACTORIES } = __actionStudioModule11;
-const { importLegacyPunchSnapshot } = __actionStudioModule13;
-const { ACTION_WINDOW_TYPES, createActionDefinition, isFrameInWindow } = __actionStudioModule12;
+const { createDefaultCharacter } = __actionStudioModule1;
+const { createDebugSword, mountDebugSword } = __actionStudioModule11;
+const { DEFAULT_KAYKIT_SWORD_MOUNT } = __actionStudioModule14;
+const { applyMountCalibration, normalizeMountCalibration } = __actionStudioModule3;
+const { POSE_KEYS } = __actionStudioModule9;
+const { normalizePose } = __actionStudioModule8;
+const { createAnimationClip, clipMarkerSummary } = __actionStudioModule15;
+const { ClipPlayer } = __actionStudioModule16;
+const { loadKayKitAnimationLibrary } = __actionStudioModule10;
+const { ACTION_TEMPLATE_FACTORIES } = __actionStudioModule17;
+const { importLegacyPunchSnapshot } = __actionStudioModule19;
+const { ACTION_WINDOW_TYPES, createActionDefinition, isFrameInWindow } = __actionStudioModule18;
 
 const THREE = window.THREE;
 if (!THREE) throw new Error('Action Studio requires Three.js r128');
 
 const LIBRARY_KEY = 'ACTION_STUDIO_CLIP_LIBRARY_V1';
-const MOUNT_KEY = 'ACTION_STUDIO_DEBUG_SWORD_MOUNT_V1';
+const MOUNT_KEY = 'ACTION_STUDIO_KAYKIT_SWORD_MOUNT_V2';
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -1116,7 +4537,7 @@ scene.add(rimLight);
 const grid = new THREE.GridHelper(18, 18, 0x33425f, 0x1b263a);
 scene.add(grid);
 
-const character = createBlockCharacter(THREE);
+const character = createDefaultCharacter(THREE);
 scene.add(character.object3d);
 const sword = createDebugSword(THREE);
 let mountCalibration = loadMountCalibration();
@@ -1131,6 +4552,8 @@ scene.add(weaponTrail);
 let trailPoints = [];
 
 const player = new ClipPlayer();
+let animationSource = 'authored';
+let kayKitLibrary = null;
 let clip = null;
 let action = null;
 let selectedKeyIndex = 0;
@@ -1175,9 +4598,9 @@ function createPreviewDummy() {
 function loadMountCalibration() {
   try {
     const stored = JSON.parse(localStorage.getItem(MOUNT_KEY) || 'null');
-    return normalizeMountCalibration(stored || DEFAULT_SWORD_MOUNT);
+    return normalizeMountCalibration(stored || DEFAULT_KAYKIT_SWORD_MOUNT);
   } catch {
-    return normalizeMountCalibration(DEFAULT_SWORD_MOUNT);
+    return normalizeMountCalibration(DEFAULT_KAYKIT_SWORD_MOUNT);
   }
 }
 
@@ -1196,6 +4619,8 @@ function currentProject() {
 }
 
 function setProject(project, options = {}) {
+  character.stopAnimation();
+  animationSource = 'authored';
   clip = createAnimationClip(project.clip || project);
   action = createActionDefinition(project.action || {
     id: clip.id,
@@ -1224,6 +4649,55 @@ function loadTemplate(id, autoplay = false) {
   const factory = ACTION_TEMPLATE_FACTORIES[id];
   if (!factory) return;
   setProject(factory(), { autoplay });
+}
+
+function setKayKitStatus(message, isError = false) {
+  const status = document.getElementById('kaykitStatus');
+  status.textContent = message;
+  status.classList.toggle('error', isError);
+}
+
+async function loadKayKitRuntime() {
+  if (kayKitLibrary) return kayKitLibrary;
+  if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
+  if (location.protocol === 'file:') {
+    throw new Error('KayKit GLB animation packs require the local HTTP server');
+  }
+  setKayKitStatus('Loading four animation packs…');
+  const loader = new THREE.GLTFLoader();
+  kayKitLibrary = await loadKayKitAnimationLibrary(loader, {
+    baseUrl: '../../assets/kaykit/animations/',
+  });
+  character.registerAnimations(kayKitLibrary);
+  const select = document.getElementById('kaykitClip');
+  select.innerHTML = '';
+  [...kayKitLibrary.clips.keys()].forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  });
+  select.value = 'Idle_A';
+  setKayKitStatus(
+    `ready · ${kayKitLibrary.clips.size} clips · ${Object.keys(character.rig.bones).length} procedural bones`,
+  );
+  return kayKitLibrary;
+}
+
+function shouldLoopKayKitClip(name) {
+  return /Idle|Walking|Running|Blocking|Crouching|Sneaking|Crawling/.test(name);
+}
+
+async function playSelectedKayKitClip() {
+  await loadKayKitRuntime();
+  const name = document.getElementById('kaykitClip').value;
+  player.pause();
+  clearWeaponTrail();
+  animationSource = 'kaykit';
+  character.playAnimation(name, { loop: shouldLoopKayKitClip(name), inPlace: true });
+  document.getElementById('clipNow').textContent = name.toUpperCase();
+  document.getElementById('phaseNow').textContent = 'KAYKIT RUNTIME';
+  updatePlaybackButtons();
 }
 
 function rebuildClip(selectedName, seekFrame) {
@@ -1452,7 +4926,7 @@ function clearWeaponTrail() {
 function recordWeaponTrail(frame) {
   if (!isFrameInWindow(action, 'weaponTrail', frame)) return;
   const point = new THREE.Vector3();
-  sword.tip.getWorldPosition(point);
+  sword.trailTip.getWorldPosition(point);
   if (!trailPoints.length || trailPoints[trailPoints.length - 1].distanceToSquared(point) > 0.0002) {
     trailPoints.push(point);
     if (trailPoints.length > 70) trailPoints.shift();
@@ -1618,6 +5092,32 @@ canvas.addEventListener('wheel', (event) => {
   placeCamera();
 }, { passive: false });
 
+function bindV3AppearanceToggle(buttonId, setter) {
+  const button = document.getElementById(buttonId);
+  button.addEventListener('click', () => {
+    const visible = !button.classList.contains('on');
+    button.classList.toggle('on', visible);
+    setter(visible);
+  });
+}
+
+bindV3AppearanceToggle('toggleRigNodes', (visible) => {
+  character.setRigNodesVisible(visible);
+  sword.setNodesVisible(visible);
+});
+bindV3AppearanceToggle('toggleRigGlow', (visible) => {
+  character.setRigGlowVisible(visible);
+  sword.setGlowVisible(visible);
+});
+
+document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
+  loadKayKitRuntime().catch((error) => setKayKitStatus(error.message, true));
+});
+document.getElementById('playKayKitAnimation').addEventListener('click', () => {
+  playSelectedKayKitClip().catch((error) => setKayKitStatus(error.message, true));
+});
+document.getElementById('stopKayKitAnimation').addEventListener('click', () => loadTemplate('idle'));
+
 document.getElementById('showTPose').addEventListener('click', () => loadTemplate('t_pose'));
 document.getElementById('showIdle').addEventListener('click', () => loadTemplate('idle'));
 document.getElementById('playSlash').addEventListener('click', () => loadTemplate('slash_test', true));
@@ -1723,7 +5223,7 @@ document.getElementById('saveMount').addEventListener('click', () => {
   document.getElementById('socketStatus').textContent = 'attached · saved';
 });
 document.getElementById('resetMount').addEventListener('click', () => {
-  mountCalibration = normalizeMountCalibration(DEFAULT_SWORD_MOUNT);
+  mountCalibration = normalizeMountCalibration(DEFAULT_KAYKIT_SWORD_MOUNT);
   applyMountCalibration(sword.object3d, mountCalibration);
   localStorage.removeItem(MOUNT_KEY);
   renderMountEditor();
@@ -1808,6 +5308,8 @@ function tick(now) {
     recordWeaponTrail(player.frame);
     if (!player.playing) updatePlaybackButtons();
   }
+  character.update(deltaSeconds, camera);
+  sword.update();
   updatePreviewEffects(deltaSeconds);
 
   let shakeX = 0;
@@ -1833,6 +5335,19 @@ window.__actionStudio = {
   get project() { return currentProject(); },
   get sockets() { return Object.keys(character.sockets); },
   get handRWeaponAttached() { return sword.object3d.parent === character.sockets.HAND_R; },
+  get characterRigId() { return character.rig.definition.id; },
+  get proceduralBoneCount() { return Object.keys(character.rig.bones).length; },
+  get weaponRigId() { return sword.definition.id; },
+  get weaponBoneCount() { return Object.keys(sword.bones).length; },
+  get weaponSockets() { return Object.keys(sword.sockets); },
+  get weaponSweepSegment() {
+    const { start, end } = sword.getSweepSegment();
+    return { start: start.toArray(), end: end.toArray() };
+  },
+  get animationSource() { return animationSource; },
+  get renderStyle() { return 'v3-rig-line'; },
+  loadKayKitRuntime,
+  playKayKitClip(name, options = {}) { animationSource = 'kaykit'; return character.playAnimation(name, options); },
   get legacyScriptsLoaded() {
     return [...document.scripts].map((script) => script.src).filter((src) => /\/ps\//.test(src));
   },

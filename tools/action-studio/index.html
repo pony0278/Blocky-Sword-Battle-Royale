@@ -3,16 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Action Studio · Block Character Action Authoring</title>
+  <title>Action Studio · Procedural Rig Action Authoring</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./action-studio.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div>
-      <p class="eyebrow">BLOCK CHARACTER ACTION AUTHORING</p>
+      <p class="eyebrow">PROCEDURAL RIG ACTION AUTHORING</p>
       <h1>ACTION <span>STUDIO</span></h1>
     </div>
     <div class="authority-badge"><b>Presentation layer</b><span>combat authority stays external</span></div>
@@ -47,6 +48,26 @@
           <button data-template="parry">Parry</button>
           <button data-template="counter">Counter</button>
         </div>
+      </section>
+
+      <section class="panel kaykit-runtime-panel">
+        <div class="panel-title"><span>Procedural Default Character</span><small>KayKit Rig_Medium · 23 generated bones</small></div>
+        <div class="kaykit-runtime-controls">
+          <button id="loadKayKitAnimations">Load 61 KayKit clips</button>
+          <select id="kaykitClip"><option>Idle_A</option></select>
+          <button id="playKayKitAnimation" class="primary">▶ Play KayKit</button>
+          <button id="stopKayKitAnimation">Back to Pose Editor</button>
+        </div>
+        <div id="kaykitStatus" class="status-line">procedural v3 rig line ready · animation packs not loaded</div>
+      </section>
+
+      <section class="panel character-style-panel">
+        <div class="panel-title"><span>V3 Rig Line Only</span><small>fully procedural avatar</small></div>
+        <div class="button-grid two">
+          <button id="toggleRigNodes" class="on">Joint Nodes</button>
+          <button id="toggleRigGlow" class="on">Glow Layer</button>
+        </div>
+        <div id="characterStyleStatus" class="status-line">avatar 18 nodes · weapon 10 nodes · exact v3 sword outline</div>
       </section>
 
       <section class="panel playback">
@@ -94,6 +115,7 @@
           <button id="saveMount" class="primary">Save calibration</button>
           <button id="resetMount">Reset</button>
         </div>
+        <div id="weaponRigStatus" class="status-line">exact v3 edges · 11 weapon bones · secondary grip · parry / trail points</div>
       </section>
 
       <section class="panel feel-panel">
@@ -126,7 +148,7 @@
 
       <section class="architecture-note">
         <b>Runtime boundary</b>
-        <span>Action State → Animation State → Clip Player → Pose → Block Rig → Weapon / VFX</span>
+        <span>Action State → KayKit Rig → V3 Line Avatar / HAND_R → V3 Weapon Rig → Trail / Sweep / VFX</span>
         <small>Network / Combat Simulation remains the authority for hit, block, parry and counter outcomes.</small>
       </section>
     </aside>
