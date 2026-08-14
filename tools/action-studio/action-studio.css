@@ -106,3 +106,13 @@ h1 span { color: var(--cyan); }
   .button-grid.four { grid-template-columns: 1fr 1fr; }
 }
 
+.kaykit-runtime-controls { display: grid; grid-template-columns: 1fr 1.3fr 1fr 1fr; gap: 7px; }
+.kaykit-runtime-controls select { min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: #111827; color: var(--text); padding: 8px; }
+.status-line.error { color: #ff9d9d; }
+@media (max-width: 900px) { .kaykit-runtime-controls { grid-template-columns: 1fr 1fr; } }
+
+.character-style-panel button.on {
+  border-color: #dff8ff;
+  color: #ffdd7d;
+  box-shadow: 0 0 16px rgba(57, 199, 255, .18), inset 0 0 0 1px rgba(150, 232, 255, .16);
+}

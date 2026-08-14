@@ -1,0 +1,97 @@
+{
+  "format": "kaykit-animation-manifest",
+  "version": 1,
+  "rigId": "kaykit_rig_medium",
+  "source": "tools/kaykit_combat_lab_v3_procedural_character_generator.html",
+  "packs": [
+    {
+      "id": "general",
+      "file": "animations/general.glb",
+      "byteLength": 828240,
+      "clips": [
+        "Death_A",
+        "Death_A_Pose",
+        "Death_B",
+        "Death_B_Pose",
+        "Hit_A",
+        "Hit_B",
+        "Idle_A",
+        "Idle_B",
+        "Interact",
+        "PickUp",
+        "Spawn_Air",
+        "Spawn_Ground",
+        "T-Pose",
+        "Throw",
+        "Use_Item"
+      ]
+    },
+    {
+      "id": "basic",
+      "file": "animations/basic.glb",
+      "byteLength": 689624,
+      "clips": [
+        "Jump_Full_Long",
+        "Jump_Full_Short",
+        "Jump_Idle",
+        "Jump_Land",
+        "Jump_Start",
+        "Running_A",
+        "Running_B",
+        "T-Pose",
+        "Walking_A",
+        "Walking_B",
+        "Walking_C"
+      ]
+    },
+    {
+      "id": "advanced",
+      "file": "animations/advanced.glb",
+      "byteLength": 719628,
+      "clips": [
+        "Crawling",
+        "Crouching",
+        "Dodge_Backward",
+        "Dodge_Forward",
+        "Dodge_Left",
+        "Dodge_Right",
+        "Running_HoldingBow",
+        "Running_HoldingRifle",
+        "Running_Strafe_Left",
+        "Running_Strafe_Right",
+        "Sneaking",
+        "T-Pose",
+        "Walking_Backwards"
+      ]
+    },
+    {
+      "id": "melee",
+      "file": "animations/melee.glb",
+      "byteLength": 999416,
+      "clips": [
+        "Melee_1H_Attack_Chop",
+        "Melee_1H_Attack_Jump_Chop",
+        "Melee_1H_Attack_Slice_Diagonal",
+        "Melee_1H_Attack_Slice_Horizontal",
+        "Melee_1H_Attack_Stab",
+        "Melee_2H_Attack_Chop",
+        "Melee_2H_Attack_Slice",
+        "Melee_2H_Attack_Spin",
+        "Melee_2H_Attack_Spinning",
+        "Melee_2H_Attack_Stab",
+        "Melee_2H_Idle",
+        "Melee_Block",
+        "Melee_Block_Attack",
+        "Melee_Block_Hit",
+        "Melee_Blocking",
+        "Melee_Dualwield_Attack_Chop",
+        "Melee_Dualwield_Attack_Slice",
+        "Melee_Dualwield_Attack_Stab",
+        "Melee_Unarmed_Attack_Kick",
+        "Melee_Unarmed_Attack_Punch_A",
+        "Melee_Unarmed_Idle",
+        "T-Pose"
+      ]
+    }
+  ]
+}
