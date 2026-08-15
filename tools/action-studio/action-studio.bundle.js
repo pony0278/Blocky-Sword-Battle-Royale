@@ -4453,18 +4453,22 @@ const MOTION_GUIDE_LEAD_FEET = Object.freeze(['L', 'R']);
 
 const DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE = Object.freeze({
   format: 'whole-body-motion-guide',
-  version: 2,
+  version: 3,
   preset: 'advancing_vertical_chop',
   leadFoot: 'L',
   stepDistance: 0.58,
   crouchDepth: 30,
   forwardLean: 16,
+  windupHeight: 1.45,
+  windupPullback: 0.2,
+  windupLoad: 0.85,
   plantFrame: 16,
   impactFrame: 19,
   durationFrames: 36,
   impactHeight: 1.18,
   cutPlaneOffset: 0,
   coupling: 0.85,
+  windupTarget: true,
   footLock: true,
   twoHandGrip: true,
   secondaryGripWeight: 1,
@@ -4498,18 +4502,22 @@ function normalizeMotionGuide(input = {}) {
   ), 8, impactFrame - 1));
   return {
     format: 'whole-body-motion-guide',
-    version: 2,
+    version: 3,
     preset,
     leadFoot: MOTION_GUIDE_LEAD_FEET.includes(input.leadFoot) ? input.leadFoot : 'L',
     stepDistance: clamp(finiteNumber(input.stepDistance, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.stepDistance), 0, 1.2),
     crouchDepth: clamp(finiteNumber(input.crouchDepth, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.crouchDepth), 0, 60),
     forwardLean: clamp(finiteNumber(input.forwardLean, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.forwardLean), 0, 40),
+    windupHeight: clamp(finiteNumber(input.windupHeight, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.windupHeight), 0.9, 2),
+    windupPullback: clamp(finiteNumber(input.windupPullback, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.windupPullback), 0, 0.5),
+    windupLoad: clamp(finiteNumber(input.windupLoad, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.windupLoad), 0, 1),
     plantFrame,
     impactFrame,
     durationFrames,
     impactHeight: clamp(finiteNumber(input.impactHeight, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.impactHeight), 0.5, 2),
     cutPlaneOffset: clamp(finiteNumber(input.cutPlaneOffset, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.cutPlaneOffset), -35, 35),
     coupling: clamp(finiteNumber(input.coupling, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.coupling), 0, 1),
+    windupTarget: input.windupTarget !== false,
     footLock: input.footLock !== false,
     twoHandGrip: input.twoHandGrip !== false,
     secondaryGripWeight: clamp(finiteNumber(
@@ -4536,6 +4544,10 @@ const __actionStudioModule22 = (() => {
 const { createAnimationClip } = __actionStudioModule16;
 const { normalizeMotionGuide } = __actionStudioModule21;
 const { normalizePose } = __actionStudioModule9;
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
 
 function withLegs(pose, leadFoot, values) {
   const lead = leadFoot === 'L' ? 'lL' : 'lR';
@@ -4610,6 +4622,9 @@ function bakeAdvancingVerticalChopClip(guideInput = {}) {
   const step = guide.stepDistance;
   const lean = guide.forwardLean;
   const crouch = guide.crouchDepth;
+  const windupHeight = clamp01((guide.windupHeight - 0.95) / 1.2);
+  const windupPullback = clamp01(guide.windupPullback / 0.65);
+  const windupCoupling = c * guide.windupLoad;
   const ready = normalizePose({
     squat: 18,
     spine_x: 4,
@@ -4634,18 +4649,18 @@ function bakeAdvancingVerticalChopClip(guideInput = {}) {
   });
   const windup = normalizePose(withLegs({
     ...ready,
-    root_pz: -step * 0.08 * c,
-    root_x: -lean * 0.35 * c,
-    squat: 18 + crouch * c,
-    spine_x: 4 - lean * 0.45 * c,
+    root_pz: -(step * 0.03 * windupCoupling + guide.windupPullback * 0.16 * windupCoupling),
+    root_x: -lean * (0.18 + windupPullback * 0.24) * windupCoupling,
+    squat: 18 + crouch * (0.58 + windupPullback * 0.34) * windupCoupling,
+    spine_x: 4 - lean * (0.42 + windupPullback * 0.42) * windupCoupling,
     pelvis_y: -plane * 0.12 * c,
-    head_x: 2 + lean * 0.32 * c,
+    head_x: 2 + lean * 0.3 * windupCoupling,
     head_y: plane * 0.12 * c,
-    aR_sx: -154,
-    aR_sy: -8 + plane * 0.35,
-    aR_sz: 6,
-    aR_ex: 66,
-    aR_wx: -22,
+    aR_sx: -118 - 48 * windupHeight - 16 * windupPullback,
+    aR_sy: -8 + plane * 0.35 - windupPullback * 4,
+    aR_sz: 6 + windupPullback * 6,
+    aR_ex: 82 - windupHeight * 15 - windupPullback * 10,
+    aR_wx: -16 - windupHeight * 16 - windupPullback * 8,
     aR_wy: 8,
     aL_sx: -50 - 18 * c,
     aL_sy: 16 - plane * 0.2,
@@ -5290,6 +5305,7 @@ const { normalizeMotionGuide } = __actionStudioModule21;
 
 const GUIDE_COLORS = Object.freeze({
   hand: 0xffc857,
+  windup: 0xff985c,
   head: 0x59d8ff,
   body: 0xff72a6,
   foot: 0x65e6a5,
@@ -5362,10 +5378,12 @@ function createWholeBodyMotionGuideOverlay(THREE, {
     impactTarget: createMarker(THREE, 'GUIDE_IMPACT_TARGET', GUIDE_COLORS.hand, 0.09, true, 'impact'),
     comTarget: createMarker(THREE, 'GUIDE_COM_TARGET', GUIDE_COLORS.body, 0.075, true, 'com'),
     plantTarget: createMarker(THREE, 'GUIDE_PLANT_TARGET', GUIDE_COLORS.foot, 0.08, true, 'plant'),
+    windupTarget: createMarker(THREE, 'GUIDE_WINDUP_TARGET', GUIDE_COLORS.windup, 0.085, true, 'windup'),
   };
   markers.comTarget.rotation.y = Math.PI / 2;
   markers.plantTarget.rotation.x = Math.PI / 2;
-  const draggableMarkers = [markers.impactTarget, markers.comTarget, markers.plantTarget];
+  markers.windupTarget.rotation.y = Math.PI / 2;
+  const draggableMarkers = [markers.windupTarget, markers.impactTarget, markers.comTarget, markers.plantTarget];
 
   const links = {
     headBody: createLink(THREE, 'GUIDE_HEAD_BODY_LINK', GUIDE_COLORS.linkage, 0.32),
@@ -5374,6 +5392,7 @@ function createWholeBodyMotionGuideOverlay(THREE, {
     bodyFootR: createLink(THREE, 'GUIDE_BODY_FOOT_R_LINK', GUIDE_COLORS.linkage, 0.26),
     headTarget: createLink(THREE, 'GUIDE_HEAD_TARGET_LINK', GUIDE_COLORS.head),
     handTarget: createLink(THREE, 'GUIDE_HAND_TARGET_LINK', GUIDE_COLORS.hand, 0.72),
+    handWindup: createLink(THREE, 'GUIDE_HAND_WINDUP_LINK', GUIDE_COLORS.windup, 0.78),
     bodyTarget: createLink(THREE, 'GUIDE_BODY_TARGET_LINK', GUIDE_COLORS.body),
     footTarget: createLink(THREE, 'GUIDE_FOOT_TARGET_LINK', GUIDE_COLORS.foot, 0.72),
     offHandGrip: createLink(THREE, 'GUIDE_OFF_HAND_GRIP_LINK', GUIDE_COLORS.grip, 0.82),
@@ -5383,7 +5402,7 @@ function createWholeBodyMotionGuideOverlay(THREE, {
 
   const points = Object.fromEntries([
     'origin', 'head', 'hand', 'offHand', 'secondaryGrip', 'hips', 'chest',
-    'footL', 'footR', 'impact', 'com', 'plant',
+    'footL', 'footR', 'windup', 'impact', 'com', 'plant',
   ].map((key) => [key, new THREE.Vector3()]));
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -5394,7 +5413,7 @@ function createWholeBodyMotionGuideOverlay(THREE, {
   let onGuideChange = null;
   let dragging = null;
   let hovered = null;
-  const diagnostics = { secondaryGripError: 0, draggingTarget: '' };
+  const diagnostics = { windupTargetError: 0, secondaryGripError: 0, draggingTarget: '' };
 
   function setGuide(nextGuide) {
     guide = nextGuide ? normalizeMotionGuide(nextGuide) : null;
@@ -5403,6 +5422,11 @@ function createWholeBodyMotionGuideOverlay(THREE, {
 
   function updateTargetPoints() {
     const planeX = guide.cutPlaneOffset * 0.008;
+    points.windup.copy(points.origin).add(new THREE.Vector3(
+      planeX,
+      guide.windupHeight,
+      -guide.windupPullback,
+    ));
     points.impact.copy(points.origin).add(new THREE.Vector3(
       planeX,
       guide.impactHeight,
@@ -5442,6 +5466,7 @@ function createWholeBodyMotionGuideOverlay(THREE, {
     markers.hips.position.copy(points.hips);
     markers.footL.position.copy(points.footL);
     markers.footR.position.copy(points.footR);
+    markers.windupTarget.position.copy(points.windup);
     markers.impactTarget.position.copy(points.impact);
     markers.comTarget.position.copy(points.com);
     markers.plantTarget.position.copy(points.plant);
@@ -5452,14 +5477,18 @@ function createWholeBodyMotionGuideOverlay(THREE, {
     setLink(links.bodyFootR, points.hips, points.footR);
     setLink(links.headTarget, points.head, points.impact);
     setLink(links.handTarget, points.hand, points.impact);
+    setLink(links.handWindup, points.hand, points.windup);
     setLink(links.bodyTarget, points.hips, points.com);
     setLink(links.footTarget, guide.leadFoot === 'L' ? points.footL : points.footR, points.plant);
     setLink(links.offHandGrip, points.offHand, points.secondaryGrip);
+    diagnostics.windupTargetError = points.hand.distanceTo(points.windup);
     diagnostics.secondaryGripError = points.offHand.distanceTo(points.secondaryGrip);
     const showGrip = guide.twoHandGrip;
     markers.offHand.visible = showGrip;
     markers.secondaryGrip.visible = showGrip;
     links.offHandGrip.visible = showGrip;
+    markers.windupTarget.visible = guide.windupTarget;
+    links.handWindup.visible = guide.windupTarget;
   }
 
   function setPointer(event) {
@@ -5479,7 +5508,7 @@ function createWholeBodyMotionGuideOverlay(THREE, {
 
   function setDragPlane(target) {
     if (target === 'impact') planeNormal.set(0, 0, 1);
-    else if (target === 'com') planeNormal.set(1, 0, 0);
+    else if (target === 'com' || target === 'windup') planeNormal.set(1, 0, 0);
     else planeNormal.set(0, 1, 0);
     dragPlane.setFromNormalAndCoplanarPoint(planeNormal, markers[`${target}Target`].position);
   }
@@ -5488,7 +5517,10 @@ function createWholeBodyMotionGuideOverlay(THREE, {
     setPointer(event);
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
     const next = { ...guide };
-    if (dragging === 'impact') {
+    if (dragging === 'windup') {
+      next.windupHeight = dragPoint.y - points.origin.y;
+      next.windupPullback = points.origin.z - dragPoint.z;
+    } else if (dragging === 'impact') {
       next.impactHeight = dragPoint.y - points.origin.y;
       next.cutPlaneOffset = (dragPoint.x - points.origin.x) / 0.008;
     } else if (dragging === 'plant') {
@@ -5568,9 +5600,12 @@ const CONTROL_DEFINITIONS = Object.freeze([
   { key: 'stepDistance', label: 'Step distance', min: 0, max: 1.2, step: 0.01, suffix: 'm' },
   { key: 'crouchDepth', label: 'Crouch depth', min: 0, max: 60, step: 1, suffix: '°' },
   { key: 'forwardLean', label: 'Forward lean', min: 0, max: 40, step: 1, suffix: '°' },
+  { key: 'windupHeight', label: 'Windup height', min: 0.9, max: 2, step: 0.01, suffix: 'm' },
+  { key: 'windupPullback', label: 'Windup pullback', min: 0, max: 0.5, step: 0.01, suffix: 'm' },
+  { key: 'windupLoad', label: 'Windup body load', min: 0, max: 1, step: 0.01, suffix: '' },
   { key: 'impactHeight', label: 'Impact height', min: 0.5, max: 2, step: 0.01, suffix: 'm' },
   { key: 'cutPlaneOffset', label: 'Cut-plane offset', min: -35, max: 35, step: 1, suffix: '°' },
-  { key: 'coupling', label: 'Whole-body coupling', min: 0, max: 1, step: 0.01, suffix: '' },
+  { key: 'coupling', label: 'Readability coupling', min: 0, max: 1, step: 0.01, suffix: '' },
   { key: 'secondaryGripWeight', label: 'Off-hand grip weight', min: 0, max: 1, step: 0.01, suffix: '' },
 ]);
 
@@ -5587,7 +5622,10 @@ function renderSlider(definition, guide) {
 }
 
 function constraintSummary(guide, report) {
-  const parts = [guide.footLock ? 'Lead foot locked' : 'Foot lock off'];
+  const parts = [];
+  if (guide.windupTarget && report?.windupTarget) parts.push(`Windup ${Math.round(report.windupAfterError * 100)}cm`);
+  else parts.push(guide.windupTarget ? 'Windup pending bake' : 'Windup fit off');
+  parts.push(guide.footLock ? 'Lead foot locked' : 'Foot lock off');
   if (guide.twoHandGrip && report?.twoHandGrip) parts.push(`2H grip ${Math.round(report.afterError * 100)}cm avg`);
   else parts.push(guide.twoHandGrip ? '2H grip pending bake' : 'Single-hand mode');
   return parts.join(' · ');
@@ -5667,11 +5705,12 @@ function createStudioMotionGuideEditor({
 
   function renderActive() {
     host.innerHTML = `<div class="motion-guide-legend" aria-label="Motion guide legend">
-        <span><i class="guide-hand"></i>Sword / impact</span><span><i class="guide-head"></i>Head / gaze</span>
+        <span><i class="guide-windup"></i>Windup / load</span><span><i class="guide-hand"></i>Sword / impact</span>
+        <span><i class="guide-head"></i>Head / gaze</span>
         <span><i class="guide-body"></i>Center of mass</span><span><i class="guide-foot"></i>Lead-foot plant</span>
         <span><i class="guide-grip"></i>Off-hand grip</span>
       </div>
-      <p class="motion-guide-drag-hint">Drag the yellow, pink, or green target ring in the stage. Drag empty space to orbit.</p>
+      <p class="motion-guide-drag-hint">Drag the orange windup ring to stage the overhead load. Yellow, pink, and green control impact, center of mass, and foot plant.</p>
       <div class="motion-guide-grid">
         <label class="motion-guide-select"><span>Lead foot</span><select id="motionLeadFoot"><option value="L"${guide.leadFoot === 'L' ? ' selected' : ''}>Left</option><option value="R"${guide.leadFoot === 'R' ? ' selected' : ''}>Right</option></select></label>
         <label class="motion-guide-number"><span>Plant frame</span><input data-guide-key="plantFrame" type="number" min="8" max="${guide.impactFrame - 1}" step="1" value="${guide.plantFrame}"></label>
@@ -5680,6 +5719,7 @@ function createStudioMotionGuideEditor({
         ${CONTROL_DEFINITIONS.map((definition) => renderSlider(definition, guide)).join('')}
       </div>
       <div class="motion-guide-toggles">
+        <label class="check"><input data-guide-key="windupTarget" type="checkbox"${guide.windupTarget ? ' checked' : ''}> Fit sword hand to windup target</label>
         <label class="check"><input data-guide-key="footLock" type="checkbox"${guide.footLock ? ' checked' : ''}> Lock lead foot from plant through follow-through</label>
         <label class="check"><input data-guide-key="twoHandGrip" type="checkbox"${guide.twoHandGrip ? ' checked' : ''}> Fit off-hand to sword secondary grip</label>
         <label class="check"><input data-guide-key="visible" type="checkbox"${guide.visible ? ' checked' : ''}> Show linked targets in the stage</label>
@@ -5700,7 +5740,7 @@ function createStudioMotionGuideEditor({
       renderActive();
     });
     document.getElementById('bakeVerticalChop').addEventListener('click', () => {
-      bakeCurrentGuide(getFrame(), 'Whole-body targets, foot lock, and grip constraint baked into Pose Keys.');
+      bakeCurrentGuide(getFrame(), 'Windup load, whole-body targets, foot lock, and grip constraint baked into Pose Keys.');
     });
   }
 
@@ -5715,7 +5755,13 @@ function createStudioMotionGuideEditor({
   }
 
   overlay.setGuideChangeHandler((nextGuide, details) => {
-    const label = details.target === 'plant' ? 'Plant target' : details.target === 'impact' ? 'Impact target' : 'Center-of-mass target';
+    const label = details.target === 'windup'
+      ? 'Windup target'
+      : details.target === 'plant'
+        ? 'Plant target'
+        : details.target === 'impact'
+          ? 'Impact target'
+          : 'Center-of-mass target';
     acceptGuide(nextGuide, `${label} moved · Bake Pose Keys to apply`);
   });
 
@@ -5735,6 +5781,23 @@ const { createAnimationClip } = __actionStudioModule16;
 const { normalizeMotionGuide } = __actionStudioModule21;
 const { normalizePose } = __actionStudioModule9;
 
+const WINDUP_HAND_POSE_KEYS = Object.freeze([
+  ['root_pz', -0.32, 0.08, 0.07],
+  ['root_x', -25, 12, 5],
+  ['spine_x', -30, 18, 5],
+  ['squat', 8, 60, 5],
+  ['aR_sx', -180, 80, 24],
+  ['aR_sy', -140, 140, 24],
+  ['aR_sz', -110, 110, 20],
+  ['aR_ex', -15, 165, 22],
+  ['aR_wx', -120, 120, 18],
+  ['aR_wy', -120, 120, 18],
+  ['aR_wz', -120, 120, 18],
+  ['aR_stretch', 0.72, 1.55, 0.12],
+]);
+
+const WINDUP_BODY_POSE_KEYS = new Set(['root_pz', 'root_x', 'spine_x', 'squat']);
+
 const SECONDARY_GRIP_POSE_KEYS = Object.freeze([
   ['aL_sx', -180, 80, 24],
   ['aL_sy', -140, 140, 24],
@@ -5750,28 +5813,22 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function evaluateGripDistance(character, sword, pose, leftPoint, gripPoint) {
-  character.applyPose(pose);
-  character.object3d.updateMatrixWorld(true);
-  sword.object3d.updateMatrixWorld(true);
-  character.rig.bones['handslot.l'].getWorldPosition(leftPoint);
-  sword.secondaryGrip.getWorldPosition(gripPoint);
-  return leftPoint.distanceTo(gripPoint);
-}
-
-function refineGripPose(character, sword, seedPose, points) {
+function refinePose(seedPose, poseKeys, evaluate) {
   const candidate = { ...seedPose };
-  let bestError = evaluateGripDistance(character, sword, candidate, points.left, points.grip);
+  poseKeys.forEach(([key, min, max]) => {
+    candidate[key] = clamp(candidate[key], min, max);
+  });
+  let bestError = evaluate(candidate);
   let stepScale = 1;
 
   for (let pass = 0; pass < 8; pass += 1) {
-    for (const [key, min, max, baseStep] of SECONDARY_GRIP_POSE_KEYS) {
+    for (const [key, min, max, baseStep] of poseKeys) {
       const startValue = candidate[key];
       let axisValue = startValue;
       let axisError = bestError;
       for (const direction of [-1, 1]) {
         candidate[key] = clamp(startValue + direction * baseStep * stepScale, min, max);
-        const error = evaluateGripDistance(character, sword, candidate, points.left, points.grip);
+        const error = evaluate(candidate);
         if (error < axisError) {
           axisError = error;
           axisValue = candidate[key];
@@ -5783,6 +5840,37 @@ function refineGripPose(character, sword, seedPose, points) {
     stepScale *= 0.56;
   }
   return { pose: candidate, error: bestError };
+}
+
+function optimizePose(sourcePose, weight, poseKeys, seeds, evaluate, keyWeight = null) {
+  const original = normalizePose(sourcePose);
+  const beforeError = evaluate(original);
+  const fitted = seeds(original)
+    .map((seed) => refinePose(seed, poseKeys, evaluate))
+    .reduce((best, result) => (result.error < best.error ? result : best));
+  const constrained = { ...original };
+  poseKeys.forEach(([key]) => {
+    const axisWeight = weight * (keyWeight ? keyWeight(key) : 1);
+    constrained[key] = original[key] + (fitted.pose[key] - original[key]) * axisWeight;
+  });
+  const afterError = evaluate(constrained);
+  return { pose: normalizePose(constrained), beforeError, afterError };
+}
+
+function evaluateGripDistance(character, sword, pose, leftPoint, gripPoint) {
+  character.applyPose(pose);
+  character.object3d.updateMatrixWorld(true);
+  sword.object3d.updateMatrixWorld(true);
+  character.rig.bones['handslot.l'].getWorldPosition(leftPoint);
+  sword.secondaryGrip.getWorldPosition(gripPoint);
+  return leftPoint.distanceTo(gripPoint);
+}
+
+function evaluateWindupDistance(character, pose, targetPoint, handPoint) {
+  character.applyPose(pose);
+  character.object3d.updateMatrixWorld(true);
+  character.rig.bones['handslot.r'].getWorldPosition(handPoint);
+  return handPoint.distanceTo(targetPoint);
 }
 
 function gripSeeds(original) {
@@ -5804,60 +5892,91 @@ function gripSeeds(original) {
   ];
 }
 
-function optimizePose(character, sword, sourcePose, weight, points) {
-  const original = normalizePose(sourcePose);
-  const beforeError = evaluateGripDistance(character, sword, original, points.left, points.grip);
-  const fitted = gripSeeds(original)
-    .map((seed) => refineGripPose(character, sword, seed, points))
-    .reduce((best, result) => (result.error < best.error ? result : best));
+function windupSeeds(original) {
+  return [
+    original,
+    { ...original, aR_sx: -164, aR_sy: -12, aR_sz: 10, aR_ex: 62, aR_wx: -26, aR_stretch: 1.08 },
+    { ...original, aR_sx: -142, aR_sy: -34, aR_sz: 22, aR_ex: 88, aR_wx: -38, aR_stretch: 1.12 },
+  ];
+}
 
-  const constrained = { ...original };
-  SECONDARY_GRIP_POSE_KEYS.forEach(([key]) => {
-    constrained[key] = original[key] + (fitted.pose[key] - original[key]) * weight;
-  });
-  const afterError = evaluateGripDistance(character, sword, constrained, points.left, points.grip);
-  return { pose: normalizePose(constrained), beforeError, afterError };
+function setWindupTarget(character, guide, targetPoint) {
+  character.object3d.updateMatrixWorld(true);
+  targetPoint.set(
+    guide.cutPlaneOffset * 0.008,
+    guide.windupHeight,
+    -guide.windupPullback,
+  );
+  character.object3d.localToWorld(targetPoint);
 }
 
 function bakeStudioMotionConstraints(projectInput, { character, sword, guide: guideInput } = {}) {
   const project = JSON.parse(JSON.stringify(projectInput));
   const guide = normalizeMotionGuide(guideInput || project.clip?.metadata?.motionGuide);
-  if (!guide.twoHandGrip || guide.secondaryGripWeight <= 0 || !character?.rig || !sword?.secondaryGrip) {
-    return {
-      project,
-      report: { twoHandGrip: false, optimizedPoseCount: 0, beforeError: 0, afterError: 0 },
-    };
-  }
-
-  const Vector3 = character.object3d.position.constructor;
-  const points = { left: new Vector3(), grip: new Vector3() };
-  const errors = [];
-  for (const key of project.clip.timeline) {
-    const result = optimizePose(
-      character,
-      sword,
-      project.clip.poses[key.name],
-      guide.secondaryGripWeight,
-      points,
-    );
-    project.clip.poses[key.name] = result.pose;
-    errors.push({ name: key.name, beforeError: result.beforeError, afterError: result.afterError });
-  }
-
-  const average = (key) => errors.reduce((total, entry) => total + entry[key], 0) / Math.max(1, errors.length);
+  const hasRig = Boolean(character?.rig && project.clip?.poses && project.clip?.timeline);
+  const Vector3 = character?.object3d?.position?.constructor;
   const report = {
-    twoHandGrip: true,
-    optimizedPoseCount: errors.length,
-    beforeError: average('beforeError'),
-    afterError: average('afterError'),
-    maxError: Math.max(...errors.map((entry) => entry.afterError)),
-    poseErrors: errors,
+    windupTarget: false,
+    windupOptimizedPoseCount: 0,
+    windupBeforeError: 0,
+    windupAfterError: 0,
+    twoHandGrip: false,
+    optimizedPoseCount: 0,
+    beforeError: 0,
+    afterError: 0,
+    maxError: 0,
+    poseErrors: [],
   };
+
+  if (hasRig && Vector3 && guide.windupTarget && project.clip.poses.windup) {
+    const target = new Vector3();
+    const hand = new Vector3();
+    setWindupTarget(character, guide, target);
+    const evaluate = (pose) => evaluateWindupDistance(character, pose, target, hand);
+    const result = optimizePose(
+      project.clip.poses.windup,
+      1,
+      WINDUP_HAND_POSE_KEYS,
+      windupSeeds,
+      evaluate,
+      (key) => (WINDUP_BODY_POSE_KEYS.has(key) ? guide.windupLoad * guide.coupling : 1),
+    );
+    project.clip.poses.windup = result.pose;
+    report.windupTarget = true;
+    report.windupOptimizedPoseCount = 1;
+    report.windupBeforeError = result.beforeError;
+    report.windupAfterError = result.afterError;
+  }
+
+  if (hasRig && Vector3 && guide.twoHandGrip && guide.secondaryGripWeight > 0 && sword?.secondaryGrip) {
+    const points = { left: new Vector3(), grip: new Vector3() };
+    const errors = [];
+    for (const key of project.clip.timeline) {
+      const evaluate = (pose) => evaluateGripDistance(character, sword, pose, points.left, points.grip);
+      const result = optimizePose(
+        project.clip.poses[key.name],
+        guide.secondaryGripWeight,
+        SECONDARY_GRIP_POSE_KEYS,
+        gripSeeds,
+        evaluate,
+      );
+      project.clip.poses[key.name] = result.pose;
+      errors.push({ name: key.name, beforeError: result.beforeError, afterError: result.afterError });
+    }
+    const average = (key) => errors.reduce((total, entry) => total + entry[key], 0) / Math.max(1, errors.length);
+    report.twoHandGrip = true;
+    report.optimizedPoseCount = errors.length;
+    report.beforeError = average('beforeError');
+    report.afterError = average('afterError');
+    report.maxError = Math.max(...errors.map((entry) => entry.afterError));
+    report.poseErrors = errors;
+  }
+
   project.clip.metadata = { ...project.clip.metadata, motionGuide: guide, motionGuideBake: report };
   project.clip = createAnimationClip(project.clip);
   return { project, report };
 }
-return Object.freeze({ SECONDARY_GRIP_POSE_KEYS, bakeStudioMotionConstraints });
+return Object.freeze({ WINDUP_HAND_POSE_KEYS, SECONDARY_GRIP_POSE_KEYS, bakeStudioMotionConstraints });
 })();
 
 // tools/action-studio/studio-editor-view.js

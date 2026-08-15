@@ -39,6 +39,11 @@ test('Action Studio separates preview, project, and editor view responsibilities
   assert.match(motionOverlay, /WHOLE_BODY_MOTION_GUIDES/);
   assert.match(motionOverlay, /Raycaster/);
   assert.match(motionOverlay, /stage-drag/);
+  assert.match(motionOverlay, /GUIDE_WINDUP_TARGET/);
+  assert.match(motionOverlay, /windupPullback/);
+  assert.match(motionEditor, /Windup body load/);
+  assert.match(constraintBaker, /WINDUP_HAND_POSE_KEYS/);
+  assert.match(constraintBaker, /handslot\.r/);
   assert.match(constraintBaker, /SECONDARY_GRIP_POSE_KEYS/);
   assert.match(constraintBaker, /sword\.secondaryGrip/);
 });
@@ -54,7 +59,7 @@ test('Action Studio exposes explicit KayKit runtime controls and GLTFLoader', as
   assert.match(template, /id="clearAnimationBinding"/);
   assert.match(template, /id="wholeBodyMotionEditor"/);
   assert.match(template, /semantic guides → Pose Keys/);
-  assert.match(template, /拖曳彩色圓環調整目標/);
+  assert.match(template, /橘色圓環編排舉劍蓄力/);
   assert.match(template, /23 generated bones/);
   assert.match(template, /id="toggleRigNodes"/);
   assert.match(template, /id="toggleRigGlow"/);

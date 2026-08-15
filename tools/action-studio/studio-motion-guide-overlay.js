@@ -2,6 +2,7 @@ import { normalizeMotionGuide } from '../../src/animation/motion-guide-schema.js
 
 const GUIDE_COLORS = Object.freeze({
   hand: 0xffc857,
+  windup: 0xff985c,
   head: 0x59d8ff,
   body: 0xff72a6,
   foot: 0x65e6a5,
@@ -74,10 +75,12 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
     impactTarget: createMarker(THREE, 'GUIDE_IMPACT_TARGET', GUIDE_COLORS.hand, 0.09, true, 'impact'),
     comTarget: createMarker(THREE, 'GUIDE_COM_TARGET', GUIDE_COLORS.body, 0.075, true, 'com'),
     plantTarget: createMarker(THREE, 'GUIDE_PLANT_TARGET', GUIDE_COLORS.foot, 0.08, true, 'plant'),
+    windupTarget: createMarker(THREE, 'GUIDE_WINDUP_TARGET', GUIDE_COLORS.windup, 0.085, true, 'windup'),
   };
   markers.comTarget.rotation.y = Math.PI / 2;
   markers.plantTarget.rotation.x = Math.PI / 2;
-  const draggableMarkers = [markers.impactTarget, markers.comTarget, markers.plantTarget];
+  markers.windupTarget.rotation.y = Math.PI / 2;
+  const draggableMarkers = [markers.windupTarget, markers.impactTarget, markers.comTarget, markers.plantTarget];
 
   const links = {
     headBody: createLink(THREE, 'GUIDE_HEAD_BODY_LINK', GUIDE_COLORS.linkage, 0.32),
@@ -86,6 +89,7 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
     bodyFootR: createLink(THREE, 'GUIDE_BODY_FOOT_R_LINK', GUIDE_COLORS.linkage, 0.26),
     headTarget: createLink(THREE, 'GUIDE_HEAD_TARGET_LINK', GUIDE_COLORS.head),
     handTarget: createLink(THREE, 'GUIDE_HAND_TARGET_LINK', GUIDE_COLORS.hand, 0.72),
+    handWindup: createLink(THREE, 'GUIDE_HAND_WINDUP_LINK', GUIDE_COLORS.windup, 0.78),
     bodyTarget: createLink(THREE, 'GUIDE_BODY_TARGET_LINK', GUIDE_COLORS.body),
     footTarget: createLink(THREE, 'GUIDE_FOOT_TARGET_LINK', GUIDE_COLORS.foot, 0.72),
     offHandGrip: createLink(THREE, 'GUIDE_OFF_HAND_GRIP_LINK', GUIDE_COLORS.grip, 0.82),
@@ -95,7 +99,7 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
 
   const points = Object.fromEntries([
     'origin', 'head', 'hand', 'offHand', 'secondaryGrip', 'hips', 'chest',
-    'footL', 'footR', 'impact', 'com', 'plant',
+    'footL', 'footR', 'windup', 'impact', 'com', 'plant',
   ].map((key) => [key, new THREE.Vector3()]));
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -106,7 +110,7 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
   let onGuideChange = null;
   let dragging = null;
   let hovered = null;
-  const diagnostics = { secondaryGripError: 0, draggingTarget: '' };
+  const diagnostics = { windupTargetError: 0, secondaryGripError: 0, draggingTarget: '' };
 
   function setGuide(nextGuide) {
     guide = nextGuide ? normalizeMotionGuide(nextGuide) : null;
@@ -115,6 +119,11 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
 
   function updateTargetPoints() {
     const planeX = guide.cutPlaneOffset * 0.008;
+    points.windup.copy(points.origin).add(new THREE.Vector3(
+      planeX,
+      guide.windupHeight,
+      -guide.windupPullback,
+    ));
     points.impact.copy(points.origin).add(new THREE.Vector3(
       planeX,
       guide.impactHeight,
@@ -154,6 +163,7 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
     markers.hips.position.copy(points.hips);
     markers.footL.position.copy(points.footL);
     markers.footR.position.copy(points.footR);
+    markers.windupTarget.position.copy(points.windup);
     markers.impactTarget.position.copy(points.impact);
     markers.comTarget.position.copy(points.com);
     markers.plantTarget.position.copy(points.plant);
@@ -164,14 +174,18 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
     setLink(links.bodyFootR, points.hips, points.footR);
     setLink(links.headTarget, points.head, points.impact);
     setLink(links.handTarget, points.hand, points.impact);
+    setLink(links.handWindup, points.hand, points.windup);
     setLink(links.bodyTarget, points.hips, points.com);
     setLink(links.footTarget, guide.leadFoot === 'L' ? points.footL : points.footR, points.plant);
     setLink(links.offHandGrip, points.offHand, points.secondaryGrip);
+    diagnostics.windupTargetError = points.hand.distanceTo(points.windup);
     diagnostics.secondaryGripError = points.offHand.distanceTo(points.secondaryGrip);
     const showGrip = guide.twoHandGrip;
     markers.offHand.visible = showGrip;
     markers.secondaryGrip.visible = showGrip;
     links.offHandGrip.visible = showGrip;
+    markers.windupTarget.visible = guide.windupTarget;
+    links.handWindup.visible = guide.windupTarget;
   }
 
   function setPointer(event) {
@@ -191,7 +205,7 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
 
   function setDragPlane(target) {
     if (target === 'impact') planeNormal.set(0, 0, 1);
-    else if (target === 'com') planeNormal.set(1, 0, 0);
+    else if (target === 'com' || target === 'windup') planeNormal.set(1, 0, 0);
     else planeNormal.set(0, 1, 0);
     dragPlane.setFromNormalAndCoplanarPoint(planeNormal, markers[`${target}Target`].position);
   }
@@ -200,7 +214,10 @@ export function createWholeBodyMotionGuideOverlay(THREE, {
     setPointer(event);
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
     const next = { ...guide };
-    if (dragging === 'impact') {
+    if (dragging === 'windup') {
+      next.windupHeight = dragPoint.y - points.origin.y;
+      next.windupPullback = points.origin.z - dragPoint.z;
+    } else if (dragging === 'impact') {
       next.impactHeight = dragPoint.y - points.origin.y;
       next.cutPlaneOffset = (dragPoint.x - points.origin.x) / 0.008;
     } else if (dragging === 'plant') {

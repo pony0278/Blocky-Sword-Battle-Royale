@@ -9,9 +9,12 @@ const CONTROL_DEFINITIONS = Object.freeze([
   { key: 'stepDistance', label: 'Step distance', min: 0, max: 1.2, step: 0.01, suffix: 'm' },
   { key: 'crouchDepth', label: 'Crouch depth', min: 0, max: 60, step: 1, suffix: '°' },
   { key: 'forwardLean', label: 'Forward lean', min: 0, max: 40, step: 1, suffix: '°' },
+  { key: 'windupHeight', label: 'Windup height', min: 0.9, max: 2, step: 0.01, suffix: 'm' },
+  { key: 'windupPullback', label: 'Windup pullback', min: 0, max: 0.5, step: 0.01, suffix: 'm' },
+  { key: 'windupLoad', label: 'Windup body load', min: 0, max: 1, step: 0.01, suffix: '' },
   { key: 'impactHeight', label: 'Impact height', min: 0.5, max: 2, step: 0.01, suffix: 'm' },
   { key: 'cutPlaneOffset', label: 'Cut-plane offset', min: -35, max: 35, step: 1, suffix: '°' },
-  { key: 'coupling', label: 'Whole-body coupling', min: 0, max: 1, step: 0.01, suffix: '' },
+  { key: 'coupling', label: 'Readability coupling', min: 0, max: 1, step: 0.01, suffix: '' },
   { key: 'secondaryGripWeight', label: 'Off-hand grip weight', min: 0, max: 1, step: 0.01, suffix: '' },
 ]);
 
@@ -28,7 +31,10 @@ function renderSlider(definition, guide) {
 }
 
 function constraintSummary(guide, report) {
-  const parts = [guide.footLock ? 'Lead foot locked' : 'Foot lock off'];
+  const parts = [];
+  if (guide.windupTarget && report?.windupTarget) parts.push(`Windup ${Math.round(report.windupAfterError * 100)}cm`);
+  else parts.push(guide.windupTarget ? 'Windup pending bake' : 'Windup fit off');
+  parts.push(guide.footLock ? 'Lead foot locked' : 'Foot lock off');
   if (guide.twoHandGrip && report?.twoHandGrip) parts.push(`2H grip ${Math.round(report.afterError * 100)}cm avg`);
   else parts.push(guide.twoHandGrip ? '2H grip pending bake' : 'Single-hand mode');
   return parts.join(' · ');
@@ -108,11 +114,12 @@ export function createStudioMotionGuideEditor({
 
   function renderActive() {
     host.innerHTML = `<div class="motion-guide-legend" aria-label="Motion guide legend">
-        <span><i class="guide-hand"></i>Sword / impact</span><span><i class="guide-head"></i>Head / gaze</span>
+        <span><i class="guide-windup"></i>Windup / load</span><span><i class="guide-hand"></i>Sword / impact</span>
+        <span><i class="guide-head"></i>Head / gaze</span>
         <span><i class="guide-body"></i>Center of mass</span><span><i class="guide-foot"></i>Lead-foot plant</span>
         <span><i class="guide-grip"></i>Off-hand grip</span>
       </div>
-      <p class="motion-guide-drag-hint">Drag the yellow, pink, or green target ring in the stage. Drag empty space to orbit.</p>
+      <p class="motion-guide-drag-hint">Drag the orange windup ring to stage the overhead load. Yellow, pink, and green control impact, center of mass, and foot plant.</p>
       <div class="motion-guide-grid">
         <label class="motion-guide-select"><span>Lead foot</span><select id="motionLeadFoot"><option value="L"${guide.leadFoot === 'L' ? ' selected' : ''}>Left</option><option value="R"${guide.leadFoot === 'R' ? ' selected' : ''}>Right</option></select></label>
         <label class="motion-guide-number"><span>Plant frame</span><input data-guide-key="plantFrame" type="number" min="8" max="${guide.impactFrame - 1}" step="1" value="${guide.plantFrame}"></label>
@@ -121,6 +128,7 @@ export function createStudioMotionGuideEditor({
         ${CONTROL_DEFINITIONS.map((definition) => renderSlider(definition, guide)).join('')}
       </div>
       <div class="motion-guide-toggles">
+        <label class="check"><input data-guide-key="windupTarget" type="checkbox"${guide.windupTarget ? ' checked' : ''}> Fit sword hand to windup target</label>
         <label class="check"><input data-guide-key="footLock" type="checkbox"${guide.footLock ? ' checked' : ''}> Lock lead foot from plant through follow-through</label>
         <label class="check"><input data-guide-key="twoHandGrip" type="checkbox"${guide.twoHandGrip ? ' checked' : ''}> Fit off-hand to sword secondary grip</label>
         <label class="check"><input data-guide-key="visible" type="checkbox"${guide.visible ? ' checked' : ''}> Show linked targets in the stage</label>
@@ -141,7 +149,7 @@ export function createStudioMotionGuideEditor({
       renderActive();
     });
     document.getElementById('bakeVerticalChop').addEventListener('click', () => {
-      bakeCurrentGuide(getFrame(), 'Whole-body targets, foot lock, and grip constraint baked into Pose Keys.');
+      bakeCurrentGuide(getFrame(), 'Windup load, whole-body targets, foot lock, and grip constraint baked into Pose Keys.');
     });
   }
 
@@ -156,7 +164,13 @@ export function createStudioMotionGuideEditor({
   }
 
   overlay.setGuideChangeHandler((nextGuide, details) => {
-    const label = details.target === 'plant' ? 'Plant target' : details.target === 'impact' ? 'Impact target' : 'Center-of-mass target';
+    const label = details.target === 'windup'
+      ? 'Windup target'
+      : details.target === 'plant'
+        ? 'Plant target'
+        : details.target === 'impact'
+          ? 'Impact target'
+          : 'Center-of-mass target';
     acceptGuide(nextGuide, `${label} moved · Bake Pose Keys to apply`);
   });
 

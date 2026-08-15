@@ -19,19 +19,48 @@ test('whole-body motion guide normalizes timing and semantic controls', () => {
     impactFrame: 12,
     durationFrames: 28,
     coupling: -1,
+    windupHeight: 9,
+    windupPullback: 5,
+    windupLoad: -1,
+    windupTarget: false,
     footLock: false,
     twoHandGrip: false,
     secondaryGripWeight: 5,
   });
-  assert.equal(guide.version, 2);
+  assert.equal(guide.version, 3);
   assert.equal(guide.leadFoot, 'R');
   assert.equal(guide.stepDistance, 1.2);
   assert.equal(guide.impactFrame, 12);
   assert.equal(guide.plantFrame, 11);
   assert.equal(guide.coupling, 0);
+  assert.equal(guide.windupHeight, 2);
+  assert.equal(guide.windupPullback, 0.5);
+  assert.equal(guide.windupLoad, 0);
+  assert.equal(guide.windupTarget, false);
   assert.equal(guide.footLock, false);
   assert.equal(guide.twoHandGrip, false);
   assert.equal(guide.secondaryGripWeight, 1);
+});
+
+test('windup target height and pullback create a readable whole-body load', () => {
+  const neutral = bakeAdvancingVerticalChopClip({
+    coupling: 1,
+    windupHeight: 0.95,
+    windupPullback: 0,
+    windupLoad: 0,
+  });
+  const loaded = bakeAdvancingVerticalChopClip({
+    coupling: 1,
+    windupHeight: 2.2,
+    windupPullback: 0.6,
+    windupLoad: 1,
+  });
+  assert.ok(loaded.poses.windup.aR_sx < neutral.poses.windup.aR_sx, 'higher target should raise the sword arm');
+  assert.ok(loaded.poses.windup.root_pz < neutral.poses.windup.root_pz, 'pullback should shift the windup backward');
+  assert.ok(loaded.poses.windup.spine_x < neutral.poses.windup.spine_x, 'body load should lean the spine backward');
+  assert.ok(loaded.poses.windup.squat > neutral.poses.windup.squat, 'body load should deepen the anticipation');
+  assert.ok(Math.abs(neutral.poses.windup.root_pz) < 1e-9, 'zero body load should not shift the root backward');
+  assert.equal(loaded.poses.plant.root_pz, neutral.poses.plant.root_pz, 'windup staging should not move the planted strike');
 });
 
 test('advancing vertical chop coordinates hand, head, torso and feet', () => {

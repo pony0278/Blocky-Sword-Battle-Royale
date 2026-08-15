@@ -2,6 +2,10 @@ import { createAnimationClip } from './animation-clip.js';
 import { normalizeMotionGuide } from './motion-guide-schema.js';
 import { normalizePose } from './pose-utils.js';
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
 function withLegs(pose, leadFoot, values) {
   const lead = leadFoot === 'L' ? 'lL' : 'lR';
   const rear = leadFoot === 'L' ? 'lR' : 'lL';
@@ -75,6 +79,9 @@ export function bakeAdvancingVerticalChopClip(guideInput = {}) {
   const step = guide.stepDistance;
   const lean = guide.forwardLean;
   const crouch = guide.crouchDepth;
+  const windupHeight = clamp01((guide.windupHeight - 0.95) / 1.2);
+  const windupPullback = clamp01(guide.windupPullback / 0.65);
+  const windupCoupling = c * guide.windupLoad;
   const ready = normalizePose({
     squat: 18,
     spine_x: 4,
@@ -99,18 +106,18 @@ export function bakeAdvancingVerticalChopClip(guideInput = {}) {
   });
   const windup = normalizePose(withLegs({
     ...ready,
-    root_pz: -step * 0.08 * c,
-    root_x: -lean * 0.35 * c,
-    squat: 18 + crouch * c,
-    spine_x: 4 - lean * 0.45 * c,
+    root_pz: -(step * 0.03 * windupCoupling + guide.windupPullback * 0.16 * windupCoupling),
+    root_x: -lean * (0.18 + windupPullback * 0.24) * windupCoupling,
+    squat: 18 + crouch * (0.58 + windupPullback * 0.34) * windupCoupling,
+    spine_x: 4 - lean * (0.42 + windupPullback * 0.42) * windupCoupling,
     pelvis_y: -plane * 0.12 * c,
-    head_x: 2 + lean * 0.32 * c,
+    head_x: 2 + lean * 0.3 * windupCoupling,
     head_y: plane * 0.12 * c,
-    aR_sx: -154,
-    aR_sy: -8 + plane * 0.35,
-    aR_sz: 6,
-    aR_ex: 66,
-    aR_wx: -22,
+    aR_sx: -118 - 48 * windupHeight - 16 * windupPullback,
+    aR_sy: -8 + plane * 0.35 - windupPullback * 4,
+    aR_sz: 6 + windupPullback * 6,
+    aR_ex: 82 - windupHeight * 15 - windupPullback * 10,
+    aR_wx: -16 - windupHeight * 16 - windupPullback * 8,
     aR_wy: 8,
     aL_sx: -50 - 18 * c,
     aL_sy: 16 - plane * 0.2,
