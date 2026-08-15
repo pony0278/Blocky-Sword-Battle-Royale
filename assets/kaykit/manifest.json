@@ -92,6 +92,112 @@
         "Melee_Unarmed_Idle",
         "T-Pose"
       ]
+    },
+    {
+      "id": "ranged",
+      "file": "animations/ranged.glb",
+      "byteLength": 1014852,
+      "clips": [
+        "Ranged_1H_Aiming",
+        "Ranged_1H_Reload",
+        "Ranged_1H_Shoot",
+        "Ranged_1H_Shooting",
+        "Ranged_2H_Aiming",
+        "Ranged_2H_Reload",
+        "Ranged_2H_Shoot",
+        "Ranged_2H_Shooting",
+        "Ranged_Bow_Aiming_Idle",
+        "Ranged_Bow_Draw",
+        "Ranged_Bow_Draw_Up",
+        "Ranged_Bow_Idle",
+        "Ranged_Bow_Release",
+        "Ranged_Bow_Release_Up",
+        "Ranged_Magic_Raise",
+        "Ranged_Magic_Shoot",
+        "Ranged_Magic_Spellcasting",
+        "Ranged_Magic_Spellcasting_Long",
+        "Ranged_Magic_Summon",
+        "T-Pose"
+      ]
+    },
+    {
+      "id": "simulation",
+      "file": "animations/simulation.glb",
+      "byteLength": 855904,
+      "clips": [
+        "Cheering",
+        "Lie_Down",
+        "Lie_Idle",
+        "Lie_StandUp",
+        "Push_Ups",
+        "Sit_Chair_Down",
+        "Sit_Chair_Idle",
+        "Sit_Chair_StandUp",
+        "Sit_Floor_Down",
+        "Sit_Floor_Idle",
+        "Sit_Floor_StandUp",
+        "Sit_Ups",
+        "T-Pose",
+        "Waving"
+      ]
+    },
+    {
+      "id": "special",
+      "file": "animations/special.glb",
+      "byteLength": 924308,
+      "clips": [
+        "EXPERIMENTAL_Medium_Transform",
+        "Skeletons_Awaken_Floor",
+        "Skeletons_Awaken_Floor_Long",
+        "Skeletons_Awaken_Standing",
+        "Skeletons_Death",
+        "Skeletons_Death_Pose",
+        "Skeletons_Death_Resurrect",
+        "Skeletons_Idle",
+        "Skeletons_Inactive_Floor_Pose",
+        "Skeletons_Inactive_Standing_Pose",
+        "Skeletons_Spawn_Ground",
+        "Skeletons_Taunt",
+        "Skeletons_Taunt_Longer",
+        "Skeletons_Walking",
+        "T-Pose"
+      ]
+    },
+    {
+      "id": "tools",
+      "file": "animations/tools.glb",
+      "byteLength": 1461204,
+      "clips": [
+        "Chop",
+        "Chopping",
+        "Dig",
+        "Digging",
+        "Fishing_Bite",
+        "Fishing_Cast",
+        "Fishing_Catch",
+        "Fishing_Idle",
+        "Fishing_Reeling",
+        "Fishing_Struggling",
+        "Fishing_Tug",
+        "Hammer",
+        "Hammering",
+        "Holding_A",
+        "Holding_B",
+        "Holding_C",
+        "Lockpick",
+        "Lockpicking",
+        "Pickaxe",
+        "Pickaxing",
+        "Saw",
+        "Sawing",
+        "T-Pose",
+        "Work_A",
+        "Work_B",
+        "Work_C",
+        "Working_A",
+        "Working_B",
+        "Working_C"
+      ]
     }
   ]
 }

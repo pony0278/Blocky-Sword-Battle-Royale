@@ -10,7 +10,10 @@ import {
   validateKayKitRigDefinition,
 } from '../src/character/procedural-kaykit-rig.js';
 import { createDefaultCharacter, DEFAULT_CHARACTER_RIG_ID } from '../src/character/default-character.js';
-import { validateKayKitClipBindings } from '../src/animation/kaykit-animation-library.js';
+import {
+  KAYKIT_ANIMATION_PACKS,
+  validateKayKitClipBindings,
+} from '../src/animation/kaykit-animation-library.js';
 
 class FakeVector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
@@ -92,6 +95,7 @@ test('procedural rig creates bones, pure v3 line appearance and stable sockets w
   assert.equal(Object.keys(rig.bones).length, 23);
   assert.equal(rig.meshes.length, 0);
   assert.equal(rig.renderStyle, 'v3-rig-line');
+  assert.equal(rig.bones['handslot.r'].name, 'handslotr');
   assert.equal(rig.sockets.HAND_R.parent, rig.bones['handslot.r']);
   assert.equal(rig.sockets.HAND_L.parent, rig.bones['handslot.l']);
   assert.equal(rig.sockets.BACK.parent, rig.bones.chest);
@@ -109,7 +113,7 @@ test('appearance presets normalize dimensions without changing the rig contract'
 test('KayKit animation binding validation rejects targets outside the procedural skeleton', () => {
   const known = KAYKIT_RIG_MEDIUM_DEFINITION.bones.map((bone) => bone.id);
   const valid = validateKayKitClipBindings([
-    { name: 'Idle_A', tracks: [{ name: 'hips.position' }, { name: 'handslot.r.quaternion' }] },
+    { name: 'Idle_A', tracks: [{ name: 'hips.position' }, { name: 'handslotr.quaternion' }] },
   ], known);
   const invalid = validateKayKitClipBindings([
     { name: 'Broken', tracks: [{ name: 'missing.rotation' }] },
@@ -123,10 +127,13 @@ test('extracted animation manifest contains valid GLB packs and expected combat 
   const manifestUrl = new URL('../assets/kaykit/manifest.json', import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, 'utf8'));
   assert.equal(manifest.rigId, 'kaykit_rig_medium');
-  assert.equal(manifest.packs.length, 4);
-  assert.equal(manifest.packs.reduce((sum, pack) => sum + pack.clips.length, 0), 61);
+  assert.equal(manifest.packs.length, 8);
+  assert.deepEqual(manifest.packs.map((pack) => pack.id), KAYKIT_ANIMATION_PACKS.map((pack) => pack.id));
+  assert.equal(manifest.packs.reduce((sum, pack) => sum + pack.clips.length, 0), 139);
   assert.ok(manifest.packs.find((pack) => pack.id === 'melee').clips.includes('Melee_Blocking'));
   assert.ok(manifest.packs.find((pack) => pack.id === 'advanced').clips.includes('Dodge_Left'));
+  assert.ok(manifest.packs.find((pack) => pack.id === 'ranged').clips.includes('Ranged_Bow_Release'));
+  assert.ok(manifest.packs.find((pack) => pack.id === 'tools').clips.includes('Chopping'));
   for (const pack of manifest.packs) {
     const bytes = await readFile(new URL(`../assets/kaykit/${pack.file}`, import.meta.url));
     assert.equal(bytes.toString('ascii', 0, 4), 'glTF');

@@ -1,5 +1,10 @@
 import { createAnimationClip } from './animation-clip.js';
+import { createAdvancingVerticalChopGuide } from './motion-guide-schema.js';
 import { normalizePose } from './pose-utils.js';
+import {
+  advancingVerticalChopFrames,
+  bakeAdvancingVerticalChopClip,
+} from './whole-body-motion-solver.js';
 import { createActionDefinition } from '../combat/action-definition.js';
 
 export const T_POSE = Object.freeze(normalizePose({ aL_sz: 90, aR_sz: 90 }));
@@ -139,6 +144,24 @@ export function createCounterTemplate() {
   });
 }
 
+export function createAdvancingVerticalChopTemplate(guideInput = {}) {
+  const guide = createAdvancingVerticalChopGuide(guideInput);
+  const clip = bakeAdvancingVerticalChopClip(guide);
+  const frame = advancingVerticalChopFrames(guide);
+  const action = createActionDefinition({
+    id: clip.id,
+    clipId: clip.id,
+    category: 'heavy-attack',
+    windows: {
+      active: [{ startFrame: frame.impact - 1, endFrame: frame.impact + 2, label: 'vertical chop impact' }],
+      cancel: [{ startFrame: frame.follow + 3, endFrame: frame.recover, label: 'recover cancel' }],
+      movement: [{ startFrame: frame.commit, endFrame: frame.impact + 1, label: 'advancing step' }],
+      weaponTrail: [{ startFrame: frame.commit, endFrame: frame.follow, label: 'vertical sword trail' }],
+    },
+  }, clip.durationFrames);
+  return { clip, action };
+}
+
 export const ACTION_TEMPLATE_FACTORIES = Object.freeze({
   t_pose: createTPoseTemplate,
   idle: createIdleTemplate,
@@ -146,5 +169,6 @@ export const ACTION_TEMPLATE_FACTORIES = Object.freeze({
   guard: createGuardTemplate,
   parry: createParryTemplate,
   counter: createCounterTemplate,
+  advancing_vertical_chop: createAdvancingVerticalChopTemplate,
 });
 

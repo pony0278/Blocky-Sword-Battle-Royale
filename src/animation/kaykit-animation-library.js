@@ -1,8 +1,14 @@
+import { sanitizeAnimationTargetName } from './animation-target-name.js';
+
 export const KAYKIT_ANIMATION_PACKS = Object.freeze([
   Object.freeze({ id: 'general', file: 'general.glb' }),
   Object.freeze({ id: 'basic', file: 'basic.glb' }),
   Object.freeze({ id: 'advanced', file: 'advanced.glb' }),
   Object.freeze({ id: 'melee', file: 'melee.glb' }),
+  Object.freeze({ id: 'ranged', file: 'ranged.glb' }),
+  Object.freeze({ id: 'simulation', file: 'simulation.glb' }),
+  Object.freeze({ id: 'special', file: 'special.glb' }),
+  Object.freeze({ id: 'tools', file: 'tools.glb' }),
 ]);
 
 function loadGlb(loader, url) {
@@ -47,10 +53,10 @@ function clipTargetName(trackName) {
 }
 
 export function validateKayKitClipBindings(clips, boneIds) {
-  const known = new Set(boneIds);
+  const known = new Set(boneIds.map((boneId) => sanitizeAnimationTargetName(boneId)));
   const missing = new Map();
   for (const clip of clips.values ? clips.values() : clips) {
-    const targets = [...new Set(clip.tracks.map((track) => clipTargetName(track.name)))];
+    const targets = [...new Set(clip.tracks.map((track) => sanitizeAnimationTargetName(clipTargetName(track.name))))];
     const unbound = targets.filter((target) => !known.has(target));
     if (unbound.length) missing.set(clip.name, unbound);
   }
@@ -81,6 +87,16 @@ export function createKayKitAnimationController(THREE, object3d) {
     return actions.get(key);
   }
 
+  function configureLoop(action, loop) {
+    if (loop) {
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.clampWhenFinished = false;
+    } else {
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+    }
+  }
+
   return {
     mixer,
     clips,
@@ -89,6 +105,12 @@ export function createKayKitAnimationController(THREE, object3d) {
       const iterable = source?.values ? source.values() : source;
       for (const clip of iterable || []) if (!clips.has(clip.name)) clips.set(clip.name, clip);
       return clips.size;
+    },
+    has(name) {
+      return clips.has(name);
+    },
+    getClipDuration(name) {
+      return Math.max(0, Number(clips.get(name)?.duration) || 0);
     },
     play(name, options = {}) {
       const action = preparedClip(name, options.inPlace !== false);
@@ -100,17 +122,32 @@ export function createKayKitAnimationController(THREE, object3d) {
       action.reset();
       action.setEffectiveWeight(1);
       action.setEffectiveTimeScale(Number(options.speed) || 1);
-      if (options.loop === false) {
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
-      } else {
-        action.setLoop(THREE.LoopRepeat, Infinity);
-        action.clampWhenFinished = false;
-      }
+      configureLoop(action, options.loop !== false);
       action.fadeIn(fadeSeconds).play();
       currentAction = action;
       currentClipName = name;
       return action;
+    },
+    sample(name, timeSeconds, options = {}) {
+      const action = preparedClip(name, options.inPlace !== false);
+      if (!action) throw new Error(`Unknown KayKit animation: ${name}`);
+      if (currentAction !== action) {
+        mixer.stopAllAction();
+        action.reset();
+        action.enabled = true;
+        action.setEffectiveWeight(1);
+        action.setEffectiveTimeScale(1);
+        action.play();
+      }
+      configureLoop(action, options.loop === true);
+      action.enabled = true;
+      action.paused = false;
+      action.time = Math.max(0, Number(timeSeconds) || 0);
+      mixer.update(0);
+      action.paused = true;
+      currentAction = action;
+      currentClipName = name;
+      return action.time;
     },
     stop(fadeSeconds = 0) {
       if (currentAction && fadeSeconds > 0) currentAction.fadeOut(fadeSeconds);

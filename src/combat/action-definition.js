@@ -1,3 +1,5 @@
+import { normalizeAnimationBinding } from '../animation/animation-binding.js';
+
 export const ACTION_WINDOW_TYPES = Object.freeze([
   'active',
   'cancel',
@@ -28,12 +30,14 @@ export function createActionDefinition(input = {}, maxFrame = Number.POSITIVE_IN
     const list = Array.isArray(sourceWindows[type]) ? sourceWindows[type] : [];
     windows[type] = list.map((window) => normalizeFrameWindow(window, maxFrame));
   }
+  const clipId = String(input.clipId || input.id || 'untitled_action');
   return {
     format: 'action-definition',
-    version: 1,
+    version: 2,
     id: String(input.id || 'untitled_action'),
-    clipId: String(input.clipId || input.id || 'untitled_action'),
+    clipId,
     category: String(input.category || 'attack'),
+    animationBinding: normalizeAnimationBinding(input.animationBinding, clipId),
     windows,
     authority: ACTION_AUTHORITY_NOTE,
   };

@@ -7,7 +7,16 @@ const sourceFile = path.join(repositoryRoot, 'tools', 'kaykit_combat_lab_v3_proc
 const animationOutputDir = path.join(repositoryRoot, 'assets', 'kaykit', 'animations');
 const manifestOutputFile = path.join(repositoryRoot, 'assets', 'kaykit', 'manifest.json');
 const definitionOutputFile = path.join(repositoryRoot, 'src', 'character', 'kaykit-rig-definition.js');
-const animationPackIds = ['general', 'basic', 'advanced', 'melee'];
+const animationPacks = [
+  { id: 'general', embeddedId: 'general' },
+  { id: 'basic', embeddedId: 'basic' },
+  { id: 'advanced', embeddedId: 'advanced' },
+  { id: 'melee', embeddedId: 'melee' },
+  { id: 'ranged' },
+  { id: 'simulation' },
+  { id: 'special' },
+  { id: 'tools' },
+];
 
 function readEmbeddedBase64(source, id) {
   const match = source.match(new RegExp(`${id}:"([A-Za-z0-9+/=]+)"`));
@@ -130,13 +139,16 @@ const manifest = {
 };
 
 await mkdir(animationOutputDir, { recursive: true });
-for (const id of animationPackIds) {
-  const buffer = Buffer.from(readEmbeddedBase64(source, id), 'base64');
+for (const pack of animationPacks) {
+  const filename = `${pack.id}.glb`;
+  const outputPath = path.join(animationOutputDir, filename);
+  const buffer = pack.embeddedId
+    ? Buffer.from(readEmbeddedBase64(source, pack.embeddedId), 'base64')
+    : await readFile(outputPath);
   const glb = parseGlbJson(buffer);
-  const filename = `${id}.glb`;
-  await writeFile(path.join(animationOutputDir, filename), buffer);
+  if (pack.embeddedId) await writeFile(outputPath, buffer);
   manifest.packs.push({
-    id,
+    id: pack.id,
     file: `animations/${filename}`,
     byteLength: buffer.length,
     clips: (glb.animations || []).map((animation) => animation.name),

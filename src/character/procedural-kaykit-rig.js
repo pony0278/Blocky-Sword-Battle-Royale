@@ -1,4 +1,5 @@
 import { KAYKIT_RIG_MEDIUM_DEFINITION } from './kaykit-rig-definition.js';
+import { sanitizeAnimationTargetName } from '../animation/animation-target-name.js';
 import {
   canCreateKayKitV3LineAppearance,
   createKayKitV3LineAppearance,
@@ -102,7 +103,7 @@ function createBoneHierarchy(THREE, definition) {
 
   for (const boneDefinition of definition.bones) {
     const bone = new THREE.Bone();
-    bone.name = boneDefinition.id;
+    bone.name = sanitizeAnimationTargetName(boneDefinition.id);
     applyDefinitionTransform(THREE, bone, boneDefinition);
     const parent = boneDefinition.parent ? bones[boneDefinition.parent] : motionRoot;
     if (!parent) throw new Error(`Cannot create ${boneDefinition.id}: missing ${boneDefinition.parent}`);

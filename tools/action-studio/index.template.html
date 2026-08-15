@@ -26,7 +26,7 @@
         <span id="clipNow">SLASH TEST</span>
         <strong id="phaseNow">READY · 0F</strong>
       </div>
-      <div class="stage-help">拖曳旋轉 · 滾輪縮放 · 刀軌只作 presentation preview</div>
+      <div class="stage-help">拖曳彩色圓環調整目標 · 拖曳空白處旋轉 · 滾輪縮放</div>
       <div id="impactFlash" class="impact-flash"></div>
       <div class="stage-legend">
         <span><i class="impact-dot"></i>Impact</span>
@@ -50,14 +50,29 @@
         </div>
       </section>
 
+      <section class="panel motion-guide-panel">
+        <div class="panel-title"><span>Whole-Body Motion</span><small>semantic guides → Pose Keys</small></div>
+        <div id="wholeBodyMotionEditor"></div>
+      </section>
+
       <section class="panel kaykit-runtime-panel">
         <div class="panel-title"><span>Procedural Default Character</span><small>KayKit Rig_Medium · 23 generated bones</small></div>
         <div class="kaykit-runtime-controls">
-          <button id="loadKayKitAnimations">Load 61 KayKit clips</button>
+          <button id="loadKayKitAnimations">Load KayKit clips</button>
           <select id="kaykitClip"><option>Idle_A</option></select>
           <button id="playKayKitAnimation" class="primary">▶ Play KayKit</button>
-          <button id="stopKayKitAnimation">Back to Pose Editor</button>
+          <button id="stopKayKitAnimation">Return to Action</button>
         </div>
+        <div class="animation-binding-controls">
+          <label>Speed<input id="animationBindingSpeed" type="number" min="0.001" step="0.05" value="1"></label>
+          <label>Offset (s)<input id="animationBindingOffset" type="number" min="0" step="0.05" value="0"></label>
+          <label class="check"><input id="animationBindingInPlace" type="checkbox" checked> In-place</label>
+          <label class="check"><input id="animationBindingLoop" type="checkbox"> Loop source</label>
+          <button id="bindKayKitAnimation">Bind settings</button>
+          <button id="fitKayKitAnimation" class="primary">Fit + bind clip</button>
+          <button id="clearAnimationBinding">Use Pose Keys</button>
+        </div>
+        <div id="animationBindingStatus" class="status-line">Pose keys drive the action timeline</div>
         <div id="kaykitStatus" class="status-line">procedural v3 rig line ready · animation packs not loaded</div>
       </section>
 

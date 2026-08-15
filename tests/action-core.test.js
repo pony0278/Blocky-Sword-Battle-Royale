@@ -76,6 +76,9 @@ test('action windows are authoring metadata and normalize to clip bounds', () =>
   }, 6);
   assert.equal(action.windows.parry[0].endFrame, 6);
   assert.equal(isFrameInWindow(action, 'parry', 5), true);
+  assert.equal(action.version, 2);
+  assert.equal(action.animationBinding.source, 'authored');
+  assert.equal(action.animationBinding.clipId, 'parry');
   assert.match(action.authority, /Authoritative combat simulation/);
 });
 

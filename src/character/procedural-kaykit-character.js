@@ -13,6 +13,7 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
   const rig = createProceduralKayKitRig(THREE, options);
   const animation = createKayKitAnimationController(THREE, rig.root);
   let mode = 'pose';
+  let externalAnimationClock = false;
 
   function resetForAnimation() {
     restoreProceduralKayKitRestPose(rig);
@@ -32,6 +33,7 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
     applyPose(pose) {
       if (mode !== 'pose') animation.stop();
       mode = 'pose';
+      externalAnimationClock = false;
       const result = applyPoseToProceduralKayKitRig(rig, pose);
       rig.updateAppearance();
       return result;
@@ -56,15 +58,29 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
     playAnimation(name, playOptions = {}) {
       if (mode !== 'kaykit') resetForAnimation();
       mode = 'kaykit';
+      externalAnimationClock = false;
       return animation.play(name, playOptions);
+    },
+    hasAnimation(name) {
+      return animation.has(name);
+    },
+    getAnimationDuration(name) {
+      return animation.getClipDuration(name);
+    },
+    sampleAnimation(name, timeSeconds, sampleOptions = {}) {
+      if (mode !== 'kaykit') resetForAnimation();
+      mode = 'kaykit';
+      externalAnimationClock = true;
+      return animation.sample(name, timeSeconds, sampleOptions);
     },
     stopAnimation() {
       animation.stop();
       resetForAnimation();
       mode = 'pose';
+      externalAnimationClock = false;
     },
     update(deltaSeconds, camera) {
-      if (mode === 'kaykit') animation.update(deltaSeconds);
+      if (mode === 'kaykit' && !externalAnimationClock) animation.update(deltaSeconds);
       rig.updateAppearance(camera);
     },
   };

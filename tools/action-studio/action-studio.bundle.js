@@ -701,8 +701,16 @@ const KAYKIT_RIG_MEDIUM_DEFINITION = deepFreeze({
 return Object.freeze({ KAYKIT_RIG_MEDIUM_DEFINITION });
 })();
 
-// src/character/kaykit-v3-line-appearance.js
+// src/animation/animation-target-name.js
 const __actionStudioModule6 = (() => {
+function sanitizeAnimationTargetName(name) {
+  return String(name || '').replace(/\s/g, '_').replace(/[\[\]\.:/]/g, '');
+}
+return Object.freeze({ sanitizeAnimationTargetName });
+})();
+
+// src/character/kaykit-v3-line-appearance.js
+const __actionStudioModule7 = (() => {
 const DEFAULT_KAYKIT_V3_LINE_STYLE = Object.freeze({
   renderStyle: 'v3-rig-line',
   lineColor: 0x96e8ff,
@@ -992,7 +1000,8 @@ return Object.freeze({ DEFAULT_KAYKIT_V3_LINE_STYLE, createKayKitV3LineStyle, ca
 // src/character/procedural-kaykit-rig.js
 const __actionStudioModule4 = (() => {
 const { KAYKIT_RIG_MEDIUM_DEFINITION } = __actionStudioModule5;
-const { canCreateKayKitV3LineAppearance, createKayKitV3LineAppearance } = __actionStudioModule6;
+const { sanitizeAnimationTargetName } = __actionStudioModule6;
+const { canCreateKayKitV3LineAppearance, createKayKitV3LineAppearance } = __actionStudioModule7;
 
 const KAYKIT_REQUIRED_BONE_IDS = Object.freeze([
   'root', 'hips', 'spine', 'chest', 'head',
@@ -1092,7 +1101,7 @@ function createBoneHierarchy(THREE, definition) {
 
   for (const boneDefinition of definition.bones) {
     const bone = new THREE.Bone();
-    bone.name = boneDefinition.id;
+    bone.name = sanitizeAnimationTargetName(boneDefinition.id);
     applyDefinitionTransform(THREE, bone, boneDefinition);
     const parent = boneDefinition.parent ? bones[boneDefinition.parent] : motionRoot;
     if (!parent) throw new Error(`Cannot create ${boneDefinition.id}: missing ${boneDefinition.parent}`);
@@ -1172,7 +1181,7 @@ return Object.freeze({ KAYKIT_REQUIRED_BONE_IDS, DEFAULT_KAYKIT_APPEARANCE, crea
 })();
 
 // src/animation/pose-schema.js
-const __actionStudioModule9 = (() => {
+const __actionStudioModule10 = (() => {
 // Humanoid pose schema. This array is the runtime's single source of truth;
 // consumers must iterate it instead of relying on a numeric axis count.
 
@@ -1235,8 +1244,8 @@ return Object.freeze({ ROOT_POSE_KEYS, TORSO_POSE_KEYS, ARM_POSE_KEYS, LEG_POSE_
 })();
 
 // src/animation/pose-utils.js
-const __actionStudioModule8 = (() => {
-const { POSE_KEYS, defaultPoseValue } = __actionStudioModule9;
+const __actionStudioModule9 = (() => {
+const { POSE_KEYS, defaultPoseValue } = __actionStudioModule10;
 
 const NO_LIMB_LAG = Object.freeze({ aL: 0, aR: 0, lL: 0, lR: 0 });
 
@@ -1294,8 +1303,8 @@ return Object.freeze({ NO_LIMB_LAG, clamp, normalizePose, normalizeLimbLags, eva
 })();
 
 // src/animation/kaykit-pose-adapter.js
-const __actionStudioModule7 = (() => {
-const { normalizePose } = __actionStudioModule8;
+const __actionStudioModule8 = (() => {
+const { normalizePose } = __actionStudioModule9;
 const { restoreProceduralKayKitRestPose } = __actionStudioModule4;
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -1392,12 +1401,18 @@ return Object.freeze({ applyPoseToProceduralKayKitRig });
 })();
 
 // src/animation/kaykit-animation-library.js
-const __actionStudioModule10 = (() => {
+const __actionStudioModule11 = (() => {
+const { sanitizeAnimationTargetName } = __actionStudioModule6;
+
 const KAYKIT_ANIMATION_PACKS = Object.freeze([
   Object.freeze({ id: 'general', file: 'general.glb' }),
   Object.freeze({ id: 'basic', file: 'basic.glb' }),
   Object.freeze({ id: 'advanced', file: 'advanced.glb' }),
   Object.freeze({ id: 'melee', file: 'melee.glb' }),
+  Object.freeze({ id: 'ranged', file: 'ranged.glb' }),
+  Object.freeze({ id: 'simulation', file: 'simulation.glb' }),
+  Object.freeze({ id: 'special', file: 'special.glb' }),
+  Object.freeze({ id: 'tools', file: 'tools.glb' }),
 ]);
 
 function loadGlb(loader, url) {
@@ -1442,10 +1457,10 @@ function clipTargetName(trackName) {
 }
 
 function validateKayKitClipBindings(clips, boneIds) {
-  const known = new Set(boneIds);
+  const known = new Set(boneIds.map((boneId) => sanitizeAnimationTargetName(boneId)));
   const missing = new Map();
   for (const clip of clips.values ? clips.values() : clips) {
-    const targets = [...new Set(clip.tracks.map((track) => clipTargetName(track.name)))];
+    const targets = [...new Set(clip.tracks.map((track) => sanitizeAnimationTargetName(clipTargetName(track.name))))];
     const unbound = targets.filter((target) => !known.has(target));
     if (unbound.length) missing.set(clip.name, unbound);
   }
@@ -1476,6 +1491,16 @@ function createKayKitAnimationController(THREE, object3d) {
     return actions.get(key);
   }
 
+  function configureLoop(action, loop) {
+    if (loop) {
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.clampWhenFinished = false;
+    } else {
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+    }
+  }
+
   return {
     mixer,
     clips,
@@ -1484,6 +1509,12 @@ function createKayKitAnimationController(THREE, object3d) {
       const iterable = source?.values ? source.values() : source;
       for (const clip of iterable || []) if (!clips.has(clip.name)) clips.set(clip.name, clip);
       return clips.size;
+    },
+    has(name) {
+      return clips.has(name);
+    },
+    getClipDuration(name) {
+      return Math.max(0, Number(clips.get(name)?.duration) || 0);
     },
     play(name, options = {}) {
       const action = preparedClip(name, options.inPlace !== false);
@@ -1495,17 +1526,32 @@ function createKayKitAnimationController(THREE, object3d) {
       action.reset();
       action.setEffectiveWeight(1);
       action.setEffectiveTimeScale(Number(options.speed) || 1);
-      if (options.loop === false) {
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
-      } else {
-        action.setLoop(THREE.LoopRepeat, Infinity);
-        action.clampWhenFinished = false;
-      }
+      configureLoop(action, options.loop !== false);
       action.fadeIn(fadeSeconds).play();
       currentAction = action;
       currentClipName = name;
       return action;
+    },
+    sample(name, timeSeconds, options = {}) {
+      const action = preparedClip(name, options.inPlace !== false);
+      if (!action) throw new Error(`Unknown KayKit animation: ${name}`);
+      if (currentAction !== action) {
+        mixer.stopAllAction();
+        action.reset();
+        action.enabled = true;
+        action.setEffectiveWeight(1);
+        action.setEffectiveTimeScale(1);
+        action.play();
+      }
+      configureLoop(action, options.loop === true);
+      action.enabled = true;
+      action.paused = false;
+      action.time = Math.max(0, Number(timeSeconds) || 0);
+      mixer.update(0);
+      action.paused = true;
+      currentAction = action;
+      currentClipName = name;
+      return action.time;
     },
     stop(fadeSeconds = 0) {
       if (currentAction && fadeSeconds > 0) currentAction.fadeOut(fadeSeconds);
@@ -1525,13 +1571,14 @@ return Object.freeze({ KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary, valid
 const __actionStudioModule2 = (() => {
 const { attachEquipment } = __actionStudioModule3;
 const { createProceduralKayKitRig, restoreProceduralKayKitRestPose } = __actionStudioModule4;
-const { applyPoseToProceduralKayKitRig } = __actionStudioModule7;
-const { createKayKitAnimationController, validateKayKitClipBindings } = __actionStudioModule10;
+const { applyPoseToProceduralKayKitRig } = __actionStudioModule8;
+const { createKayKitAnimationController, validateKayKitClipBindings } = __actionStudioModule11;
 
 function createProceduralKayKitCharacter(THREE, options = {}) {
   const rig = createProceduralKayKitRig(THREE, options);
   const animation = createKayKitAnimationController(THREE, rig.root);
   let mode = 'pose';
+  let externalAnimationClock = false;
 
   function resetForAnimation() {
     restoreProceduralKayKitRestPose(rig);
@@ -1551,6 +1598,7 @@ function createProceduralKayKitCharacter(THREE, options = {}) {
     applyPose(pose) {
       if (mode !== 'pose') animation.stop();
       mode = 'pose';
+      externalAnimationClock = false;
       const result = applyPoseToProceduralKayKitRig(rig, pose);
       rig.updateAppearance();
       return result;
@@ -1575,15 +1623,29 @@ function createProceduralKayKitCharacter(THREE, options = {}) {
     playAnimation(name, playOptions = {}) {
       if (mode !== 'kaykit') resetForAnimation();
       mode = 'kaykit';
+      externalAnimationClock = false;
       return animation.play(name, playOptions);
+    },
+    hasAnimation(name) {
+      return animation.has(name);
+    },
+    getAnimationDuration(name) {
+      return animation.getClipDuration(name);
+    },
+    sampleAnimation(name, timeSeconds, sampleOptions = {}) {
+      if (mode !== 'kaykit') resetForAnimation();
+      mode = 'kaykit';
+      externalAnimationClock = true;
+      return animation.sample(name, timeSeconds, sampleOptions);
     },
     stopAnimation() {
       animation.stop();
       resetForAnimation();
       mode = 'pose';
+      externalAnimationClock = false;
     },
     update(deltaSeconds, camera) {
-      if (mode === 'kaykit') animation.update(deltaSeconds);
+      if (mode === 'kaykit' && !externalAnimationClock) animation.update(deltaSeconds);
       rig.updateAppearance(camera);
     },
   };
@@ -1604,7 +1666,7 @@ return Object.freeze({ DEFAULT_CHARACTER_RIG_ID, createDefaultCharacter });
 })();
 
 // src/character/v3-sword-geometry-definition.js
-const __actionStudioModule13 = (() => {
+const __actionStudioModule14 = (() => {
 // Generated by build/extract-v3-sword-geometry.mjs. Do not edit by hand.
 function deepFreeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -3717,9 +3779,9 @@ return Object.freeze({ V3_SWORD_GEOMETRY_DEFINITION });
 })();
 
 // src/character/procedural-v3-longsword.js
-const __actionStudioModule12 = (() => {
+const __actionStudioModule13 = (() => {
 const { WEAPON_SOCKET_ID } = __actionStudioModule3;
-const { V3_SWORD_GEOMETRY_DEFINITION } = __actionStudioModule13;
+const { V3_SWORD_GEOMETRY_DEFINITION } = __actionStudioModule14;
 
 const V3_LONGSWORD_REQUIRED_NODE_IDS = Object.freeze([
   'weapon.root',
@@ -4006,9 +4068,9 @@ return Object.freeze({ V3_LONGSWORD_REQUIRED_NODE_IDS, V3_LONGSWORD_DEFINITION, 
 })();
 
 // src/character/debug-sword.js
-const __actionStudioModule11 = (() => {
+const __actionStudioModule12 = (() => {
 const { WEAPON_SOCKET_ID } = __actionStudioModule3;
-const { createProceduralV3Longsword } = __actionStudioModule12;
+const { createProceduralV3Longsword } = __actionStudioModule13;
 
 const DEFAULT_SWORD_MOUNT = Object.freeze({
   position: Object.freeze({ x: 0, y: 0, z: 0 }),
@@ -4031,7 +4093,7 @@ return Object.freeze({ DEFAULT_SWORD_MOUNT, createDebugSword, mountDebugSword })
 })();
 
 // src/character/default-character-mount.js
-const __actionStudioModule14 = (() => {
+const __actionStudioModule15 = (() => {
 const DEFAULT_KAYKIT_SWORD_MOUNT = Object.freeze({
   position: Object.freeze({ x: 0, y: 0, z: 0 }),
   rotation: Object.freeze({ x: 0, y: 0, z: Math.PI }),
@@ -4041,8 +4103,8 @@ return Object.freeze({ DEFAULT_KAYKIT_SWORD_MOUNT });
 })();
 
 // src/animation/animation-clip.js
-const __actionStudioModule15 = (() => {
-const { normalizePose, evaluateEase, interpolatePose } = __actionStudioModule8;
+const __actionStudioModule16 = (() => {
+const { normalizePose, evaluateEase, interpolatePose } = __actionStudioModule9;
 
 const SUPPORTED_EASES = Object.freeze(['lin', 'in', 'out', 'in-out']);
 
@@ -4192,8 +4254,8 @@ return Object.freeze({ SUPPORTED_EASES, normalizeTimeline, createAnimationClip, 
 })();
 
 // src/animation/clip-player.js
-const __actionStudioModule16 = (() => {
-const { evaluateClip } = __actionStudioModule15;
+const __actionStudioModule18 = (() => {
+const { evaluateClip } = __actionStudioModule16;
 
 class ClipPlayer {
   constructor(clip = null) {
@@ -4248,8 +4310,495 @@ class ClipPlayer {
 return Object.freeze({ ClipPlayer });
 })();
 
+// src/animation/animation-binding.js
+const __actionStudioModule19 = (() => {
+const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit']);
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeAnimationBinding(input = {}, fallbackClipId = '') {
+  const requestedSource = String(input.source || 'authored');
+  const source = ACTION_MOTION_SOURCES.includes(requestedSource) ? requestedSource : 'authored';
+  return {
+    source,
+    clipId: String(input.clipId || (source === 'authored' ? fallbackClipId : '')),
+    speed: Math.max(0.001, finiteNumber(input.speed, 1)),
+    startOffsetSeconds: Math.max(0, finiteNumber(input.startOffsetSeconds, 0)),
+    inPlace: input.inPlace !== false,
+    loop: input.loop === true,
+    blendInSeconds: Math.max(0, finiteNumber(input.blendInSeconds, 0.08)),
+    blendOutSeconds: Math.max(0, finiteNumber(input.blendOutSeconds, 0.12)),
+  };
+}
+
+function createFittedAnimationBinding(options = {}) {
+  const fps = Math.max(1, finiteNumber(options.fps, 30));
+  const actionSeconds = Math.max(0, finiteNumber(options.durationFrames, 0)) / fps;
+  const animationSeconds = Math.max(0, finiteNumber(options.animationDurationSeconds, 0));
+  const speed = actionSeconds > 0 && animationSeconds > 0 ? animationSeconds / actionSeconds : 1;
+  return normalizeAnimationBinding({
+    ...options,
+    source: 'kaykit',
+    speed,
+    startOffsetSeconds: 0,
+    loop: false,
+  });
+}
+
+function animationTimeAtFrame(bindingInput, frame, fps, animationDurationSeconds) {
+  const binding = normalizeAnimationBinding(bindingInput);
+  const safeFps = Math.max(1, finiteNumber(fps, 30));
+  const timelineSeconds = Math.max(0, finiteNumber(frame, 0)) / safeFps;
+  const rawTime = binding.startOffsetSeconds + timelineSeconds * binding.speed;
+  const duration = finiteNumber(animationDurationSeconds, Number.POSITIVE_INFINITY);
+  if (!Number.isFinite(duration) || duration <= 0) return rawTime;
+  if (binding.loop) return ((rawTime % duration) + duration) % duration;
+  return Math.min(rawTime, duration);
+}
+return Object.freeze({ ACTION_MOTION_SOURCES, normalizeAnimationBinding, createFittedAnimationBinding, animationTimeAtFrame });
+})();
+
+// src/animation/action-motion-player.js
+const __actionStudioModule17 = (() => {
+const { ClipPlayer } = __actionStudioModule18;
+const { animationTimeAtFrame, normalizeAnimationBinding } = __actionStudioModule19;
+
+class ActionMotionPlayer {
+  constructor(options = {}) {
+    this.posePlayer = options.posePlayer || new ClipPlayer();
+    this.adapter = options.adapter || {};
+    this.action = null;
+    this.appliedSource = null;
+  }
+
+  get clip() { return this.posePlayer.clip; }
+  get frame() { return this.posePlayer.frame; }
+  get playing() { return this.posePlayer.playing; }
+  get loop() { return this.posePlayer.loop; }
+  set loop(value) { this.posePlayer.loop = Boolean(value); }
+  get speed() { return this.posePlayer.speed; }
+  set speed(value) { this.posePlayer.speed = Number(value) || 1; }
+  get binding() {
+    return normalizeAnimationBinding(this.action?.animationBinding, this.clip?.id || '');
+  }
+
+  setProject(clip, action, options = {}) {
+    this.action = action || null;
+    return this.posePlayer.setClip(clip, options);
+  }
+
+  setClip(clip, options = {}) {
+    return this.posePlayer.setClip(clip, options);
+  }
+
+  setAction(action) {
+    this.action = action || null;
+    return this.evaluate();
+  }
+
+  play(options) { return this.decorate(this.posePlayer.play(options)); }
+  pause() { return this.decorate(this.posePlayer.pause()); }
+  seek(frame) { return this.decorate(this.posePlayer.seek(frame)); }
+  update(deltaSeconds) { return this.decorate(this.posePlayer.update(deltaSeconds)); }
+  evaluate(options) { return this.decorate(this.posePlayer.evaluate(options)); }
+
+  decorate(evaluation) {
+    if (!evaluation) return null;
+    const binding = this.binding;
+    const hasAnimation = binding.source === 'kaykit'
+      && binding.clipId
+      && (this.adapter.hasAnimation ? this.adapter.hasAnimation(binding.clipId) : Boolean(this.adapter.sampleAnimation));
+    const animationDurationSeconds = hasAnimation && this.adapter.getAnimationDuration
+      ? this.adapter.getAnimationDuration(binding.clipId)
+      : 0;
+    return {
+      ...evaluation,
+      motion: {
+        source: binding.source,
+        clipId: binding.clipId,
+        binding,
+        available: Boolean(hasAnimation),
+        pending: binding.source === 'kaykit' && !hasAnimation,
+        timeSeconds: binding.source === 'kaykit'
+          ? animationTimeAtFrame(binding, evaluation.frame, this.clip?.fps, animationDurationSeconds)
+          : evaluation.frame / Math.max(1, this.clip?.fps || 30),
+      },
+    };
+  }
+
+  apply(evaluation = this.evaluate()) {
+    if (!evaluation) return null;
+    const { motion } = evaluation;
+    if (motion.source === 'kaykit' && motion.available && this.adapter.sampleAnimation) {
+      this.adapter.sampleAnimation(motion.clipId, motion.timeSeconds, motion.binding);
+      this.appliedSource = 'kaykit';
+      return { ...evaluation, motion: { ...motion, appliedSource: 'kaykit' } };
+    }
+    if (this.appliedSource === 'kaykit') this.adapter.stopAnimation?.();
+    this.adapter.applyPose?.(evaluation.pose);
+    this.appliedSource = 'authored';
+    return { ...evaluation, motion: { ...motion, appliedSource: 'authored' } };
+  }
+}
+return Object.freeze({ ActionMotionPlayer });
+})();
+
+// src/animation/motion-guide-schema.js
+const __actionStudioModule21 = (() => {
+const MOTION_GUIDE_PRESETS = Object.freeze(['advancing_vertical_chop']);
+const MOTION_GUIDE_LEAD_FEET = Object.freeze(['L', 'R']);
+
+const DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE = Object.freeze({
+  format: 'whole-body-motion-guide',
+  version: 2,
+  preset: 'advancing_vertical_chop',
+  leadFoot: 'L',
+  stepDistance: 0.58,
+  crouchDepth: 30,
+  forwardLean: 16,
+  plantFrame: 16,
+  impactFrame: 19,
+  durationFrames: 36,
+  impactHeight: 1.18,
+  cutPlaneOffset: 0,
+  coupling: 0.85,
+  footLock: true,
+  twoHandGrip: true,
+  secondaryGripWeight: 1,
+  visible: true,
+});
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeMotionGuide(input = {}) {
+  const preset = MOTION_GUIDE_PRESETS.includes(input.preset)
+    ? input.preset
+    : DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.preset;
+  const durationFrames = Math.round(clamp(finiteNumber(
+    input.durationFrames,
+    DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.durationFrames,
+  ), 24, 72));
+  const impactFrame = Math.round(clamp(finiteNumber(
+    input.impactFrame,
+    DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.impactFrame,
+  ), 10, durationFrames - 7));
+  const plantFrame = Math.round(clamp(finiteNumber(
+    input.plantFrame,
+    DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.plantFrame,
+  ), 8, impactFrame - 1));
+  return {
+    format: 'whole-body-motion-guide',
+    version: 2,
+    preset,
+    leadFoot: MOTION_GUIDE_LEAD_FEET.includes(input.leadFoot) ? input.leadFoot : 'L',
+    stepDistance: clamp(finiteNumber(input.stepDistance, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.stepDistance), 0, 1.2),
+    crouchDepth: clamp(finiteNumber(input.crouchDepth, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.crouchDepth), 0, 60),
+    forwardLean: clamp(finiteNumber(input.forwardLean, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.forwardLean), 0, 40),
+    plantFrame,
+    impactFrame,
+    durationFrames,
+    impactHeight: clamp(finiteNumber(input.impactHeight, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.impactHeight), 0.5, 2),
+    cutPlaneOffset: clamp(finiteNumber(input.cutPlaneOffset, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.cutPlaneOffset), -35, 35),
+    coupling: clamp(finiteNumber(input.coupling, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.coupling), 0, 1),
+    footLock: input.footLock !== false,
+    twoHandGrip: input.twoHandGrip !== false,
+    secondaryGripWeight: clamp(finiteNumber(
+      input.secondaryGripWeight,
+      DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE.secondaryGripWeight,
+    ), 0, 1),
+    visible: input.visible !== false,
+  };
+}
+
+function createAdvancingVerticalChopGuide(overrides = {}) {
+  return normalizeMotionGuide({ ...DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE, ...overrides });
+}
+
+function isWholeBodyMotionGuide(value) {
+  return value?.format === 'whole-body-motion-guide'
+    && value?.preset === 'advancing_vertical_chop';
+}
+return Object.freeze({ MOTION_GUIDE_PRESETS, MOTION_GUIDE_LEAD_FEET, DEFAULT_ADVANCING_VERTICAL_CHOP_GUIDE, normalizeMotionGuide, createAdvancingVerticalChopGuide, isWholeBodyMotionGuide });
+})();
+
+// src/animation/whole-body-motion-solver.js
+const __actionStudioModule22 = (() => {
+const { createAnimationClip } = __actionStudioModule16;
+const { normalizeMotionGuide } = __actionStudioModule21;
+const { normalizePose } = __actionStudioModule9;
+
+function withLegs(pose, leadFoot, values) {
+  const lead = leadFoot === 'L' ? 'lL' : 'lR';
+  const rear = leadFoot === 'L' ? 'lR' : 'lL';
+  return {
+    ...pose,
+    [`${lead}_hx`]: values.leadHx,
+    [`${lead}_hz`]: values.leadHz,
+    [`${lead}_kx`]: values.leadKx,
+    [`${lead}_ax`]: values.leadAx || 0,
+    [`${lead}_contact`]: values.leadContact,
+    [`${rear}_hx`]: values.rearHx,
+    [`${rear}_hz`]: values.rearHz,
+    [`${rear}_kx`]: values.rearKx,
+    [`${rear}_ax`]: values.rearAx || 0,
+    [`${rear}_contact`]: values.rearContact,
+  };
+}
+
+const TWO_HAND_LEFT_ARM = Object.freeze({
+  ready: Object.freeze({ aL_sx: -84, aL_sy: -2, aL_sz: 16, aL_ex: 86, aL_wx: -6, aL_wy: -18, aL_wz: 4, aL_stretch: 1.03 }),
+  windup: Object.freeze({ aL_sx: -142, aL_sy: 6, aL_sz: 10, aL_ex: 62, aL_wx: -18, aL_wy: -10, aL_wz: 0, aL_stretch: 1.05 }),
+  commit: Object.freeze({ aL_sx: -118, aL_sy: 4, aL_sz: 8, aL_ex: 46, aL_wx: -8, aL_wy: -12, aL_wz: 0, aL_stretch: 1.04 }),
+  plant: Object.freeze({ aL_sx: -94, aL_sy: 3, aL_sz: 6, aL_ex: 33, aL_wx: 0, aL_wy: -10, aL_wz: 0, aL_stretch: 1.03 }),
+  impact: Object.freeze({ aL_sx: -64, aL_sy: 4, aL_sz: 4, aL_ex: 16, aL_wx: 12, aL_wy: -8, aL_wz: 0, aL_stretch: 1.02 }),
+  follow: Object.freeze({ aL_sx: -36, aL_sy: 6, aL_sz: 4, aL_ex: 28, aL_wx: 18, aL_wy: -8, aL_wz: 0, aL_stretch: 1.02 }),
+  recover: Object.freeze({ aL_sx: -84, aL_sy: -2, aL_sz: 16, aL_ex: 86, aL_wx: -6, aL_wy: -18, aL_wz: 4, aL_stretch: 1.03 }),
+});
+
+function withTwoHandGrip(pose, guide, phase) {
+  if (!guide.twoHandGrip) return pose;
+  const profile = TWO_HAND_LEFT_ARM[phase];
+  const weight = guide.secondaryGripWeight;
+  return Object.fromEntries(Object.entries(pose).map(([key, value]) => [
+    key,
+    key in profile ? value + (profile[key] - value) * weight : value,
+  ]));
+}
+
+function withPlantedLeadFoot(plant, pose, guide) {
+  if (!guide.footLock) return pose;
+  const lead = guide.leadFoot === 'L' ? 'lL' : 'lR';
+  const lockedKeys = [
+    'root_pz', 'root_x', 'squat', 'pelvis_y',
+    `${lead}_hx`, `${lead}_hy`, `${lead}_hz`, `${lead}_kx`,
+    `${lead}_ax`, `${lead}_ty`, `${lead}_stretch`, `${lead}_contact`,
+  ];
+  return { ...pose, ...Object.fromEntries(lockedKeys.map((key) => [key, plant[key]])) };
+}
+
+function advancingVerticalChopFrames(guideInput = {}) {
+  const guide = normalizeMotionGuide(guideInput);
+  const windupFrame = Math.max(4, guide.plantFrame - 8);
+  const commitFrame = Math.max(windupFrame + 2, guide.plantFrame - 3);
+  const followFrame = Math.min(guide.durationFrames - 4, guide.impactFrame + 6);
+  return {
+    ready: 0,
+    windup: windupFrame,
+    commit: commitFrame,
+    plant: guide.plantFrame,
+    impact: guide.impactFrame,
+    follow: followFrame,
+    recover: guide.durationFrames,
+  };
+}
+
+function bakeAdvancingVerticalChopClip(guideInput = {}) {
+  const guide = normalizeMotionGuide(guideInput);
+  const frame = advancingVerticalChopFrames(guide);
+  const c = guide.coupling;
+  const plane = guide.cutPlaneOffset;
+  const step = guide.stepDistance;
+  const lean = guide.forwardLean;
+  const crouch = guide.crouchDepth;
+  const ready = normalizePose({
+    squat: 18,
+    spine_x: 4,
+    head_x: 2,
+    aL_sx: -24,
+    aL_sy: -8,
+    aL_sz: 12,
+    aL_ex: 54,
+    aR_sx: -72,
+    aR_sy: -10,
+    aR_sz: 12,
+    aR_ex: 72,
+    aR_wy: 18,
+    lL_hx: -12,
+    lL_hz: 8,
+    lL_kx: 20,
+    lR_hx: -12,
+    lR_hz: 8,
+    lR_kx: 20,
+    lL_contact: 1,
+    lR_contact: 1,
+  });
+  const windup = normalizePose(withLegs({
+    ...ready,
+    root_pz: -step * 0.08 * c,
+    root_x: -lean * 0.35 * c,
+    squat: 18 + crouch * c,
+    spine_x: 4 - lean * 0.45 * c,
+    pelvis_y: -plane * 0.12 * c,
+    head_x: 2 + lean * 0.32 * c,
+    head_y: plane * 0.12 * c,
+    aR_sx: -154,
+    aR_sy: -8 + plane * 0.35,
+    aR_sz: 6,
+    aR_ex: 66,
+    aR_wx: -22,
+    aR_wy: 8,
+    aL_sx: -50 - 18 * c,
+    aL_sy: 16 - plane * 0.2,
+    aL_sz: 22,
+    aL_ex: 78,
+  }, guide.leadFoot, {
+    leadHx: 12 + 12 * c,
+    leadHz: 10,
+    leadKx: 38 + 18 * c,
+    leadContact: 0,
+    rearHx: -24,
+    rearHz: 10,
+    rearKx: 36 + crouch * 0.45,
+    rearContact: 1,
+  }));
+  const commit = normalizePose(withLegs({
+    ...windup,
+    root_pz: step * 0.42,
+    root_x: lean * 0.55 * c,
+    squat: 14 + crouch * 0.72 * c,
+    spine_x: 4 + lean * 0.45 * c,
+    pelvis_y: plane * 0.16 * c,
+    head_x: 2 - lean * 0.22 * c,
+    head_y: -plane * 0.1 * c,
+    aR_sx: -126,
+    aR_sy: -5 + plane * 0.42,
+    aR_sz: 5,
+    aR_ex: 48,
+    aR_wx: -10,
+    aL_sx: 10 + 28 * c,
+    aL_sy: -16 - plane * 0.2,
+    aL_sz: 18,
+    aL_ex: 42,
+  }, guide.leadFoot, {
+    leadHx: 26,
+    leadHz: 12,
+    leadKx: 44,
+    leadContact: 0,
+    rearHx: -8,
+    rearHz: 8,
+    rearKx: 22,
+    rearContact: 1,
+  }));
+  const plant = normalizePose(withLegs({
+    ...commit,
+    root_pz: guide.footLock ? step : step * 0.76,
+    root_x: lean * 0.78 * c,
+    squat: 12 + crouch * 0.52 * c,
+    spine_x: 5 + lean * 0.68 * c,
+    aR_sx: -98,
+    aR_sy: plane * 0.48,
+    aR_ex: 31,
+    aR_wx: 0,
+  }, guide.leadFoot, {
+    leadHx: -18,
+    leadHz: 12,
+    leadKx: 24,
+    leadAx: 5,
+    leadContact: 1,
+    rearHx: 16,
+    rearHz: 8,
+    rearKx: 18,
+    rearContact: 1,
+  }));
+  const impact = normalizePose(withLegs({
+    ...plant,
+    root_pz: step,
+    root_x: lean * c,
+    squat: 10 + crouch * 0.42 * c,
+    spine_x: 6 + lean * 0.82 * c,
+    pelvis_y: plane * 0.2 * c,
+    head_x: 2 - lean * 0.4 * c,
+    head_y: -plane * 0.14 * c,
+    aR_sx: -66,
+    aR_sy: 4 + plane * 0.55,
+    aR_sz: 2,
+    aR_ex: 12,
+    aR_wx: 14,
+    aR_wy: -8,
+    aL_sx: 34 + 24 * c,
+    aL_sy: -24 - plane * 0.18,
+    aL_ex: 30,
+  }, guide.leadFoot, {
+    leadHx: -13,
+    leadHz: 12,
+    leadKx: 16,
+    leadAx: 4,
+    leadContact: 1,
+    rearHx: 24,
+    rearHz: 8,
+    rearKx: 12,
+    rearContact: 1,
+  }));
+  const follow = normalizePose(withLegs({
+    ...impact,
+    root_pz: step * 1.06,
+    root_x: lean * 0.72 * c,
+    squat: 14 + crouch * 0.3 * c,
+    spine_x: 6 + lean * 0.5 * c,
+    head_x: 2 - lean * 0.25 * c,
+    aR_sx: -35,
+    aR_sy: 6 + plane * 0.5,
+    aR_ex: 24,
+    aR_wx: 20,
+    aL_sx: 22 + 16 * c,
+    aL_ex: 42,
+  }, guide.leadFoot, {
+    leadHx: -10,
+    leadHz: 10,
+    leadKx: 15,
+    leadContact: 1,
+    rearHx: 17,
+    rearHz: 8,
+    rearKx: 18,
+    rearContact: 1,
+  }));
+  const recover = normalizePose({ ...ready, root_pz: step * 0.7 });
+  const plantedImpact = normalizePose(withPlantedLeadFoot(plant, impact, guide));
+  const plantedFollow = normalizePose(withPlantedLeadFoot(plant, follow, guide));
+  const poses = {
+    ready: normalizePose(withTwoHandGrip(ready, guide, 'ready')),
+    windup: normalizePose(withTwoHandGrip(windup, guide, 'windup')),
+    commit: normalizePose(withTwoHandGrip(commit, guide, 'commit')),
+    plant: normalizePose(withTwoHandGrip(plant, guide, 'plant')),
+    impact: normalizePose(withTwoHandGrip(plantedImpact, guide, 'impact')),
+    follow_through: normalizePose(withTwoHandGrip(plantedFollow, guide, 'follow')),
+    recover: normalizePose(withTwoHandGrip(recover, guide, 'recover')),
+  };
+
+  return createAnimationClip({
+    id: 'advancing_vertical_chop',
+    name: 'Advancing Vertical Chop',
+    fps: 60,
+    timeline: [
+      { name: 'ready', frame: frame.ready, ease: 'lin', tag: 'ready' },
+      { name: 'windup', frame: frame.windup, ease: 'out', tag: 'windup' },
+      { name: 'commit', frame: frame.commit, ease: 'in', tag: 'commit' },
+      { name: 'plant', frame: frame.plant, ease: 'out', tag: 'lead-foot-plant' },
+      { name: 'impact', frame: frame.impact, ease: 'in', tag: 'vertical-impact', impact: true },
+      { name: 'follow_through', frame: frame.follow, ease: 'out', tag: 'follow-through' },
+      { name: 'recover', frame: frame.recover, ease: 'out', tag: 'recover', cancel: true },
+    ],
+    poses,
+    metadata: { motionGuide: guide },
+  });
+}
+return Object.freeze({ advancingVerticalChopFrames, bakeAdvancingVerticalChopClip });
+})();
+
 // src/combat/action-definition.js
-const __actionStudioModule18 = (() => {
+const __actionStudioModule23 = (() => {
+const { normalizeAnimationBinding } = __actionStudioModule19;
+
 const ACTION_WINDOW_TYPES = Object.freeze([
   'active',
   'cancel',
@@ -4280,12 +4829,14 @@ function createActionDefinition(input = {}, maxFrame = Number.POSITIVE_INFINITY)
     const list = Array.isArray(sourceWindows[type]) ? sourceWindows[type] : [];
     windows[type] = list.map((window) => normalizeFrameWindow(window, maxFrame));
   }
+  const clipId = String(input.clipId || input.id || 'untitled_action');
   return {
     format: 'action-definition',
-    version: 1,
+    version: 2,
     id: String(input.id || 'untitled_action'),
-    clipId: String(input.clipId || input.id || 'untitled_action'),
+    clipId,
     category: String(input.category || 'attack'),
+    animationBinding: normalizeAnimationBinding(input.animationBinding, clipId),
     windows,
     authority: ACTION_AUTHORITY_NOTE,
   };
@@ -4300,10 +4851,12 @@ return Object.freeze({ ACTION_WINDOW_TYPES, ACTION_AUTHORITY_NOTE, normalizeFram
 })();
 
 // src/animation/action-templates.js
-const __actionStudioModule17 = (() => {
-const { createAnimationClip } = __actionStudioModule15;
-const { normalizePose } = __actionStudioModule8;
-const { createActionDefinition } = __actionStudioModule18;
+const __actionStudioModule20 = (() => {
+const { createAnimationClip } = __actionStudioModule16;
+const { createAdvancingVerticalChopGuide } = __actionStudioModule21;
+const { normalizePose } = __actionStudioModule9;
+const { advancingVerticalChopFrames, bakeAdvancingVerticalChopClip } = __actionStudioModule22;
+const { createActionDefinition } = __actionStudioModule23;
 
 const T_POSE = Object.freeze(normalizePose({ aL_sz: 90, aR_sz: 90 }));
 
@@ -4442,6 +4995,24 @@ function createCounterTemplate() {
   });
 }
 
+function createAdvancingVerticalChopTemplate(guideInput = {}) {
+  const guide = createAdvancingVerticalChopGuide(guideInput);
+  const clip = bakeAdvancingVerticalChopClip(guide);
+  const frame = advancingVerticalChopFrames(guide);
+  const action = createActionDefinition({
+    id: clip.id,
+    clipId: clip.id,
+    category: 'heavy-attack',
+    windows: {
+      active: [{ startFrame: frame.impact - 1, endFrame: frame.impact + 2, label: 'vertical chop impact' }],
+      cancel: [{ startFrame: frame.follow + 3, endFrame: frame.recover, label: 'recover cancel' }],
+      movement: [{ startFrame: frame.commit, endFrame: frame.impact + 1, label: 'advancing step' }],
+      weaponTrail: [{ startFrame: frame.commit, endFrame: frame.follow, label: 'vertical sword trail' }],
+    },
+  }, clip.durationFrames);
+  return { clip, action };
+}
+
 const ACTION_TEMPLATE_FACTORIES = Object.freeze({
   t_pose: createTPoseTemplate,
   idle: createIdleTemplate,
@@ -4449,14 +5020,15 @@ const ACTION_TEMPLATE_FACTORIES = Object.freeze({
   guard: createGuardTemplate,
   parry: createParryTemplate,
   counter: createCounterTemplate,
+  advancing_vertical_chop: createAdvancingVerticalChopTemplate,
 });
-return Object.freeze({ T_POSE, IDLE_POSE, createTPoseTemplate, createIdleTemplate, createSlashTestTemplate, createGuardTemplate, createParryTemplate, createCounterTemplate, ACTION_TEMPLATE_FACTORIES });
+return Object.freeze({ T_POSE, IDLE_POSE, createTPoseTemplate, createIdleTemplate, createSlashTestTemplate, createGuardTemplate, createParryTemplate, createCounterTemplate, createAdvancingVerticalChopTemplate, ACTION_TEMPLATE_FACTORIES });
 })();
 
 // src/animation/legacy-punch-import.js
-const __actionStudioModule19 = (() => {
-const { LEGACY_NON_HUMANOID_POSE_KEYS, POSE_KEYS } = __actionStudioModule9;
-const { createAnimationClip } = __actionStudioModule15;
+const __actionStudioModule24 = (() => {
+const { LEGACY_NON_HUMANOID_POSE_KEYS, POSE_KEYS } = __actionStudioModule10;
+const { createAnimationClip } = __actionStudioModule16;
 
 function importLegacyPunchSnapshot(snapshot = {}) {
   const phases = snapshot.phases || snapshot.PHASES || {};
@@ -4486,97 +5058,9 @@ function importLegacyPunchSnapshot(snapshot = {}) {
 return Object.freeze({ importLegacyPunchSnapshot });
 })();
 
-// tools/action-studio/action-studio.js
-const __actionStudioModule0 = (() => {
-const { createDefaultCharacter } = __actionStudioModule1;
-const { createDebugSword, mountDebugSword } = __actionStudioModule11;
-const { DEFAULT_KAYKIT_SWORD_MOUNT } = __actionStudioModule14;
-const { applyMountCalibration, normalizeMountCalibration } = __actionStudioModule3;
-const { POSE_KEYS } = __actionStudioModule9;
-const { normalizePose } = __actionStudioModule8;
-const { createAnimationClip, clipMarkerSummary } = __actionStudioModule15;
-const { ClipPlayer } = __actionStudioModule16;
-const { loadKayKitAnimationLibrary } = __actionStudioModule10;
-const { ACTION_TEMPLATE_FACTORIES } = __actionStudioModule17;
-const { importLegacyPunchSnapshot } = __actionStudioModule19;
-const { ACTION_WINDOW_TYPES, createActionDefinition, isFrameInWindow } = __actionStudioModule18;
-
-const THREE = window.THREE;
-if (!THREE) throw new Error('Action Studio requires Three.js r128');
-
-const LIBRARY_KEY = 'ACTION_STUDIO_CLIP_LIBRARY_V1';
-const MOUNT_KEY = 'ACTION_STUDIO_KAYKIT_SWORD_MOUNT_V2';
-const RAD_TO_DEG = 180 / Math.PI;
-const DEG_TO_RAD = Math.PI / 180;
-
-const canvas = document.getElementById('stageCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.shadowMap.enabled = true;
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0f19);
-scene.fog = new THREE.Fog(0x0a0f19, 7, 16);
-const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 60);
-const cameraTarget = new THREE.Vector3(0, 1.05, 0);
-let cameraTheta = 0.45;
-let cameraPhi = 1.12;
-let cameraRadius = 5.1;
-let gameCameraOn = false;
-let savedCamera = null;
-
-scene.add(new THREE.HemisphereLight(0xb9d2ff, 0x11131d, 1.15));
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.35);
-keyLight.position.set(4, 7, 5);
-keyLight.castShadow = true;
-scene.add(keyLight);
-const rimLight = new THREE.DirectionalLight(0x55e6c1, 0.7);
-rimLight.position.set(-4, 3, -4);
-scene.add(rimLight);
-const grid = new THREE.GridHelper(18, 18, 0x33425f, 0x1b263a);
-scene.add(grid);
-
-const character = createDefaultCharacter(THREE);
-scene.add(character.object3d);
-const sword = createDebugSword(THREE);
-let mountCalibration = loadMountCalibration();
-mountDebugSword(character, sword, mountCalibration);
-
-const dummy = createPreviewDummy();
-scene.add(dummy);
-const trailMaterial = new THREE.LineBasicMaterial({ color: 0x55e6c1, transparent: true, opacity: 0.92 });
-const weaponTrail = new THREE.Line(new THREE.BufferGeometry(), trailMaterial);
-weaponTrail.frustumCulled = false;
-scene.add(weaponTrail);
-let trailPoints = [];
-
-const player = new ClipPlayer();
-let animationSource = 'authored';
-let kayKitLibrary = null;
-let clip = null;
-let action = null;
-let selectedKeyIndex = 0;
-let loopEnabled = false;
-let slowEnabled = false;
-let comboQueue = [];
-let lastTick = performance.now();
-let previousPlaybackFrame = 0;
-let hitstopRemaining = 0;
-let shakeRemaining = 0;
-let dummyHitRemaining = 0;
-const feel = { hitstop: 0.08, shake: 0.45, knockback: 0.55 };
-
-function placeCamera() {
-  camera.position.set(
-    cameraTarget.x + cameraRadius * Math.sin(cameraPhi) * Math.sin(cameraTheta),
-    cameraTarget.y + cameraRadius * Math.cos(cameraPhi),
-    cameraTarget.z + cameraRadius * Math.sin(cameraPhi) * Math.cos(cameraTheta),
-  );
-  camera.lookAt(cameraTarget);
-}
-
-function createPreviewDummy() {
+// tools/action-studio/studio-preview-runtime.js
+const __actionStudioModule25 = (() => {
+function createPreviewDummy(THREE) {
   const group = new THREE.Group();
   group.name = 'PREVIEW_DUMMY';
   const body = new THREE.Mesh(
@@ -4595,144 +5079,819 @@ function createPreviewDummy() {
   return group;
 }
 
-function loadMountCalibration() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(MOUNT_KEY) || 'null');
-    return normalizeMountCalibration(stored || DEFAULT_KAYKIT_SWORD_MOUNT);
-  } catch {
-    return normalizeMountCalibration(DEFAULT_KAYKIT_SWORD_MOUNT);
+function createStudioPreviewRuntime(THREE, options) {
+  const {
+    canvas,
+    character,
+    sword,
+    impactFlash,
+    isDummyEnabled,
+  } = options;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0f19);
+  scene.fog = new THREE.Fog(0x0a0f19, 7, 16);
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 60);
+  const cameraTarget = new THREE.Vector3(0, 1.05, 0);
+  let cameraTheta = 0.45;
+  let cameraPhi = 1.12;
+  let cameraRadius = 5.1;
+  let gameCameraOn = false;
+  let savedCamera = null;
+
+  scene.add(new THREE.HemisphereLight(0xb9d2ff, 0x11131d, 1.15));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.35);
+  keyLight.position.set(4, 7, 5);
+  keyLight.castShadow = true;
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(0x55e6c1, 0.7);
+  rimLight.position.set(-4, 3, -4);
+  scene.add(rimLight);
+  scene.add(new THREE.GridHelper(18, 18, 0x33425f, 0x1b263a));
+  scene.add(character.object3d);
+
+  const dummy = createPreviewDummy(THREE);
+  scene.add(dummy);
+  const weaponTrail = new THREE.Line(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({ color: 0x55e6c1, transparent: true, opacity: 0.92 }),
+  );
+  weaponTrail.frustumCulled = false;
+  scene.add(weaponTrail);
+  const trailPoint = new THREE.Vector3();
+  let trailPoints = [];
+
+  const feel = { hitstop: 0.08, shake: 0.45, knockback: 0.55 };
+  let hitstopRemaining = 0;
+  let shakeRemaining = 0;
+  let dummyHitRemaining = 0;
+
+  function placeCamera() {
+    camera.position.set(
+      cameraTarget.x + cameraRadius * Math.sin(cameraPhi) * Math.sin(cameraTheta),
+      cameraTarget.y + cameraRadius * Math.cos(cameraPhi),
+      cameraTarget.z + cameraRadius * Math.sin(cameraPhi) * Math.cos(cameraTheta),
+    );
+    camera.lookAt(cameraTarget);
   }
-}
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    renderer.setSize(rect.width, rect.height, false);
+    camera.aspect = rect.width / Math.max(1, rect.height);
+    camera.updateProjectionMatrix();
+  }
 
-function currentProject() {
+  function clearWeaponTrail() {
+    trailPoints = [];
+    weaponTrail.geometry.dispose();
+    weaponTrail.geometry = new THREE.BufferGeometry();
+  }
+
+  function recordWeaponTrail(enabled) {
+    if (!enabled) return;
+    sword.trailTip.getWorldPosition(trailPoint);
+    if (!trailPoints.length || trailPoints[trailPoints.length - 1].distanceToSquared(trailPoint) > 0.0002) {
+      trailPoints.push(trailPoint.clone());
+      if (trailPoints.length > 70) trailPoints.shift();
+      weaponTrail.geometry.dispose();
+      weaponTrail.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+    }
+  }
+
+  function triggerImpact() {
+    hitstopRemaining = feel.hitstop;
+    shakeRemaining = 0.18;
+    dummyHitRemaining = 0.34;
+    if (isDummyEnabled()) {
+      impactFlash.style.transition = 'none';
+      impactFlash.style.opacity = String(0.18 + feel.shake * 0.28);
+      requestAnimationFrame(() => {
+        impactFlash.style.transition = 'opacity .16s ease-out';
+        impactFlash.style.opacity = '0';
+      });
+    }
+  }
+
+  function consumeHitstop(deltaSeconds) {
+    if (hitstopRemaining <= 0) return false;
+    hitstopRemaining = Math.max(0, hitstopRemaining - deltaSeconds);
+    return true;
+  }
+
+  function update(deltaSeconds) {
+    dummy.visible = isDummyEnabled();
+    if (dummyHitRemaining > 0) {
+      dummyHitRemaining = Math.max(0, dummyHitRemaining - deltaSeconds);
+      const amount = dummyHitRemaining / 0.34;
+      dummy.position.z = 2.15 + feel.knockback * 0.72 * amount;
+      dummy.rotation.x = -feel.knockback * 0.18 * amount;
+    } else {
+      dummy.position.z = 2.15;
+      dummy.rotation.x = 0;
+    }
+  }
+
+  function render() {
+    let shakeX = 0;
+    let shakeY = 0;
+    if (shakeRemaining > 0) {
+      const amount = feel.shake * 0.08 * (shakeRemaining / 0.18);
+      shakeX = (Math.random() * 2 - 1) * amount;
+      shakeY = (Math.random() * 2 - 1) * amount;
+      camera.position.x += shakeX;
+      camera.position.y += shakeY;
+    }
+    renderer.render(scene, camera);
+    camera.position.x -= shakeX;
+    camera.position.y -= shakeY;
+  }
+
+  function advanceShake(deltaSeconds) {
+    shakeRemaining = Math.max(0, shakeRemaining - deltaSeconds);
+  }
+
+  function toggleGameCamera() {
+    gameCameraOn = !gameCameraOn;
+    if (gameCameraOn) {
+      savedCamera = { cameraTheta, cameraPhi, cameraRadius, fov: camera.fov };
+      cameraTheta = Math.PI;
+      cameraPhi = 0.82;
+      cameraRadius = 5.35;
+      camera.fov = 34;
+    } else if (savedCamera) {
+      ({ cameraTheta, cameraPhi, cameraRadius } = savedCamera);
+      camera.fov = savedCamera.fov;
+    }
+    camera.updateProjectionMatrix();
+    placeCamera();
+    return gameCameraOn;
+  }
+
+  function setFeel(key, value) {
+    if (!(key in feel)) throw new Error(`Unknown preview feel control: ${key}`);
+    feel[key] = Number(value);
+    return feel[key];
+  }
+
+  let orbiting = false;
+  let pointerX = 0;
+  let pointerY = 0;
+  canvas.addEventListener('pointerdown', (event) => {
+    orbiting = true;
+    pointerX = event.clientX;
+    pointerY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointerup', () => { orbiting = false; });
+  canvas.addEventListener('pointercancel', () => { orbiting = false; });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!orbiting || gameCameraOn) return;
+    cameraTheta -= (event.clientX - pointerX) * 0.008;
+    cameraPhi = Math.max(0.3, Math.min(1.48, cameraPhi - (event.clientY - pointerY) * 0.008));
+    pointerX = event.clientX;
+    pointerY = event.clientY;
+    placeCamera();
+  });
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    cameraRadius = Math.max(3.2, Math.min(10, cameraRadius + event.deltaY * 0.008));
+    placeCamera();
+  }, { passive: false });
+
+  placeCamera();
   return {
-    format: 'action-studio-project',
-    version: 1,
-    clip: clone(clip),
-    action: clone(action),
-    weaponMount: clone(mountCalibration),
+    scene,
+    camera,
+    renderer,
+    feel,
+    resize,
+    render,
+    update,
+    advanceShake,
+    toggleGameCamera,
+    clearWeaponTrail,
+    recordWeaponTrail,
+    triggerImpact,
+    consumeHitstop,
+    setFeel,
   };
 }
+return Object.freeze({ createStudioPreviewRuntime });
+})();
 
-function setProject(project, options = {}) {
-  character.stopAnimation();
-  animationSource = 'authored';
-  clip = createAnimationClip(project.clip || project);
-  action = createActionDefinition(project.action || {
-    id: clip.id,
-    clipId: clip.id,
-    category: 'custom',
-  }, clip.durationFrames);
-  if (project.weaponMount) {
-    mountCalibration = normalizeMountCalibration(project.weaponMount);
-    applyMountCalibration(sword.object3d, mountCalibration);
-  }
-  player.setClip(clip);
-  player.loop = loopEnabled;
-  player.speed = slowEnabled ? 0.25 : 1;
-  selectedKeyIndex = 0;
-  previousPlaybackFrame = 0;
-  clearWeaponTrail();
-  renderEditor();
-  applyEvaluation(player.evaluate());
-  if (options.autoplay) {
-    player.play({ restart: true });
-    updatePlaybackButtons();
-  }
-}
+// tools/action-studio/studio-motion-guide-overlay.js
+const __actionStudioModule26 = (() => {
+const { normalizeMotionGuide } = __actionStudioModule21;
 
-function loadTemplate(id, autoplay = false) {
-  const factory = ACTION_TEMPLATE_FACTORIES[id];
-  if (!factory) return;
-  setProject(factory(), { autoplay });
-}
+const GUIDE_COLORS = Object.freeze({
+  hand: 0xffc857,
+  head: 0x59d8ff,
+  body: 0xff72a6,
+  foot: 0x65e6a5,
+  grip: 0xb99aff,
+  linkage: 0xa5b5d6,
+});
 
-function setKayKitStatus(message, isError = false) {
-  const status = document.getElementById('kaykitStatus');
-  status.textContent = message;
-  status.classList.toggle('error', isError);
-}
-
-async function loadKayKitRuntime() {
-  if (kayKitLibrary) return kayKitLibrary;
-  if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
-  if (location.protocol === 'file:') {
-    throw new Error('KayKit GLB animation packs require the local HTTP server');
-  }
-  setKayKitStatus('Loading four animation packs…');
-  const loader = new THREE.GLTFLoader();
-  kayKitLibrary = await loadKayKitAnimationLibrary(loader, {
-    baseUrl: '../../assets/kaykit/animations/',
+function createMarker(THREE, name, color, radius = 0.045, target = false, dragTarget = '') {
+  const geometry = target
+    ? new THREE.TorusGeometry(radius * 1.55, radius * 0.32, 7, 20)
+    : new THREE.SphereGeometry(radius, 10, 8);
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: target ? 0.98 : 0.82,
+    depthTest: false,
+    depthWrite: false,
   });
-  character.registerAnimations(kayKitLibrary);
-  const select = document.getElementById('kaykitClip');
-  select.innerHTML = '';
-  [...kayKitLibrary.clips.keys()].forEach((name) => {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    select.appendChild(option);
+  const marker = new THREE.Mesh(geometry, material);
+  marker.name = name;
+  marker.renderOrder = 90;
+  marker.userData.motionGuideTarget = dragTarget;
+  return marker;
+}
+
+function createLink(THREE, name, color, opacity = 0.55) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthTest: false,
+    depthWrite: false,
+  }));
+  line.name = name;
+  line.frustumCulled = false;
+  line.renderOrder = 89;
+  return line;
+}
+
+function setLink(line, start, end) {
+  const position = line.geometry.attributes.position;
+  position.setXYZ(0, start.x, start.y, start.z);
+  position.setXYZ(1, end.x, end.y, end.z);
+  position.needsUpdate = true;
+  line.geometry.computeBoundingSphere();
+}
+
+function createWholeBodyMotionGuideOverlay(THREE, {
+  scene,
+  camera,
+  canvas,
+  character,
+  sword,
+}) {
+  const group = new THREE.Group();
+  group.name = 'WHOLE_BODY_MOTION_GUIDES';
+  group.visible = false;
+  scene.add(group);
+
+  const markers = {
+    head: createMarker(THREE, 'GUIDE_HEAD_LINK', GUIDE_COLORS.head),
+    hand: createMarker(THREE, 'GUIDE_SWORD_HAND_LINK', GUIDE_COLORS.hand),
+    offHand: createMarker(THREE, 'GUIDE_OFF_HAND_LINK', GUIDE_COLORS.grip),
+    secondaryGrip: createMarker(THREE, 'GUIDE_SECONDARY_GRIP', GUIDE_COLORS.grip, 0.04, true),
+    hips: createMarker(THREE, 'GUIDE_BODY_LINK', GUIDE_COLORS.body, 0.055),
+    footL: createMarker(THREE, 'GUIDE_FOOT_L_LINK', GUIDE_COLORS.foot),
+    footR: createMarker(THREE, 'GUIDE_FOOT_R_LINK', GUIDE_COLORS.foot),
+    impactTarget: createMarker(THREE, 'GUIDE_IMPACT_TARGET', GUIDE_COLORS.hand, 0.09, true, 'impact'),
+    comTarget: createMarker(THREE, 'GUIDE_COM_TARGET', GUIDE_COLORS.body, 0.075, true, 'com'),
+    plantTarget: createMarker(THREE, 'GUIDE_PLANT_TARGET', GUIDE_COLORS.foot, 0.08, true, 'plant'),
+  };
+  markers.comTarget.rotation.y = Math.PI / 2;
+  markers.plantTarget.rotation.x = Math.PI / 2;
+  const draggableMarkers = [markers.impactTarget, markers.comTarget, markers.plantTarget];
+
+  const links = {
+    headBody: createLink(THREE, 'GUIDE_HEAD_BODY_LINK', GUIDE_COLORS.linkage, 0.32),
+    bodyHand: createLink(THREE, 'GUIDE_BODY_HAND_LINK', GUIDE_COLORS.linkage, 0.32),
+    bodyFootL: createLink(THREE, 'GUIDE_BODY_FOOT_L_LINK', GUIDE_COLORS.linkage, 0.26),
+    bodyFootR: createLink(THREE, 'GUIDE_BODY_FOOT_R_LINK', GUIDE_COLORS.linkage, 0.26),
+    headTarget: createLink(THREE, 'GUIDE_HEAD_TARGET_LINK', GUIDE_COLORS.head),
+    handTarget: createLink(THREE, 'GUIDE_HAND_TARGET_LINK', GUIDE_COLORS.hand, 0.72),
+    bodyTarget: createLink(THREE, 'GUIDE_BODY_TARGET_LINK', GUIDE_COLORS.body),
+    footTarget: createLink(THREE, 'GUIDE_FOOT_TARGET_LINK', GUIDE_COLORS.foot, 0.72),
+    offHandGrip: createLink(THREE, 'GUIDE_OFF_HAND_GRIP_LINK', GUIDE_COLORS.grip, 0.82),
+  };
+  Object.values(markers).forEach((marker) => group.add(marker));
+  Object.values(links).forEach((line) => group.add(line));
+
+  const points = Object.fromEntries([
+    'origin', 'head', 'hand', 'offHand', 'secondaryGrip', 'hips', 'chest',
+    'footL', 'footR', 'impact', 'com', 'plant',
+  ].map((key) => [key, new THREE.Vector3()]));
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const dragPlane = new THREE.Plane();
+  const dragPoint = new THREE.Vector3();
+  const planeNormal = new THREE.Vector3();
+  let guide = null;
+  let onGuideChange = null;
+  let dragging = null;
+  let hovered = null;
+  const diagnostics = { secondaryGripError: 0, draggingTarget: '' };
+
+  function setGuide(nextGuide) {
+    guide = nextGuide ? normalizeMotionGuide(nextGuide) : null;
+    group.visible = Boolean(guide?.visible);
+  }
+
+  function updateTargetPoints() {
+    const planeX = guide.cutPlaneOffset * 0.008;
+    points.impact.copy(points.origin).add(new THREE.Vector3(
+      planeX,
+      guide.impactHeight,
+      Math.max(0.9, guide.stepDistance + 0.82),
+    ));
+    points.com.copy(points.origin).add(new THREE.Vector3(
+      planeX * 0.35,
+      0.93 - guide.crouchDepth * 0.003,
+      guide.stepDistance * (0.32 + guide.coupling * 0.42),
+    ));
+    points.plant.copy(points.origin).add(new THREE.Vector3(
+      guide.leadFoot === 'L' ? 0.18 : -0.18,
+      0.035,
+      guide.stepDistance,
+    ));
+  }
+
+  function update() {
+    group.visible = Boolean(guide?.visible);
+    if (!group.visible) return;
+    character.object3d.updateMatrixWorld(true);
+    character.object3d.getWorldPosition(points.origin);
+    character.rig.bones.head.getWorldPosition(points.head);
+    character.rig.bones['handslot.r'].getWorldPosition(points.hand);
+    character.rig.bones['handslot.l'].getWorldPosition(points.offHand);
+    character.rig.bones.hips.getWorldPosition(points.hips);
+    character.rig.bones.chest.getWorldPosition(points.chest);
+    character.rig.bones['foot.l'].getWorldPosition(points.footL);
+    character.rig.bones['foot.r'].getWorldPosition(points.footR);
+    sword.secondaryGrip.getWorldPosition(points.secondaryGrip);
+    updateTargetPoints();
+
+    markers.head.position.copy(points.head);
+    markers.hand.position.copy(points.hand);
+    markers.offHand.position.copy(points.offHand);
+    markers.secondaryGrip.position.copy(points.secondaryGrip);
+    markers.hips.position.copy(points.hips);
+    markers.footL.position.copy(points.footL);
+    markers.footR.position.copy(points.footR);
+    markers.impactTarget.position.copy(points.impact);
+    markers.comTarget.position.copy(points.com);
+    markers.plantTarget.position.copy(points.plant);
+
+    setLink(links.headBody, points.head, points.chest);
+    setLink(links.bodyHand, points.chest, points.hand);
+    setLink(links.bodyFootL, points.hips, points.footL);
+    setLink(links.bodyFootR, points.hips, points.footR);
+    setLink(links.headTarget, points.head, points.impact);
+    setLink(links.handTarget, points.hand, points.impact);
+    setLink(links.bodyTarget, points.hips, points.com);
+    setLink(links.footTarget, guide.leadFoot === 'L' ? points.footL : points.footR, points.plant);
+    setLink(links.offHandGrip, points.offHand, points.secondaryGrip);
+    diagnostics.secondaryGripError = points.offHand.distanceTo(points.secondaryGrip);
+    const showGrip = guide.twoHandGrip;
+    markers.offHand.visible = showGrip;
+    markers.secondaryGrip.visible = showGrip;
+    links.offHandGrip.visible = showGrip;
+  }
+
+  function setPointer(event) {
+    const rect = canvas.getBoundingClientRect();
+    pointer.set(
+      ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+      -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1,
+    );
+    raycaster.setFromCamera(pointer, camera);
+  }
+
+  function pickTarget(event) {
+    if (!group.visible) return null;
+    setPointer(event);
+    return raycaster.intersectObjects(draggableMarkers, false)[0]?.object || null;
+  }
+
+  function setDragPlane(target) {
+    if (target === 'impact') planeNormal.set(0, 0, 1);
+    else if (target === 'com') planeNormal.set(1, 0, 0);
+    else planeNormal.set(0, 1, 0);
+    dragPlane.setFromNormalAndCoplanarPoint(planeNormal, markers[`${target}Target`].position);
+  }
+
+  function applyDrag(event) {
+    setPointer(event);
+    if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+    const next = { ...guide };
+    if (dragging === 'impact') {
+      next.impactHeight = dragPoint.y - points.origin.y;
+      next.cutPlaneOffset = (dragPoint.x - points.origin.x) / 0.008;
+    } else if (dragging === 'plant') {
+      next.stepDistance = dragPoint.z - points.origin.z;
+      next.leadFoot = dragPoint.x >= points.origin.x ? 'L' : 'R';
+    } else if (dragging === 'com') {
+      next.crouchDepth = (0.93 - (dragPoint.y - points.origin.y)) / 0.003;
+      if (next.stepDistance > 0.05) {
+        next.coupling = (((dragPoint.z - points.origin.z) / next.stepDistance) - 0.32) / 0.42;
+      }
+    }
+    guide = normalizeMotionGuide(next);
+    updateTargetPoints();
+    onGuideChange?.({ ...guide }, { source: 'stage-drag', target: dragging });
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    const marker = pickTarget(event);
+    if (!marker) return;
+    dragging = marker.userData.motionGuideTarget;
+    diagnostics.draggingTarget = dragging;
+    setDragPlane(dragging);
+    marker.scale.setScalar(1.25);
+    canvas.style.cursor = 'grabbing';
+    canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (dragging) {
+      applyDrag(event);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    const marker = pickTarget(event);
+    if (hovered && hovered !== marker) hovered.scale.setScalar(1);
+    hovered = marker;
+    if (hovered) hovered.scale.setScalar(1.12);
+    canvas.style.cursor = hovered ? 'grab' : '';
+  }, true);
+
+  function endDrag(event) {
+    if (!dragging) return;
+    draggableMarkers.forEach((marker) => marker.scale.setScalar(1));
+    dragging = null;
+    diagnostics.draggingTarget = '';
+    canvas.style.cursor = '';
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  canvas.addEventListener('pointerup', endDrag, true);
+  canvas.addEventListener('pointercancel', endDrag, true);
+
+  return {
+    group,
+    markers,
+    setGuide,
+    update,
+    setGuideChangeHandler(handler) { onGuideChange = typeof handler === 'function' ? handler : null; },
+    get guide() { return guide ? { ...guide } : null; },
+    get diagnostics() { return { ...diagnostics }; },
+  };
+}
+return Object.freeze({ createWholeBodyMotionGuideOverlay });
+})();
+
+// tools/action-studio/studio-motion-guide-editor.js
+const __actionStudioModule27 = (() => {
+const { createAdvancingVerticalChopTemplate } = __actionStudioModule20;
+const { createAdvancingVerticalChopGuide, isWholeBodyMotionGuide, normalizeMotionGuide } = __actionStudioModule21;
+
+const CONTROL_DEFINITIONS = Object.freeze([
+  { key: 'stepDistance', label: 'Step distance', min: 0, max: 1.2, step: 0.01, suffix: 'm' },
+  { key: 'crouchDepth', label: 'Crouch depth', min: 0, max: 60, step: 1, suffix: '°' },
+  { key: 'forwardLean', label: 'Forward lean', min: 0, max: 40, step: 1, suffix: '°' },
+  { key: 'impactHeight', label: 'Impact height', min: 0.5, max: 2, step: 0.01, suffix: 'm' },
+  { key: 'cutPlaneOffset', label: 'Cut-plane offset', min: -35, max: 35, step: 1, suffix: '°' },
+  { key: 'coupling', label: 'Whole-body coupling', min: 0, max: 1, step: 0.01, suffix: '' },
+  { key: 'secondaryGripWeight', label: 'Off-hand grip weight', min: 0, max: 1, step: 0.01, suffix: '' },
+]);
+
+function displayValue(value, definition) {
+  const decimals = Number(definition.step) < 1 ? 2 : 0;
+  return `${Number(value).toFixed(decimals)}${definition.suffix}`;
+}
+
+function renderSlider(definition, guide) {
+  return `<label class="motion-guide-control">
+    <span>${definition.label}</span><output data-guide-output="${definition.key}">${displayValue(guide[definition.key], definition)}</output>
+    <input data-guide-key="${definition.key}" type="range" min="${definition.min}" max="${definition.max}" step="${definition.step}" value="${guide[definition.key]}">
+  </label>`;
+}
+
+function constraintSummary(guide, report) {
+  const parts = [guide.footLock ? 'Lead foot locked' : 'Foot lock off'];
+  if (guide.twoHandGrip && report?.twoHandGrip) parts.push(`2H grip ${Math.round(report.afterError * 100)}cm avg`);
+  else parts.push(guide.twoHandGrip ? '2H grip pending bake' : 'Single-hand mode');
+  return parts.join(' · ');
+}
+
+function createStudioMotionGuideEditor({
+  overlay,
+  applyProject,
+  bakeProject,
+  getFrame,
+  onStatus,
+}) {
+  const host = document.getElementById('wholeBodyMotionEditor');
+  let guide = null;
+  let dirty = false;
+  let constraintReport = null;
+
+  function renderInactive() {
+    host.innerHTML = `<p class="motion-guide-intro">Create an advancing vertical chop from linked hand, head, center-of-mass, and foot targets.</p>
+      <button id="createVerticalChop" class="primary motion-guide-create">Create Advancing Chop</button>`;
+    document.getElementById('createVerticalChop').addEventListener('click', () => {
+      guide = createAdvancingVerticalChopGuide();
+      bakeCurrentGuide(guide.plantFrame, 'Created an advancing vertical chop with draggable whole-body guides.');
+    });
+  }
+
+  function syncControlValues() {
+    if (!guide) return;
+    host.querySelectorAll('[data-guide-key]').forEach((control) => {
+      const value = guide[control.dataset.guideKey];
+      if (control.type === 'checkbox') control.checked = Boolean(value);
+      else control.value = value;
+    });
+    const leadFoot = document.getElementById('motionLeadFoot');
+    if (leadFoot) leadFoot.value = guide.leadFoot;
+    CONTROL_DEFINITIONS.forEach((definition) => {
+      const output = host.querySelector(`[data-guide-output="${definition.key}"]`);
+      if (output) output.textContent = displayValue(guide[definition.key], definition);
+    });
+  }
+
+  function markDirty(message = 'Guides changed · Bake Pose Keys to apply') {
+    dirty = true;
+    constraintReport = null;
+    const status = document.getElementById('wholeBodyMotionStatus');
+    if (status) {
+      status.textContent = message;
+      status.classList.add('pending');
+    }
+  }
+
+  function acceptGuide(nextGuide, message) {
+    guide = normalizeMotionGuide(nextGuide);
+    overlay.setGuide(guide);
+    syncControlValues();
+    markDirty(message);
+  }
+
+  function updateGuideFromControls() {
+    const next = { ...guide };
+    host.querySelectorAll('[data-guide-key]').forEach((control) => {
+      next[control.dataset.guideKey] = control.type === 'checkbox' ? control.checked : Number(control.value);
+    });
+    next.leadFoot = document.getElementById('motionLeadFoot').value;
+    acceptGuide(next);
+  }
+
+  function bakeCurrentGuide(frame, message) {
+    const baseProject = createAdvancingVerticalChopTemplate(guide);
+    const baked = bakeProject?.(baseProject, guide) || { project: baseProject, report: null };
+    applyProject(baked.project || baked, { seekFrame: frame });
+    constraintReport = baked.report || constraintReport;
+    dirty = false;
+    renderActive();
+    onStatus(`${message} ${constraintSummary(guide, constraintReport)}.`);
+  }
+
+  function renderActive() {
+    host.innerHTML = `<div class="motion-guide-legend" aria-label="Motion guide legend">
+        <span><i class="guide-hand"></i>Sword / impact</span><span><i class="guide-head"></i>Head / gaze</span>
+        <span><i class="guide-body"></i>Center of mass</span><span><i class="guide-foot"></i>Lead-foot plant</span>
+        <span><i class="guide-grip"></i>Off-hand grip</span>
+      </div>
+      <p class="motion-guide-drag-hint">Drag the yellow, pink, or green target ring in the stage. Drag empty space to orbit.</p>
+      <div class="motion-guide-grid">
+        <label class="motion-guide-select"><span>Lead foot</span><select id="motionLeadFoot"><option value="L"${guide.leadFoot === 'L' ? ' selected' : ''}>Left</option><option value="R"${guide.leadFoot === 'R' ? ' selected' : ''}>Right</option></select></label>
+        <label class="motion-guide-number"><span>Plant frame</span><input data-guide-key="plantFrame" type="number" min="8" max="${guide.impactFrame - 1}" step="1" value="${guide.plantFrame}"></label>
+        <label class="motion-guide-number"><span>Impact frame</span><input data-guide-key="impactFrame" type="number" min="10" max="${guide.durationFrames - 7}" step="1" value="${guide.impactFrame}"></label>
+        <label class="motion-guide-number"><span>Duration</span><input data-guide-key="durationFrames" type="number" min="24" max="72" step="1" value="${guide.durationFrames}"></label>
+        ${CONTROL_DEFINITIONS.map((definition) => renderSlider(definition, guide)).join('')}
+      </div>
+      <div class="motion-guide-toggles">
+        <label class="check"><input data-guide-key="footLock" type="checkbox"${guide.footLock ? ' checked' : ''}> Lock lead foot from plant through follow-through</label>
+        <label class="check"><input data-guide-key="twoHandGrip" type="checkbox"${guide.twoHandGrip ? ' checked' : ''}> Fit off-hand to sword secondary grip</label>
+        <label class="check"><input data-guide-key="visible" type="checkbox"${guide.visible ? ' checked' : ''}> Show linked targets in the stage</label>
+      </div>
+      <div class="button-grid two motion-guide-actions"><button id="resetVerticalChop">Reset guides</button><button id="bakeVerticalChop" class="primary">Bake Constraints + Pose Keys</button></div>
+      <div id="wholeBodyMotionStatus" class="status-line${dirty ? ' pending' : ''}">${dirty ? 'Guides changed · Bake Pose Keys to apply' : constraintSummary(guide, constraintReport)}</div>`;
+
+    host.querySelectorAll('[data-guide-key]').forEach((control) => {
+      control.addEventListener('input', updateGuideFromControls);
+      control.addEventListener('change', () => renderActive());
+    });
+    document.getElementById('motionLeadFoot').addEventListener('change', () => {
+      updateGuideFromControls();
+      renderActive();
+    });
+    document.getElementById('resetVerticalChop').addEventListener('click', () => {
+      acceptGuide(createAdvancingVerticalChopGuide());
+      renderActive();
+    });
+    document.getElementById('bakeVerticalChop').addEventListener('click', () => {
+      bakeCurrentGuide(getFrame(), 'Whole-body targets, foot lock, and grip constraint baked into Pose Keys.');
+    });
+  }
+
+  function setClip(clip) {
+    const storedGuide = clip?.metadata?.motionGuide;
+    guide = isWholeBodyMotionGuide(storedGuide) ? normalizeMotionGuide(storedGuide) : null;
+    constraintReport = clip?.metadata?.motionGuideBake || null;
+    dirty = false;
+    overlay.setGuide(guide);
+    if (guide) renderActive();
+    else renderInactive();
+  }
+
+  overlay.setGuideChangeHandler((nextGuide, details) => {
+    const label = details.target === 'plant' ? 'Plant target' : details.target === 'impact' ? 'Impact target' : 'Center-of-mass target';
+    acceptGuide(nextGuide, `${label} moved · Bake Pose Keys to apply`);
   });
-  select.value = 'Idle_A';
-  setKayKitStatus(
-    `ready · ${kayKitLibrary.clips.size} clips · ${Object.keys(character.rig.bones).length} procedural bones`,
-  );
-  return kayKitLibrary;
+
+  return {
+    setClip,
+    get guide() { return guide ? { ...guide } : null; },
+    get dirty() { return dirty; },
+    get constraintReport() { return constraintReport ? { ...constraintReport } : null; },
+  };
+}
+return Object.freeze({ createStudioMotionGuideEditor });
+})();
+
+// tools/action-studio/studio-motion-constraint-baker.js
+const __actionStudioModule28 = (() => {
+const { createAnimationClip } = __actionStudioModule16;
+const { normalizeMotionGuide } = __actionStudioModule21;
+const { normalizePose } = __actionStudioModule9;
+
+const SECONDARY_GRIP_POSE_KEYS = Object.freeze([
+  ['aL_sx', -180, 80, 24],
+  ['aL_sy', -140, 140, 24],
+  ['aL_sz', -110, 110, 20],
+  ['aL_ex', -15, 165, 22],
+  ['aL_wx', -120, 120, 18],
+  ['aL_wy', -120, 120, 18],
+  ['aL_wz', -120, 120, 18],
+  ['aL_stretch', 0.72, 1.55, 0.12],
+]);
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
-function shouldLoopKayKitClip(name) {
-  return /Idle|Walking|Running|Blocking|Crouching|Sneaking|Crawling/.test(name);
+function evaluateGripDistance(character, sword, pose, leftPoint, gripPoint) {
+  character.applyPose(pose);
+  character.object3d.updateMatrixWorld(true);
+  sword.object3d.updateMatrixWorld(true);
+  character.rig.bones['handslot.l'].getWorldPosition(leftPoint);
+  sword.secondaryGrip.getWorldPosition(gripPoint);
+  return leftPoint.distanceTo(gripPoint);
 }
 
-async function playSelectedKayKitClip() {
-  await loadKayKitRuntime();
-  const name = document.getElementById('kaykitClip').value;
-  player.pause();
-  clearWeaponTrail();
-  animationSource = 'kaykit';
-  character.playAnimation(name, { loop: shouldLoopKayKitClip(name), inPlace: true });
-  document.getElementById('clipNow').textContent = name.toUpperCase();
-  document.getElementById('phaseNow').textContent = 'KAYKIT RUNTIME';
-  updatePlaybackButtons();
+function refineGripPose(character, sword, seedPose, points) {
+  const candidate = { ...seedPose };
+  let bestError = evaluateGripDistance(character, sword, candidate, points.left, points.grip);
+  let stepScale = 1;
+
+  for (let pass = 0; pass < 8; pass += 1) {
+    for (const [key, min, max, baseStep] of SECONDARY_GRIP_POSE_KEYS) {
+      const startValue = candidate[key];
+      let axisValue = startValue;
+      let axisError = bestError;
+      for (const direction of [-1, 1]) {
+        candidate[key] = clamp(startValue + direction * baseStep * stepScale, min, max);
+        const error = evaluateGripDistance(character, sword, candidate, points.left, points.grip);
+        if (error < axisError) {
+          axisError = error;
+          axisValue = candidate[key];
+        }
+      }
+      candidate[key] = axisValue;
+      bestError = axisError;
+    }
+    stepScale *= 0.56;
+  }
+  return { pose: candidate, error: bestError };
 }
 
-function rebuildClip(selectedName, seekFrame) {
-  clip = createAnimationClip({
-    ...clip,
-    timeline: clip.timeline,
-    poses: clip.poses,
+function gripSeeds(original) {
+  const mirrored = {
+    ...original,
+    aL_sx: original.aR_sx,
+    aL_sy: original.aR_sy + 42,
+    aL_sz: -original.aR_sz,
+    aL_ex: original.aR_ex + 22,
+    aL_wx: original.aR_wx,
+    aL_wy: -original.aR_wy,
+    aL_wz: -original.aR_wz,
+    aL_stretch: 1.08,
+  };
+  return [
+    original,
+    mirrored,
+    { ...mirrored, aL_sx: mirrored.aL_sx - 48, aL_sy: mirrored.aL_sy + 54, aL_ex: 92 },
+  ];
+}
+
+function optimizePose(character, sword, sourcePose, weight, points) {
+  const original = normalizePose(sourcePose);
+  const beforeError = evaluateGripDistance(character, sword, original, points.left, points.grip);
+  const fitted = gripSeeds(original)
+    .map((seed) => refineGripPose(character, sword, seed, points))
+    .reduce((best, result) => (result.error < best.error ? result : best));
+
+  const constrained = { ...original };
+  SECONDARY_GRIP_POSE_KEYS.forEach(([key]) => {
+    constrained[key] = original[key] + (fitted.pose[key] - original[key]) * weight;
   });
-  action = createActionDefinition(action, clip.durationFrames);
-  player.setClip(clip);
-  player.loop = loopEnabled;
-  player.speed = slowEnabled ? 0.25 : 1;
-  selectedKeyIndex = Math.max(0, clip.timeline.findIndex((key) => key.name === selectedName));
-  const targetFrame = Number.isFinite(Number(seekFrame)) ? Number(seekFrame) : clip.timeline[selectedKeyIndex].frame;
-  player.seek(targetFrame);
-  previousPlaybackFrame = player.frame;
-  clearWeaponTrail();
-  renderEditor();
-  applyEvaluation(player.evaluate());
+  const afterError = evaluateGripDistance(character, sword, constrained, points.left, points.grip);
+  return { pose: normalizePose(constrained), beforeError, afterError };
 }
 
-function renderEditor() {
-  renderTimeline();
-  renderKeyEditor();
-  renderPoseControls();
-  renderWindowEditor();
-  renderMountEditor();
-  renderLibrary();
-  renderComboQueue();
-  document.getElementById('clipNow').textContent = clip.name.toUpperCase();
-  document.getElementById('libraryName').value = clip.id;
-  document.getElementById('poseAxisSummary').textContent = `${POSE_KEYS.length} axes from POSE_KEYS`;
+function bakeStudioMotionConstraints(projectInput, { character, sword, guide: guideInput } = {}) {
+  const project = JSON.parse(JSON.stringify(projectInput));
+  const guide = normalizeMotionGuide(guideInput || project.clip?.metadata?.motionGuide);
+  if (!guide.twoHandGrip || guide.secondaryGripWeight <= 0 || !character?.rig || !sword?.secondaryGrip) {
+    return {
+      project,
+      report: { twoHandGrip: false, optimizedPoseCount: 0, beforeError: 0, afterError: 0 },
+    };
+  }
+
+  const Vector3 = character.object3d.position.constructor;
+  const points = { left: new Vector3(), grip: new Vector3() };
+  const errors = [];
+  for (const key of project.clip.timeline) {
+    const result = optimizePose(
+      character,
+      sword,
+      project.clip.poses[key.name],
+      guide.secondaryGripWeight,
+      points,
+    );
+    project.clip.poses[key.name] = result.pose;
+    errors.push({ name: key.name, beforeError: result.beforeError, afterError: result.afterError });
+  }
+
+  const average = (key) => errors.reduce((total, entry) => total + entry[key], 0) / Math.max(1, errors.length);
+  const report = {
+    twoHandGrip: true,
+    optimizedPoseCount: errors.length,
+    beforeError: average('beforeError'),
+    afterError: average('afterError'),
+    maxError: Math.max(...errors.map((entry) => entry.afterError)),
+    poseErrors: errors,
+  };
+  project.clip.metadata = { ...project.clip.metadata, motionGuide: guide, motionGuideBake: report };
+  project.clip = createAnimationClip(project.clip);
+  return { project, report };
+}
+return Object.freeze({ SECONDARY_GRIP_POSE_KEYS, bakeStudioMotionConstraints });
+})();
+
+// tools/action-studio/studio-editor-view.js
+const __actionStudioModule29 = (() => {
+const { POSE_KEYS } = __actionStudioModule10;
+const { normalizeAnimationBinding } = __actionStudioModule19;
+const { clipMarkerSummary } = __actionStudioModule16;
+const { ACTION_WINDOW_TYPES } = __actionStudioModule23;
+
+const RAD_TO_DEG = 180 / Math.PI;
+
+const POSE_GROUPS = Object.freeze([
+  ['ROOT / TORSO / HEAD', (key) => key.startsWith('root_') || ['sq', 'body_scale', 'squat', 'spine_x', 'spine_y', 'pelvis_y', 'head_y', 'head_x', 'head_pz'].includes(key)],
+  ['ARM L · SHOULDER / ELBOW / WRIST', (key) => key.startsWith('aL_') && !key.includes('_f')],
+  ['ARM R · SHOULDER / ELBOW / WRIST', (key) => key.startsWith('aR_') && !key.includes('_f')],
+  ['LEG L · HIP / KNEE / ANKLE', (key) => key.startsWith('lL_')],
+  ['LEG R · HIP / KNEE / ANKLE', (key) => key.startsWith('lR_')],
+  ['OPTIONAL FINGER POSE', (key) => key.startsWith('aL_f') || key.startsWith('aR_f')],
+]);
+
+function sliderSpec(key) {
+  if (key === 'body_scale' || key.endsWith('_scale')) return [0.3, 3, 0.01];
+  if (key.endsWith('_stretch')) return [0.4, 3, 0.01];
+  if (key.endsWith('_idle')) return [0, 1, 0.01];
+  if (key.endsWith('_contact')) return [0, 2, 1];
+  if (key === 'root_pz') return [-0.4, 1.4, 0.01];
+  if (key === 'root_py' || key === 'head_pz') return [-0.8, 0.8, 0.01];
+  if (key === 'sq') return [-0.4, 0.4, 0.01];
+  if (key === 'squat') return [0, 80, 1];
+  if (key.includes('_f')) return [-120, 30, 1];
+  return [-180, 180, 1];
 }
 
-function renderTimeline() {
+function renderTimelineView({ clip, frame, selectedKeyIndex, onSelect }) {
   const bar = document.getElementById('timelineBar');
   bar.querySelectorAll('.timeline-marker').forEach((node) => node.remove());
   const keysHost = document.getElementById('timelineKeys');
@@ -4744,37 +5903,31 @@ function renderTimeline() {
     marker.style.left = `${(key.frame / duration) * 100}%`;
     marker.title = `${key.name} @ ${key.frame}f · ${key.tag}`;
     marker.innerHTML = `<span>${index}</span>`;
-    marker.addEventListener('click', () => selectKey(index));
+    marker.addEventListener('click', () => onSelect(index));
     bar.appendChild(marker);
 
     const button = document.createElement('button');
     button.className = `${index === selectedKeyIndex ? 'on ' : ''}${key.impact ? 'impact ' : ''}${key.cancel ? 'cancel' : ''}`;
     button.textContent = `${key.frame}f ${key.name}`;
-    button.addEventListener('click', () => selectKey(index));
+    button.addEventListener('click', () => onSelect(index));
     keysHost.appendChild(button);
   });
   const markers = clipMarkerSummary(clip);
   document.getElementById('timelineSummary').textContent = `${clip.durationFrames}f · Impact ${markers.impacts.join(', ') || '—'} · Cancel ${markers.cancels.join(', ') || '—'}`;
   const scrub = document.getElementById('timelineScrub');
   scrub.max = Math.max(1, clip.durationFrames);
-  scrub.value = player.frame;
-  updateTimelineReadout();
+  scrub.value = frame;
+  updateTimelineReadoutView(clip, frame);
 }
 
-function selectKey(index) {
-  selectedKeyIndex = Math.max(0, Math.min(index, clip.timeline.length - 1));
-  const key = clip.timeline[selectedKeyIndex];
-  player.pause();
-  player.seek(key.frame);
-  previousPlaybackFrame = player.frame;
-  renderTimeline();
-  renderKeyEditor();
-  renderPoseControls();
-  applyEvaluation(player.evaluate());
-  updatePlaybackButtons();
+function updateTimelineReadoutView(clip, frame) {
+  const duration = Math.max(1, clip?.durationFrames || 1);
+  document.getElementById('timelineScrub').value = frame;
+  document.getElementById('frameNow').textContent = `${Number(frame).toFixed(2)}f`;
+  document.getElementById('timelinePlayhead').style.left = `${Math.min(100, (frame / duration) * 100)}%`;
 }
 
-function renderKeyEditor() {
+function renderKeyEditorView(clip, selectedKeyIndex) {
   const key = clip.timeline[selectedKeyIndex];
   document.getElementById('keyName').value = key.name;
   document.getElementById('keyFrame').value = key.frame;
@@ -4785,28 +5938,7 @@ function renderKeyEditor() {
   document.getElementById('deleteKey').disabled = clip.timeline.length <= 1;
 }
 
-const POSE_GROUPS = [
-  ['ROOT / TORSO / HEAD', (key) => key.startsWith('root_') || ['sq', 'body_scale', 'squat', 'spine_x', 'spine_y', 'pelvis_y', 'head_y', 'head_x', 'head_pz'].includes(key)],
-  ['ARM L · SHOULDER / ELBOW / WRIST', (key) => key.startsWith('aL_') && !key.includes('_f')],
-  ['ARM R · SHOULDER / ELBOW / WRIST', (key) => key.startsWith('aR_') && !key.includes('_f')],
-  ['LEG L · HIP / KNEE / ANKLE', (key) => key.startsWith('lL_')],
-  ['LEG R · HIP / KNEE / ANKLE', (key) => key.startsWith('lR_')],
-  ['OPTIONAL FINGER POSE', (key) => key.startsWith('aL_f') || key.startsWith('aR_f')],
-];
-
-function sliderSpec(key) {
-  if (key === 'body_scale' || key.endsWith('_scale')) return [0.3, 3, 0.01];
-  if (key.endsWith('_stretch')) return [0.4, 3, 0.01];
-  if (key.endsWith('_idle')) return [0, 1, 0.01];
-  if (key.endsWith('_contact')) return [0, 2, 1];
-  if (key === 'root_py' || key === 'root_pz' || key === 'head_pz') return [-0.8, 0.8, 0.01];
-  if (key === 'sq') return [-0.4, 0.4, 0.01];
-  if (key === 'squat') return [0, 80, 1];
-  if (key.includes('_f')) return [-120, 30, 1];
-  return [-180, 180, 1];
-}
-
-function renderPoseControls() {
+function renderPoseControlsView({ clip, selectedKeyIndex, onInput }) {
   const host = document.getElementById('poseControls');
   host.innerHTML = '';
   const keyframe = clip.timeline[selectedKeyIndex];
@@ -4832,13 +5964,9 @@ function renderPoseControls() {
       const output = document.createElement('output');
       output.textContent = Number(pose[poseKey]).toFixed(step < 1 ? 2 : 0);
       range.addEventListener('input', () => {
-        clip.poses[keyframe.name][poseKey] = Number(range.value);
-        output.textContent = Number(range.value).toFixed(step < 1 ? 2 : 0);
-        player.pause();
-        player.seek(keyframe.frame);
-        character.applyPose(clip.poses[keyframe.name]);
-        previousPlaybackFrame = player.frame;
-        updatePlaybackButtons();
+        const value = Number(range.value);
+        output.textContent = value.toFixed(step < 1 ? 2 : 0);
+        onInput({ keyframe, poseKey, value });
       });
       gridHost.append(label, range, output);
     }
@@ -4847,7 +5975,7 @@ function renderPoseControls() {
   }
 }
 
-function renderWindowEditor() {
+function renderWindowEditorView({ action, clip, onChange }) {
   const host = document.getElementById('windowEditor');
   host.innerHTML = '';
   for (const type of ACTION_WINDOW_TYPES) {
@@ -4859,11 +5987,13 @@ function renderWindowEditor() {
       <label>start <input type="number" min="0" max="${clip.durationFrames}" step="1" value="${window?.startFrame ?? 0}"></label>
       <label>end <input type="number" min="0" max="${clip.durationFrames}" step="1" value="${window?.endFrame ?? 0}"></label>`;
     const [enabled, start, end] = row.querySelectorAll('input');
-    const commit = () => {
-      const windows = clone(action.windows);
-      windows[type] = enabled.checked ? [{ startFrame: Number(start.value), endFrame: Number(end.value), label: window?.label || '' }] : [];
-      action = createActionDefinition({ ...action, windows }, clip.durationFrames);
-    };
+    const commit = () => onChange({
+      type,
+      enabled: enabled.checked,
+      startFrame: Number(start.value),
+      endFrame: Number(end.value),
+      label: window?.label || '',
+    });
     enabled.addEventListener('change', commit);
     start.addEventListener('input', commit);
     end.addEventListener('input', commit);
@@ -4871,7 +6001,7 @@ function renderWindowEditor() {
   }
 }
 
-function renderMountEditor() {
+function renderMountEditorView({ mountCalibration, onChange }) {
   const host = document.getElementById('mountEditor');
   host.innerHTML = '<span></span><b>X</b><b>Y</b><b>Z</b>';
   const rows = [
@@ -4890,101 +6020,15 @@ function renderMountEditor() {
       input.value = Number(values[axis] * factor).toFixed(label === 'rotation °' ? 0 : 2);
       input.addEventListener('input', () => {
         const raw = Number(input.value);
-        if (!Number.isFinite(raw)) return;
-        if (label === 'position') mountCalibration.position[axis] = raw;
-        else if (label === 'rotation °') mountCalibration.rotation[axis] = raw * DEG_TO_RAD;
-        else mountCalibration.scale[axis] = Math.max(0.01, raw);
-        mountCalibration = normalizeMountCalibration(mountCalibration);
-        applyMountCalibration(sword.object3d, mountCalibration);
-        document.getElementById('socketStatus').textContent = 'attached · unsaved';
+        if (Number.isFinite(raw)) onChange({ label, axis, raw });
       });
       host.appendChild(input);
     });
   });
 }
 
-function updateTimelineReadout() {
-  const duration = Math.max(1, clip?.durationFrames || 1);
-  document.getElementById('timelineScrub').value = player.frame;
-  document.getElementById('frameNow').textContent = `${player.frame.toFixed(2)}f`;
-  document.getElementById('timelinePlayhead').style.left = `${Math.min(100, (player.frame / duration) * 100)}%`;
-}
-
-function applyEvaluation(evaluation) {
-  if (!evaluation) return;
-  character.applyPose(evaluation.pose);
-  document.getElementById('phaseNow').textContent = `${evaluation.to.toUpperCase()} · ${evaluation.frame.toFixed(1)}F`;
-  updateTimelineReadout();
-}
-
-function clearWeaponTrail() {
-  trailPoints = [];
-  weaponTrail.geometry.dispose();
-  weaponTrail.geometry = new THREE.BufferGeometry();
-}
-
-function recordWeaponTrail(frame) {
-  if (!isFrameInWindow(action, 'weaponTrail', frame)) return;
-  const point = new THREE.Vector3();
-  sword.trailTip.getWorldPosition(point);
-  if (!trailPoints.length || trailPoints[trailPoints.length - 1].distanceToSquared(point) > 0.0002) {
-    trailPoints.push(point);
-    if (trailPoints.length > 70) trailPoints.shift();
-    weaponTrail.geometry.dispose();
-    weaponTrail.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
-  }
-}
-
-function triggerImpactPreview() {
-  hitstopRemaining = feel.hitstop;
-  shakeRemaining = 0.18;
-  dummyHitRemaining = 0.34;
-  const flash = document.getElementById('impactFlash');
-  if (document.getElementById('dummyToggle').checked) {
-    flash.style.transition = 'none';
-    flash.style.opacity = String(0.18 + feel.shake * 0.28);
-    requestAnimationFrame(() => {
-      flash.style.transition = 'opacity .16s ease-out';
-      flash.style.opacity = '0';
-    });
-  }
-}
-
-function crossedImpact(previousFrame, currentFrame) {
-  if (currentFrame < previousFrame) return false;
-  return clip.timeline.some((key) => key.impact && key.frame > previousFrame && key.frame <= currentFrame);
-}
-
-function updatePreviewEffects(deltaSeconds) {
-  dummy.visible = document.getElementById('dummyToggle').checked;
-  if (dummyHitRemaining > 0) {
-    dummyHitRemaining = Math.max(0, dummyHitRemaining - deltaSeconds);
-    const amount = dummyHitRemaining / 0.34;
-    dummy.position.z = 2.15 + feel.knockback * 0.72 * amount;
-    dummy.rotation.x = -feel.knockback * 0.18 * amount;
-  } else {
-    dummy.position.z = 2.15;
-    dummy.rotation.x = 0;
-  }
-}
-
-function updatePlaybackButtons() {
-  document.getElementById('playToggle').textContent = player.playing ? '❚❚ Pause' : '▶ Play';
-  document.getElementById('slowToggle').classList.toggle('on', slowEnabled);
-  document.getElementById('loopToggle').classList.toggle('on', loopEnabled);
-}
-
-function readLibrary() {
-  try { return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '{}'); } catch { return {}; }
-}
-
-function writeLibrary(library) {
-  localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
-}
-
-function renderLibrary() {
+function renderLibraryView({ library, onLoad, onQueue, onDelete }) {
   const host = document.getElementById('clipLibrary');
-  const library = readLibrary();
   host.innerHTML = '';
   const names = Object.keys(library).sort();
   if (!names.length) {
@@ -4997,36 +6041,92 @@ function renderLibrary() {
     row.innerHTML = `<span>${name}</span>`;
     const load = document.createElement('button');
     load.textContent = 'Load';
-    load.addEventListener('click', () => setProject(library[name]));
+    load.addEventListener('click', () => onLoad(name, library[name]));
     const queue = document.createElement('button');
     queue.textContent = '+ Combo';
-    queue.addEventListener('click', () => {
-      comboQueue.push({ name, project: clone(library[name]) });
-      renderComboQueue();
-    });
+    queue.addEventListener('click', () => onQueue(name, library[name]));
     const remove = document.createElement('button');
     remove.textContent = 'Delete';
-    remove.addEventListener('click', () => {
-      const latest = readLibrary();
-      delete latest[name];
-      writeLibrary(latest);
-      renderLibrary();
-    });
+    remove.addEventListener('click', () => onDelete(name));
     row.append(load, queue, remove);
     host.appendChild(row);
   });
 }
 
-function renderComboQueue() {
+function renderComboQueueView(comboQueue) {
   const host = document.getElementById('comboQueue');
-  host.textContent = comboQueue.length ? comboQueue.map((entry, index) => `${index + 1}. ${entry.name}`).join('  →  ') : 'queue is empty';
+  host.textContent = comboQueue.length
+    ? comboQueue.map((entry, index) => `${index + 1}. ${entry.name}`).join('  →  ')
+    : 'queue is empty';
 }
 
-function buildComboProject(queue) {
+function renderAnimationBindingView({ action, clip, available }) {
+  const binding = normalizeAnimationBinding(action.animationBinding, clip.id);
+  document.getElementById('animationBindingSpeed').value = binding.speed.toFixed(3);
+  document.getElementById('animationBindingOffset').value = binding.startOffsetSeconds.toFixed(3);
+  document.getElementById('animationBindingInPlace').checked = binding.inPlace;
+  document.getElementById('animationBindingLoop').checked = binding.loop;
+  const status = document.getElementById('animationBindingStatus');
+  status.classList.toggle('pending', binding.source === 'kaykit' && !available);
+  status.textContent = binding.source === 'authored'
+    ? `Pose keys drive ${clip.id}`
+    : `${binding.clipId} · ${binding.speed.toFixed(3)}× · offset ${binding.startOffsetSeconds.toFixed(3)}s · ${available ? 'timeline bound' : 'saved, pack not loaded'}`;
+}
+
+function readAnimationBindingView() {
+  return {
+    source: 'kaykit',
+    clipId: document.getElementById('kaykitClip').value,
+    speed: Number(document.getElementById('animationBindingSpeed').value),
+    startOffsetSeconds: Number(document.getElementById('animationBindingOffset').value),
+    inPlace: document.getElementById('animationBindingInPlace').checked,
+    loop: document.getElementById('animationBindingLoop').checked,
+  };
+}
+return Object.freeze({ renderTimelineView, updateTimelineReadoutView, renderKeyEditorView, renderPoseControlsView, renderWindowEditorView, renderMountEditorView, renderLibraryView, renderComboQueueView, renderAnimationBindingView, readAnimationBindingView });
+})();
+
+// tools/action-studio/studio-project.js
+const __actionStudioModule30 = (() => {
+const { createAnimationClip } = __actionStudioModule16;
+const { ACTION_WINDOW_TYPES, createActionDefinition } = __actionStudioModule23;
+
+const ACTION_STUDIO_PROJECT_FORMAT = 'action-studio-project';
+
+function cloneSerializable(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createStudioProject({ clip, action, weaponMount }) {
+  return {
+    format: ACTION_STUDIO_PROJECT_FORMAT,
+    version: 1,
+    clip: cloneSerializable(clip),
+    action: cloneSerializable(action),
+    weaponMount: cloneSerializable(weaponMount),
+  };
+}
+
+function readStoredJson(storage, key, fallback) {
+  try {
+    const stored = JSON.parse(storage.getItem(key) || 'null');
+    return stored == null ? fallback : stored;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredJson(storage, key, value) {
+  storage.setItem(key, JSON.stringify(value));
+  return value;
+}
+
+function buildComboProjectData(queue, weaponMount) {
   const timeline = [];
   const poses = {};
   const windows = Object.fromEntries(ACTION_WINDOW_TYPES.map((type) => [type, []]));
   let endFrame = 0;
+
   queue.forEach((entry, clipIndex) => {
     const sourceClip = createAnimationClip(entry.project.clip);
     const sourceAction = createActionDefinition(entry.project.action, sourceClip.durationFrames);
@@ -5046,12 +6146,389 @@ function buildComboProject(queue) {
     });
     endFrame = sourceClip.durationFrames + offset;
   });
+
   const comboClip = createAnimationClip({ id: 'combo_preview', name: 'Combo Preview', timeline, poses });
   return {
     clip: comboClip,
-    action: createActionDefinition({ id: comboClip.id, clipId: comboClip.id, category: 'combo-preview', windows }, comboClip.durationFrames),
-    weaponMount: mountCalibration,
+    action: createActionDefinition({
+      id: comboClip.id,
+      clipId: comboClip.id,
+      category: 'combo-preview',
+      windows,
+    }, comboClip.durationFrames),
+    weaponMount: cloneSerializable(weaponMount),
   };
+}
+return Object.freeze({ ACTION_STUDIO_PROJECT_FORMAT, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson, buildComboProjectData });
+})();
+
+// tools/action-studio/action-studio.js
+const __actionStudioModule0 = (() => {
+const { createDefaultCharacter } = __actionStudioModule1;
+const { createDebugSword, mountDebugSword } = __actionStudioModule12;
+const { DEFAULT_KAYKIT_SWORD_MOUNT } = __actionStudioModule15;
+const { applyMountCalibration, normalizeMountCalibration } = __actionStudioModule3;
+const { POSE_KEYS } = __actionStudioModule10;
+const { normalizePose } = __actionStudioModule9;
+const { createAnimationClip } = __actionStudioModule16;
+const { ActionMotionPlayer } = __actionStudioModule17;
+const { createFittedAnimationBinding } = __actionStudioModule19;
+const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioModule11;
+const { ACTION_TEMPLATE_FACTORIES } = __actionStudioModule20;
+const { importLegacyPunchSnapshot } = __actionStudioModule24;
+const { createActionDefinition, isFrameInWindow } = __actionStudioModule23;
+const { createStudioPreviewRuntime } = __actionStudioModule25;
+const { createWholeBodyMotionGuideOverlay } = __actionStudioModule26;
+const { createStudioMotionGuideEditor } = __actionStudioModule27;
+const { bakeStudioMotionConstraints } = __actionStudioModule28;
+const { renderComboQueueView, readAnimationBindingView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule29;
+const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule30;
+
+const THREE = window.THREE;
+if (!THREE) throw new Error('Action Studio requires Three.js r128');
+
+const LIBRARY_KEY = 'ACTION_STUDIO_CLIP_LIBRARY_V1';
+const MOUNT_KEY = 'ACTION_STUDIO_KAYKIT_SWORD_MOUNT_V2';
+const DEG_TO_RAD = Math.PI / 180;
+
+const canvas = document.getElementById('stageCanvas');
+const character = createDefaultCharacter(THREE);
+const sword = createDebugSword(THREE);
+let mountCalibration = loadMountCalibration();
+mountDebugSword(character, sword, mountCalibration);
+const preview = createStudioPreviewRuntime(THREE, {
+  canvas,
+  character,
+  sword,
+  impactFlash: document.getElementById('impactFlash'),
+  isDummyEnabled: () => document.getElementById('dummyToggle').checked,
+});
+
+const player = new ActionMotionPlayer({
+  adapter: {
+    applyPose: (pose) => character.applyPose(pose),
+    stopAnimation: () => character.stopAnimation(),
+    hasAnimation: (name) => character.hasAnimation(name),
+    getAnimationDuration: (name) => character.getAnimationDuration(name),
+    sampleAnimation: (name, timeSeconds, options) => character.sampleAnimation(name, timeSeconds, options),
+  },
+});
+let animationSource = 'authored';
+let kayKitLibrary = null;
+let clip = null;
+let action = null;
+let selectedKeyIndex = 0;
+let loopEnabled = false;
+let slowEnabled = false;
+let comboQueue = [];
+let lastTick = performance.now();
+let previousPlaybackFrame = 0;
+const motionGuideOverlay = createWholeBodyMotionGuideOverlay(THREE, { scene: preview.scene, camera: preview.camera, canvas, character, sword });
+const motionGuideEditor = createStudioMotionGuideEditor({
+  overlay: motionGuideOverlay, applyProject: (project, options) => setProject(project, options),
+  bakeProject: (project, guide) => bakeStudioMotionConstraints(project, { character, sword, guide }),
+  getFrame: () => player.frame, onStatus: (message, error) => setIoStatus(message, error),
+});
+
+function loadMountCalibration() {
+  return normalizeMountCalibration(readStoredJson(localStorage, MOUNT_KEY, DEFAULT_KAYKIT_SWORD_MOUNT));
+}
+
+function currentProject() {
+  return createStudioProject({ clip, action, weaponMount: mountCalibration });
+}
+
+function setProject(project, options = {}) {
+  character.stopAnimation();
+  clip = createAnimationClip(project.clip || project);
+  action = createActionDefinition(project.action || {
+    id: clip.id,
+    clipId: clip.id,
+    category: 'custom',
+  }, clip.durationFrames);
+  if (project.weaponMount) {
+    mountCalibration = normalizeMountCalibration(project.weaponMount);
+    applyMountCalibration(sword.object3d, mountCalibration);
+  }
+  player.setProject(clip, action);
+  player.loop = loopEnabled;
+  player.speed = slowEnabled ? 0.25 : 1;
+  const requestedFrame = Number(options.seekFrame);
+  const initialFrame = Number.isFinite(requestedFrame) ? Math.max(0, Math.min(requestedFrame, clip.durationFrames)) : 0;
+  player.seek(initialFrame);
+  selectedKeyIndex = clip.timeline.reduce((closest, key, index) => (
+    Math.abs(key.frame - initialFrame) < Math.abs(clip.timeline[closest].frame - initialFrame) ? index : closest
+  ), 0);
+  previousPlaybackFrame = initialFrame;
+  clearWeaponTrail();
+  motionGuideEditor.setClip(clip);
+  renderEditor();
+  applyEvaluation(player.evaluate());
+  if (action.animationBinding.source === 'kaykit' && !kayKitLibrary) {
+    loadKayKitRuntime()
+      .then(() => applyEvaluation(player.evaluate()))
+      .catch((error) => setKayKitStatus(error.message, true));
+  }
+  if (options.autoplay) {
+    player.play({ restart: true });
+    updatePlaybackButtons();
+  }
+}
+
+function loadTemplate(id, autoplay = false) {
+  const factory = ACTION_TEMPLATE_FACTORIES[id];
+  if (!factory) return;
+  setProject(factory(), { autoplay });
+}
+
+function setKayKitStatus(message, isError = false) {
+  const status = document.getElementById('kaykitStatus');
+  status.textContent = message;
+  status.classList.toggle('error', isError);
+}
+
+async function loadKayKitRuntime() {
+  if (kayKitLibrary) return kayKitLibrary;
+  if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
+  if (location.protocol === 'file:') {
+    throw new Error('KayKit GLB animation packs require the local HTTP server');
+  }
+  setKayKitStatus(`Loading ${KAYKIT_ANIMATION_PACKS.length} animation packs…`);
+  const loader = new THREE.GLTFLoader();
+  kayKitLibrary = await loadKayKitAnimationLibrary(loader, {
+    baseUrl: '../../assets/kaykit/animations/',
+  });
+  character.registerAnimations(kayKitLibrary);
+  const select = document.getElementById('kaykitClip');
+  select.innerHTML = '';
+  [...kayKitLibrary.clips.keys()].forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  });
+  const boundClipId = action?.animationBinding?.source === 'kaykit' ? action.animationBinding.clipId : '';
+  select.value = kayKitLibrary.clips.has(boundClipId) ? boundClipId : 'Idle_A';
+  setKayKitStatus(
+    `ready · ${kayKitLibrary.clips.size} unique clips · ${kayKitLibrary.duplicates.length} duplicates ignored · ${Object.keys(character.rig.bones).length} procedural bones`,
+  );
+  renderAnimationBinding();
+  return kayKitLibrary;
+}
+
+function shouldLoopKayKitClip(name) {
+  return /Idle|Walking|Running|Blocking|Crouching|Sneaking|Crawling/.test(name);
+}
+
+function renderAnimationBinding() {
+  if (!action) return;
+  const binding = action.animationBinding;
+  renderAnimationBindingView({
+    action,
+    clip,
+    available: binding.source === 'kaykit' && character.hasAnimation(binding.clipId),
+  });
+}
+
+function setAnimationBinding(binding) {
+  action = createActionDefinition({ ...action, animationBinding: binding }, clip.durationFrames);
+  player.setAction(action);
+  player.pause();
+  applyEvaluation(player.evaluate());
+  renderAnimationBinding();
+  updatePlaybackButtons();
+}
+
+async function bindSelectedKayKitClip(fitToAction = false) {
+  await loadKayKitRuntime();
+  const controlBinding = readAnimationBindingView();
+  const { clipId } = controlBinding;
+  const sourceClip = kayKitLibrary.clips.get(clipId);
+  setAnimationBinding(fitToAction ? createFittedAnimationBinding({
+    ...controlBinding,
+    animationDurationSeconds: sourceClip.duration,
+    durationFrames: clip.durationFrames,
+    fps: clip.fps,
+  }) : controlBinding);
+}
+
+async function playSelectedKayKitClip() {
+  await loadKayKitRuntime();
+  const name = document.getElementById('kaykitClip').value;
+  player.pause();
+  clearWeaponTrail();
+  animationSource = 'kaykit-preview';
+  character.playAnimation(name, { loop: shouldLoopKayKitClip(name), inPlace: true });
+  document.getElementById('clipNow').textContent = name.toUpperCase();
+  document.getElementById('phaseNow').textContent = 'KAYKIT RUNTIME';
+  updatePlaybackButtons();
+}
+
+function rebuildClip(selectedName, seekFrame) {
+  clip = createAnimationClip({
+    ...clip,
+    timeline: clip.timeline,
+    poses: clip.poses,
+  });
+  action = createActionDefinition(action, clip.durationFrames);
+  player.setProject(clip, action);
+  player.loop = loopEnabled;
+  player.speed = slowEnabled ? 0.25 : 1;
+  selectedKeyIndex = Math.max(0, clip.timeline.findIndex((key) => key.name === selectedName));
+  const targetFrame = Number.isFinite(Number(seekFrame)) ? Number(seekFrame) : clip.timeline[selectedKeyIndex].frame;
+  player.seek(targetFrame);
+  previousPlaybackFrame = player.frame;
+  clearWeaponTrail();
+  renderEditor();
+  applyEvaluation(player.evaluate());
+}
+
+function renderEditor() {
+  renderTimeline();
+  renderKeyEditor();
+  renderPoseControls();
+  renderWindowEditor();
+  renderMountEditor();
+  renderLibrary();
+  renderComboQueue();
+  renderAnimationBinding();
+  document.getElementById('clipNow').textContent = clip.name.toUpperCase();
+  document.getElementById('libraryName').value = clip.id;
+  document.getElementById('poseAxisSummary').textContent = `${POSE_KEYS.length} axes from POSE_KEYS`;
+}
+
+function renderTimeline() {
+  renderTimelineView({ clip, frame: player.frame, selectedKeyIndex, onSelect: selectKey });
+}
+
+function selectKey(index) {
+  selectedKeyIndex = Math.max(0, Math.min(index, clip.timeline.length - 1));
+  const key = clip.timeline[selectedKeyIndex];
+  player.pause();
+  player.seek(key.frame);
+  previousPlaybackFrame = player.frame;
+  renderTimeline();
+  renderKeyEditor();
+  renderPoseControls();
+  applyEvaluation(player.evaluate());
+  updatePlaybackButtons();
+}
+
+function renderKeyEditor() {
+  renderKeyEditorView(clip, selectedKeyIndex);
+}
+
+function renderPoseControls() {
+  renderPoseControlsView({
+    clip,
+    selectedKeyIndex,
+    onInput: ({ keyframe, poseKey, value }) => {
+      clip.poses[keyframe.name][poseKey] = value;
+      player.pause();
+      player.seek(keyframe.frame);
+      applyEvaluation(player.evaluate());
+      previousPlaybackFrame = player.frame;
+      updatePlaybackButtons();
+    },
+  });
+}
+
+function renderWindowEditor() {
+  renderWindowEditorView({
+    action,
+    clip,
+    onChange: ({ type, enabled, startFrame, endFrame, label }) => {
+      const windows = cloneSerializable(action.windows);
+      windows[type] = enabled ? [{ startFrame, endFrame, label }] : [];
+      action = createActionDefinition({ ...action, windows }, clip.durationFrames);
+      player.setAction(action);
+    },
+  });
+}
+
+function renderMountEditor() {
+  renderMountEditorView({
+    mountCalibration,
+    onChange: ({ label, axis, raw }) => {
+      if (label === 'position') mountCalibration.position[axis] = raw;
+      else if (label === 'rotation °') mountCalibration.rotation[axis] = raw * DEG_TO_RAD;
+      else mountCalibration.scale[axis] = Math.max(0.01, raw);
+      mountCalibration = normalizeMountCalibration(mountCalibration);
+      applyMountCalibration(sword.object3d, mountCalibration);
+      document.getElementById('socketStatus').textContent = 'attached · unsaved';
+    },
+  });
+}
+
+function updateTimelineReadout() {
+  updateTimelineReadoutView(clip, player.frame);
+}
+
+function applyEvaluation(evaluation) {
+  if (!evaluation) return;
+  const applied = player.apply(evaluation);
+  animationSource = applied.motion.pending ? 'authored-fallback' : applied.motion.appliedSource;
+  const motionLabel = applied.motion.appliedSource === 'kaykit' ? ' · KAYKIT BOUND' : '';
+  document.getElementById('phaseNow').textContent = `${evaluation.to.toUpperCase()} · ${evaluation.frame.toFixed(1)}F${motionLabel}`;
+  updateTimelineReadout();
+  return applied;
+}
+
+function clearWeaponTrail() {
+  preview.clearWeaponTrail();
+}
+
+function recordWeaponTrail(frame) {
+  preview.recordWeaponTrail(isFrameInWindow(action, 'weaponTrail', frame));
+}
+
+function triggerImpactPreview() {
+  preview.triggerImpact();
+}
+
+function crossedImpact(previousFrame, currentFrame) {
+  if (currentFrame < previousFrame) return false;
+  return clip.timeline.some((key) => key.impact && key.frame > previousFrame && key.frame <= currentFrame);
+}
+
+function updatePlaybackButtons() {
+  document.getElementById('playToggle').textContent = player.playing ? '❚❚ Pause' : '▶ Play';
+  document.getElementById('slowToggle').classList.toggle('on', slowEnabled);
+  document.getElementById('loopToggle').classList.toggle('on', loopEnabled);
+}
+
+function readLibrary() {
+  return readStoredJson(localStorage, LIBRARY_KEY, {});
+}
+
+function writeLibrary(library) {
+  writeStoredJson(localStorage, LIBRARY_KEY, library);
+}
+
+function renderLibrary() {
+  const library = readLibrary();
+  renderLibraryView({
+    library,
+    onLoad: (_name, project) => setProject(project),
+    onQueue: (name, project) => {
+      comboQueue.push({ name, project: cloneSerializable(project) });
+      renderComboQueue();
+    },
+    onDelete: (name) => {
+      const latest = readLibrary();
+      delete latest[name];
+      writeLibrary(latest);
+      renderLibrary();
+    },
+  });
+}
+
+function renderComboQueue() {
+  renderComboQueueView(comboQueue);
+}
+
+function buildComboProject(queue) {
+  return buildComboProjectData(queue, mountCalibration);
 }
 
 function setIoStatus(message, error = false) {
@@ -5059,38 +6536,6 @@ function setIoStatus(message, error = false) {
   status.textContent = message;
   status.style.color = error ? 'var(--impact)' : 'var(--cyan)';
 }
-
-function resize() {
-  const rect = canvas.getBoundingClientRect();
-  renderer.setSize(rect.width, rect.height, false);
-  camera.aspect = rect.width / Math.max(1, rect.height);
-  camera.updateProjectionMatrix();
-}
-
-let orbiting = false;
-let pointerX = 0;
-let pointerY = 0;
-canvas.addEventListener('pointerdown', (event) => {
-  orbiting = true;
-  pointerX = event.clientX;
-  pointerY = event.clientY;
-  canvas.setPointerCapture(event.pointerId);
-});
-canvas.addEventListener('pointerup', () => { orbiting = false; });
-canvas.addEventListener('pointercancel', () => { orbiting = false; });
-canvas.addEventListener('pointermove', (event) => {
-  if (!orbiting || gameCameraOn) return;
-  cameraTheta -= (event.clientX - pointerX) * 0.008;
-  cameraPhi = Math.max(0.3, Math.min(1.48, cameraPhi - (event.clientY - pointerY) * 0.008));
-  pointerX = event.clientX;
-  pointerY = event.clientY;
-  placeCamera();
-});
-canvas.addEventListener('wheel', (event) => {
-  event.preventDefault();
-  cameraRadius = Math.max(3.2, Math.min(10, cameraRadius + event.deltaY * 0.008));
-  placeCamera();
-}, { passive: false });
 
 function bindV3AppearanceToggle(buttonId, setter) {
   const button = document.getElementById(buttonId);
@@ -5116,7 +6561,16 @@ document.getElementById('loadKayKitAnimations').addEventListener('click', () => 
 document.getElementById('playKayKitAnimation').addEventListener('click', () => {
   playSelectedKayKitClip().catch((error) => setKayKitStatus(error.message, true));
 });
-document.getElementById('stopKayKitAnimation').addEventListener('click', () => loadTemplate('idle'));
+document.getElementById('stopKayKitAnimation').addEventListener('click', () => applyEvaluation(player.evaluate()));
+document.getElementById('bindKayKitAnimation').addEventListener('click', () => {
+  bindSelectedKayKitClip(false).catch((error) => setKayKitStatus(error.message, true));
+});
+document.getElementById('fitKayKitAnimation').addEventListener('click', () => {
+  bindSelectedKayKitClip(true).catch((error) => setKayKitStatus(error.message, true));
+});
+document.getElementById('clearAnimationBinding').addEventListener('click', () => {
+  setAnimationBinding({ source: 'authored', clipId: clip.id });
+});
 
 document.getElementById('showTPose').addEventListener('click', () => loadTemplate('t_pose'));
 document.getElementById('showIdle').addEventListener('click', () => loadTemplate('idle'));
@@ -5145,19 +6599,7 @@ document.getElementById('loopToggle').addEventListener('click', () => {
   updatePlaybackButtons();
 });
 document.getElementById('gameCamera').addEventListener('click', () => {
-  gameCameraOn = !gameCameraOn;
-  if (gameCameraOn) {
-    savedCamera = { cameraTheta, cameraPhi, cameraRadius, fov: camera.fov };
-    cameraTheta = Math.PI;
-    cameraPhi = 0.82;
-    cameraRadius = 5.35;
-    camera.fov = 34;
-  } else if (savedCamera) {
-    ({ cameraTheta, cameraPhi, cameraRadius } = savedCamera);
-    camera.fov = savedCamera.fov;
-  }
-  camera.updateProjectionMatrix();
-  placeCamera();
+  const gameCameraOn = preview.toggleGameCamera();
   document.getElementById('gameCamera').classList.toggle('on', gameCameraOn);
 });
 document.getElementById('timelineScrub').addEventListener('input', (event) => {
@@ -5234,8 +6676,8 @@ document.getElementById('resetMount').addEventListener('click', () => {
  ['shake', 'shakeValue', 'shake', (value) => value.toFixed(2)],
  ['knockback', 'knockbackValue', 'knockback', (value) => value.toFixed(2)]].forEach(([id, outputId, key, format]) => {
   document.getElementById(id).addEventListener('input', (event) => {
-    feel[key] = Number(event.target.value);
-    document.getElementById(outputId).textContent = format(feel[key]);
+    const value = preview.setFeel(key, event.target.value);
+    document.getElementById(outputId).textContent = format(value);
   });
 });
 document.getElementById('saveClip').addEventListener('click', () => {
@@ -5290,9 +6732,7 @@ function tick(now) {
   lastTick = now;
   let evaluation = player.evaluate();
   if (player.playing) {
-    if (hitstopRemaining > 0) {
-      hitstopRemaining = Math.max(0, hitstopRemaining - deltaSeconds);
-    } else {
+    if (!preview.consumeHitstop(deltaSeconds)) {
       const before = player.frame;
       evaluation = player.update(deltaSeconds);
       const after = player.frame;
@@ -5308,27 +6748,16 @@ function tick(now) {
     recordWeaponTrail(player.frame);
     if (!player.playing) updatePlaybackButtons();
   }
-  character.update(deltaSeconds, camera);
+  character.update(deltaSeconds, preview.camera);
+  motionGuideOverlay.update();
   sword.update();
-  updatePreviewEffects(deltaSeconds);
-
-  let shakeX = 0;
-  let shakeY = 0;
-  if (shakeRemaining > 0) {
-    shakeRemaining = Math.max(0, shakeRemaining - deltaSeconds);
-    const amount = feel.shake * 0.08 * (shakeRemaining / 0.18);
-    shakeX = (Math.random() * 2 - 1) * amount;
-    shakeY = (Math.random() * 2 - 1) * amount;
-    camera.position.x += shakeX;
-    camera.position.y += shakeY;
-  }
-  renderer.render(scene, camera);
-  camera.position.x -= shakeX;
-  camera.position.y -= shakeY;
+  preview.update(deltaSeconds);
+  preview.advanceShake(deltaSeconds);
+  preview.render();
   requestAnimationFrame(tick);
 }
 
-window.addEventListener('resize', resize);
+window.addEventListener('resize', preview.resize);
 window.__actionStudio = {
   get clip() { return clip; },
   get action() { return action; },
@@ -5345,9 +6774,13 @@ window.__actionStudio = {
     return { start: start.toArray(), end: end.toArray() };
   },
   get animationSource() { return animationSource; },
+  get motionGuide() { return motionGuideEditor.guide; },
+  get motionGuideDirty() { return motionGuideEditor.dirty; },
+  get motionGuideDiagnostics() { return motionGuideOverlay.diagnostics; },
+  get motionConstraintReport() { return motionGuideEditor.constraintReport; },
   get renderStyle() { return 'v3-rig-line'; },
   loadKayKitRuntime,
-  playKayKitClip(name, options = {}) { animationSource = 'kaykit'; return character.playAnimation(name, options); },
+  playKayKitClip(name, options = {}) { animationSource = 'kaykit-preview'; return character.playAnimation(name, options); },
   get legacyScriptsLoaded() {
     return [...document.scripts].map((script) => script.src).filter((src) => /\/ps\//.test(src));
   },
@@ -5355,8 +6788,7 @@ window.__actionStudio = {
   loadTemplate,
 };
 
-placeCamera();
-resize();
+preview.resize();
 loadTemplate('slash_test');
 updatePlaybackButtons();
 requestAnimationFrame(tick);
