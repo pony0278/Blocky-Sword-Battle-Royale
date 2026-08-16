@@ -8,6 +8,7 @@ test('Action Studio uses the procedural KayKit character as its default characte
   assert.match(source, /createDefaultCharacter/);
   assert.doesNotMatch(source, /createBlockCharacter/);
   assert.match(external, /loadKayKitAnimationLibrary/);
+  assert.match(external, /loadUal1AnimationLibrary/);
   assert.match(external, /loadUal2AnimationLibrary/);
   assert.match(external, /character\.registerAnimations/);
   assert.match(source, /ActionMotionPlayer/);
@@ -78,8 +79,9 @@ test('Action Studio separates preview, project, and editor view responsibilities
   assert.match(blocking, /sword\.trailTip\.getWorldPosition/);
   assert.match(projectIo, /downloadProject/);
   assert.match(projectIo, /ACTION_STUDIO_AUTOSAVE_V1/);
+  assert.match(external, /loadUal1AnimationLibrary/);
   assert.match(external, /loadUal2AnimationLibrary/);
-  assert.match(external, /UAL2 RETARGET PREVIEW/);
+  assert.match(external, /RETARGET PREVIEW/);
   assert.match(external, /readAnimationBindingView\(source\)/);
 });
 
@@ -87,6 +89,7 @@ test('Action Studio exposes explicit KayKit runtime controls and GLTFLoader', as
   const template = await readFile(new URL('../tools/action-studio/index.template.html', import.meta.url), 'utf8');
   assert.match(template, /GLTFLoader\.js/);
   assert.match(template, /id="animationPackSource"/);
+  assert.match(template, /UAL1 Sword Basics/);
   assert.match(template, /UAL2 Sword Combat/);
   assert.match(template, /id="loadKayKitAnimations"/);
   assert.match(template, /id="kaykitClip"/);

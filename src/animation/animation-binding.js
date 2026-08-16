@@ -1,4 +1,4 @@
-export const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2']);
+export const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2', 'ual1']);
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -25,9 +25,13 @@ export function createFittedAnimationBinding(options = {}) {
   const actionSeconds = Math.max(0, finiteNumber(options.durationFrames, 0)) / fps;
   const animationSeconds = Math.max(0, finiteNumber(options.animationDurationSeconds, 0));
   const speed = actionSeconds > 0 && animationSeconds > 0 ? animationSeconds / actionSeconds : 1;
+  const requestedSource = String(options.source || 'kaykit');
+  const source = ACTION_MOTION_SOURCES.includes(requestedSource) && requestedSource !== 'authored'
+    ? requestedSource
+    : 'kaykit';
   return normalizeAnimationBinding({
     ...options,
-    source: options.source === 'ual2' ? 'ual2' : 'kaykit',
+    source,
     speed,
     startOffsetSeconds: 0,
     loop: false,

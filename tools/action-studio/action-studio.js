@@ -614,8 +614,10 @@ window.__actionStudio = {
   get blockingDiagnostics() { return blockingWorkflow.diagnostics; },
   get renderStyle() { return 'v3-rig-line'; },
   loadKayKitRuntime: () => externalAnimations.load('kaykit'),
+  loadUal1Runtime: () => externalAnimations.load('ual1'),
   loadUal2Runtime: () => externalAnimations.load('ual2'),
   playKayKitClip: (name, options = {}) => externalAnimations.playClip('kaykit', name, options),
+  playUal1Clip: (name, options = {}) => externalAnimations.playClip('ual1', name, options),
   playUal2Clip: (name, options = {}) => externalAnimations.playClip('ual2', name, options),
   get loadedAnimationSources() { return [...externalAnimations.libraries.keys()]; },
   get legacyScriptsLoaded() {

@@ -60,6 +60,12 @@ test('animation bindings normalize legacy and fitted action data', () => {
   });
   assert.equal(ual2.source, 'ual2');
   assert.equal(normalizeAnimationBinding(ual2).clipId, 'UAL2/Sword_Regular_A');
+  const ual1 = createFittedAnimationBinding({
+    source: 'ual1', clipId: 'UAL1/Sword_Attack',
+    animationDurationSeconds: 1.533, durationFrames: 30, fps: 30,
+  });
+  assert.equal(ual1.source, 'ual1');
+  assert.equal(normalizeAnimationBinding(ual1).clipId, 'UAL1/Sword_Attack');
 });
 
 test('ActionMotionPlayer applies authored poses through the shared action clock', () => {

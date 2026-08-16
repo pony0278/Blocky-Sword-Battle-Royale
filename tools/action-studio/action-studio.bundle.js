@@ -4312,7 +4312,7 @@ return Object.freeze({ ClipPlayer });
 
 // src/animation/animation-binding.js
 const __actionStudioModule19 = (() => {
-const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2']);
+const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2', 'ual1']);
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -4339,9 +4339,13 @@ function createFittedAnimationBinding(options = {}) {
   const actionSeconds = Math.max(0, finiteNumber(options.durationFrames, 0)) / fps;
   const animationSeconds = Math.max(0, finiteNumber(options.animationDurationSeconds, 0));
   const speed = actionSeconds > 0 && animationSeconds > 0 ? animationSeconds / actionSeconds : 1;
+  const requestedSource = String(options.source || 'kaykit');
+  const source = ACTION_MOTION_SOURCES.includes(requestedSource) && requestedSource !== 'authored'
+    ? requestedSource
+    : 'kaykit';
   return normalizeAnimationBinding({
     ...options,
-    source: options.source === 'ual2' ? 'ual2' : 'kaykit',
+    source,
     speed,
     startOffsetSeconds: 0,
     loop: false,
@@ -7460,8 +7464,253 @@ function createStudioProjectIoController(options) {
 return Object.freeze({ ACTION_STUDIO_AUTOSAVE_KEY, createStudioProjectIoController });
 })();
 
-// src/animation/ual2-animation-library.js
+// src/animation/quaternius-animation-retarget.js
+const __actionStudioModule37 = (() => {
+const { sanitizeAnimationTargetName } = __actionStudioModule6;
+
+const QUATERNIUS_BONE_RETARGETS = Object.freeze([
+  Object.freeze({ source: 'root', target: 'root', position: true }),
+  Object.freeze({ source: 'pelvis', target: 'hips', position: true }),
+  Object.freeze({ source: 'spine_01', target: 'spine' }),
+  Object.freeze({ source: 'spine_03', target: 'chest' }),
+  Object.freeze({ source: 'Head', target: 'head' }),
+  Object.freeze({ source: 'upperarm_l', target: 'upperarm.l' }),
+  Object.freeze({ source: 'lowerarm_l', target: 'lowerarm.l' }),
+  Object.freeze({ source: 'hand_l', target: 'wrist.l' }),
+  Object.freeze({ source: 'upperarm_r', target: 'upperarm.r' }),
+  Object.freeze({ source: 'lowerarm_r', target: 'lowerarm.r' }),
+  Object.freeze({ source: 'hand_r', target: 'wrist.r' }),
+  Object.freeze({ source: 'thigh_l', target: 'upperleg.l' }),
+  Object.freeze({ source: 'calf_l', target: 'lowerleg.l' }),
+  Object.freeze({ source: 'foot_l', target: 'foot.l' }),
+  Object.freeze({ source: 'ball_l', target: 'toes.l' }),
+  Object.freeze({ source: 'thigh_r', target: 'upperleg.r' }),
+  Object.freeze({ source: 'calf_r', target: 'lowerleg.r' }),
+  Object.freeze({ source: 'foot_r', target: 'foot.r' }),
+  Object.freeze({ source: 'ball_r', target: 'toes.r' }),
+]);
+
+function loadGlb(loader, url) {
+  return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+}
+
+function disposeScene(scene) {
+  scene?.traverse?.((object3d) => {
+    if (!object3d.isMesh) return;
+    object3d.geometry?.dispose?.();
+    const materials = Array.isArray(object3d.material) ? object3d.material : [object3d.material];
+    materials.forEach((material) => material?.dispose?.());
+  });
+}
+
+function createTargetProxy(THREE, rig) {
+  const root = new THREE.Object3D();
+  const bones = {};
+  for (const definition of rig.definition.bones) {
+    const bone = new THREE.Object3D();
+    const rest = rig.restTransforms[definition.id];
+    bone.name = sanitizeAnimationTargetName(definition.id);
+    bone.position.fromArray(rest.position);
+    bone.quaternion.fromArray(rest.quaternion);
+    bone.scale.fromArray(rest.scale);
+    (definition.parent ? bones[definition.parent] : root).add(bone);
+    bones[definition.id] = bone;
+  }
+  root.updateMatrixWorld(true);
+  return { root, bones };
+}
+
+function restoreTargetProxy(proxy, rig) {
+  for (const [boneId, rest] of Object.entries(rig.restTransforms)) {
+    const bone = proxy.bones[boneId];
+    bone.position.fromArray(rest.position);
+    bone.quaternion.fromArray(rest.quaternion);
+    bone.scale.fromArray(rest.scale);
+  }
+  proxy.root.updateMatrixWorld(true);
+}
+
+function worldSnapshot(THREE, object3d) {
+  return {
+    position: object3d.getWorldPosition(new THREE.Vector3()),
+    quaternion: object3d.getWorldQuaternion(new THREE.Quaternion()),
+  };
+}
+
+function motionScale(sourceRest, targetRest) {
+  const sourceHeight = sourceRest.Head.position.distanceTo(sourceRest.root.position);
+  const targetHeight = targetRest.head.position.distanceTo(targetRest.root.position);
+  if (sourceHeight < 0.001 || targetHeight < 0.001) return 1;
+  return Math.max(0.5, Math.min(1.5, targetHeight / sourceHeight));
+}
+
+function sampleTimes(duration, fps) {
+  const step = 1 / Math.max(1, Number(fps) || 30);
+  const times = [];
+  for (let time = 0; time < duration - step * 0.25; time += step) times.push(time);
+  if (!times.length || Math.abs(times.at(-1) - duration) > 1e-5) times.push(duration);
+  return times;
+}
+
+function retargetQuaterniusClip(THREE, gltf, rig, options = {}) {
+  if (!THREE?.AnimationMixer || !THREE?.AnimationClip) {
+    throw new Error('Quaternius retargeting requires the Three.js animation runtime');
+  }
+  const sourceScene = gltf?.scene;
+  const sourceClip = gltf?.animations?.[0];
+  if (!sourceScene || !sourceClip) throw new Error('Quaternius GLB is missing its source hierarchy or animation');
+  const retargets = options.boneRetargets || QUATERNIUS_BONE_RETARGETS;
+
+  sourceScene.updateMatrixWorld(true);
+  const sourceNodes = {};
+  retargets.forEach(({ source }) => { sourceNodes[source] = sourceScene.getObjectByName(source); });
+  const missing = retargets.filter(({ source }) => !sourceNodes[source]).map(({ source }) => source);
+  if (missing.length) throw new Error(`${sourceClip.name} is missing Quaternius bones: ${missing.join(', ')}`);
+
+  const targetProxy = createTargetProxy(THREE, rig);
+  const sourceRest = {};
+  const targetRest = {};
+  retargets.forEach(({ source, target }) => {
+    sourceRest[source] = worldSnapshot(THREE, sourceNodes[source]);
+    targetRest[target] = worldSnapshot(THREE, targetProxy.bones[target]);
+  });
+  const translationScale = motionScale(sourceRest, targetRest);
+  const times = sampleTimes(sourceClip.duration, options.fps || 30);
+  const samples = new Map(retargets.map(({ target, position }) => [target, {
+    quaternion: [],
+    position: position ? [] : null,
+  }]));
+  const mixer = new THREE.AnimationMixer(sourceScene);
+  const action = mixer.clipAction(sourceClip).reset();
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+  const sourceWorldQuaternion = new THREE.Quaternion();
+  const sourceWorldPosition = new THREE.Vector3();
+  const rotationDelta = new THREE.Quaternion();
+  const desiredWorldQuaternion = new THREE.Quaternion();
+  const parentWorldQuaternion = new THREE.Quaternion();
+  const desiredWorldPosition = new THREE.Vector3();
+
+  times.forEach((time) => {
+    mixer.setTime(time);
+    sourceScene.updateMatrixWorld(true);
+    restoreTargetProxy(targetProxy, rig);
+    retargets.forEach(({ source, target, position }) => {
+      const sourceBone = sourceNodes[source];
+      const targetBone = targetProxy.bones[target];
+      sourceBone.getWorldQuaternion(sourceWorldQuaternion);
+      rotationDelta.copy(sourceWorldQuaternion).multiply(sourceRest[source].quaternion.clone().invert());
+      desiredWorldQuaternion.copy(rotationDelta).multiply(targetRest[target].quaternion);
+      targetBone.parent.getWorldQuaternion(parentWorldQuaternion);
+      targetBone.quaternion.copy(parentWorldQuaternion.invert().multiply(desiredWorldQuaternion)).normalize();
+      if (position) {
+        sourceBone.getWorldPosition(sourceWorldPosition);
+        desiredWorldPosition.copy(sourceWorldPosition)
+          .sub(sourceRest[source].position)
+          .multiplyScalar(translationScale)
+          .add(targetRest[target].position);
+        targetBone.position.copy(targetBone.parent.worldToLocal(desiredWorldPosition));
+      }
+      targetBone.updateMatrixWorld(true);
+      samples.get(target).quaternion.push(...targetBone.quaternion.toArray());
+      if (position) samples.get(target).position.push(...targetBone.position.toArray());
+    });
+  });
+  action.stop();
+
+  const source = String(options.source || 'quaternius').toLowerCase();
+  const clipPrefix = String(options.clipPrefix || source.toUpperCase());
+  const clipName = `${clipPrefix}/${sourceClip.name || options.id || 'Action'}`;
+  const tracks = [];
+  retargets.forEach(({ target, position }) => {
+    const targetName = sanitizeAnimationTargetName(target);
+    tracks.push(new THREE.QuaternionKeyframeTrack(
+      `${targetName}.quaternion`, times, samples.get(target).quaternion,
+    ));
+    if (position) {
+      tracks.push(new THREE.VectorKeyframeTrack(
+        `${targetName}.position`, times, samples.get(target).position,
+      ));
+    }
+  });
+  const clip = new THREE.AnimationClip(clipName, sourceClip.duration, tracks);
+  clip.userData = {
+    source,
+    sourceClip: sourceClip.name,
+    retargetFps: options.fps || 30,
+    translationScale,
+  };
+  return clip;
+}
+
+const loadQuaterniusAnimationLibrary = async (loader, options = {}) => {
+  if (!loader?.load) throw new Error('loadQuaterniusAnimationLibrary requires a GLTFLoader instance');
+  const THREE = options.THREE;
+  const rig = options.rig;
+  const files = options.files || [];
+  if (!THREE || !rig?.definition || !rig?.restTransforms) {
+    throw new Error('loadQuaterniusAnimationLibrary requires THREE and the target procedural rig');
+  }
+  if (!files.length) throw new Error('loadQuaterniusAnimationLibrary requires one or more animation files');
+  const baseUrl = String(options.baseUrl || '').replace(/\/?$/, '/');
+  const loaded = await Promise.all(files.map(async (entry) => {
+    const gltf = await loadGlb(loader, `${baseUrl}${entry.file}`);
+    try {
+      return retargetQuaterniusClip(THREE, gltf, rig, {
+        id: entry.id,
+        fps: options.fps || 30,
+        source: options.source,
+        clipPrefix: options.clipPrefix,
+      });
+    } finally {
+      disposeScene(gltf.scene);
+    }
+  }));
+  return {
+    clips: new Map(loaded.map((clip) => [clip.name, clip])),
+    files,
+    duplicates: [],
+    source: String(options.source || 'quaternius').toLowerCase(),
+    retargetFps: options.fps || 30,
+  };
+};
+return Object.freeze({ QUATERNIUS_BONE_RETARGETS, retargetQuaterniusClip, loadQuaterniusAnimationLibrary });
+})();
+
+// src/animation/ual1-animation-library.js
 const __actionStudioModule36 = (() => {
+const { QUATERNIUS_BONE_RETARGETS, loadQuaterniusAnimationLibrary, retargetQuaterniusClip } = __actionStudioModule37;
+
+const UAL1_ANIMATION_FILES = Object.freeze([
+  Object.freeze({ id: 'Sword_Attack', file: 'Sword_Attack.glb' }),
+  Object.freeze({ id: 'Sword_Idle', file: 'Sword_Idle.glb' }),
+]);
+
+const UAL1_BONE_RETARGETS = QUATERNIUS_BONE_RETARGETS;
+
+const DEFAULT_BASE_URL = '../../assets/UAL1_Animation_Split_Package/Animation_Only/No_Root_Motion/';
+
+function retargetUal1Clip(THREE, gltf, rig, options = {}) {
+  return retargetQuaterniusClip(THREE, gltf, rig, {
+    ...options,
+    source: 'ual1',
+    clipPrefix: 'UAL1',
+  });
+}
+
+const loadUal1AnimationLibrary = (loader, options = {}) => loadQuaterniusAnimationLibrary(loader, {
+  ...options,
+  files: UAL1_ANIMATION_FILES,
+  baseUrl: options.baseUrl || DEFAULT_BASE_URL,
+  source: 'ual1',
+  clipPrefix: 'UAL1',
+});
+return Object.freeze({ UAL1_ANIMATION_FILES, UAL1_BONE_RETARGETS, retargetUal1Clip, loadUal1AnimationLibrary });
+})();
+
+// src/animation/ual2-animation-library.js
+const __actionStudioModule38 = (() => {
 const { sanitizeAnimationTargetName } = __actionStudioModule6;
 
 const UAL2_ANIMATION_FILES = Object.freeze([
@@ -7678,7 +7927,7 @@ return Object.freeze({ UAL2_ANIMATION_FILES, UAL2_BONE_RETARGETS, retargetUal2Cl
 })();
 
 // tools/action-studio/studio-editor-view.js
-const __actionStudioModule37 = (() => {
+const __actionStudioModule39 = (() => {
 const { POSE_KEYS } = __actionStudioModule10;
 const { normalizeAnimationBinding } = __actionStudioModule19;
 const { clipMarkerSummary } = __actionStudioModule16;
@@ -7907,12 +8156,14 @@ return Object.freeze({ renderTimelineView, updateTimelineReadoutView, renderKeyE
 const __actionStudioModule35 = (() => {
 const { createFittedAnimationBinding } = __actionStudioModule19;
 const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioModule11;
-const { UAL2_ANIMATION_FILES, loadUal2AnimationLibrary } = __actionStudioModule36;
-const { readAnimationBindingView } = __actionStudioModule37;
+const { UAL1_ANIMATION_FILES, loadUal1AnimationLibrary } = __actionStudioModule36;
+const { UAL2_ANIMATION_FILES, loadUal2AnimationLibrary } = __actionStudioModule38;
+const { readAnimationBindingView } = __actionStudioModule39;
 
 const SOURCE_INFO = Object.freeze({
-  ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length }),
-  kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length }),
+  ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
+  ual1: Object.freeze({ label: 'UAL1 Sword Basics', count: UAL1_ANIMATION_FILES.length, defaultClip: 'UAL1/Sword_Attack' }),
+  kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length, defaultClip: 'Idle_A' }),
 });
 
 function shouldLoopClip(name) {
@@ -7960,12 +8211,12 @@ function createStudioExternalAnimationController(options) {
     [...library.clips.keys()].forEach((name) => {
       const option = document.createElement('option');
       option.value = name;
-      option.textContent = name.replace(/^UAL2\//, '');
+      option.textContent = name.replace(/^UAL[12]\//, '');
       clipSelect.appendChild(option);
     });
     clipSelect.value = library.clips.has(preferredClipId)
       ? preferredClipId
-      : (source === 'ual2' ? 'UAL2/Sword_Regular_A' : 'Idle_A');
+      : SOURCE_INFO[source].defaultClip;
   }
 
   async function load(source = selectedSource()) {
@@ -7975,20 +8226,30 @@ function createStudioExternalAnimationController(options) {
     const info = SOURCE_INFO[source];
     setStatus(`Loading ${info.label} · ${info.count} files…`);
     const loader = new THREE.GLTFLoader();
-    const library = source === 'ual2'
-      ? await loadUal2AnimationLibrary(loader, {
+    let library;
+    if (source === 'ual1') {
+      library = await loadUal1AnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/UAL1_Animation_Split_Package/Animation_Only/No_Root_Motion/',
+        fps: 30,
+      });
+    } else if (source === 'ual2') {
+      library = await loadUal2AnimationLibrary(loader, {
         THREE,
         rig: character.rig,
         baseUrl: '../../assets/UAL2_Sword_Combat_Package/Animation_Only/No_Root_Motion/',
         fps: 30,
-      })
-      : await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
+      });
+    } else {
+      library = await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
+    }
     character.registerAnimations(library);
     libraries.set(source, library);
     populate(source, getAction()?.animationBinding?.clipId);
-    const detail = source === 'ual2'
-      ? `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`
-      : `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`;
+    const detail = source === 'kaykit'
+      ? `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`
+      : `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`;
     setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
     renderBinding();
     return library;
@@ -8032,8 +8293,10 @@ function createStudioExternalAnimationController(options) {
     clearWeaponTrail();
     setAnimationSource(`${source}-preview`);
     character.playAnimation(name, { loop: shouldLoopClip(name), inPlace: true });
-    document.getElementById('clipNow').textContent = name.replace(/^UAL2\//, '').toUpperCase();
-    document.getElementById('phaseNow').textContent = source === 'ual2' ? 'UAL2 RETARGET PREVIEW' : 'KAYKIT RUNTIME';
+    document.getElementById('clipNow').textContent = name.replace(/^UAL[12]\//, '').toUpperCase();
+    document.getElementById('phaseNow').textContent = source === 'kaykit'
+      ? 'KAYKIT RUNTIME'
+      : `${source.toUpperCase()} RETARGET PREVIEW`;
     updatePlaybackButtons();
   }
 
@@ -8099,7 +8362,7 @@ const { createStudioPoseDragController } = __actionStudioModule28;
 const { captureNextBlockingKey, createStudioBlockingWorkflow } = __actionStudioModule31;
 const { createStudioProjectIoController } = __actionStudioModule32;
 const { createStudioExternalAnimationController } = __actionStudioModule35;
-const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule37;
+const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule39;
 const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule34;
 
 const THREE = window.THREE;
@@ -8681,8 +8944,10 @@ window.__actionStudio = {
   get blockingDiagnostics() { return blockingWorkflow.diagnostics; },
   get renderStyle() { return 'v3-rig-line'; },
   loadKayKitRuntime: () => externalAnimations.load('kaykit'),
+  loadUal1Runtime: () => externalAnimations.load('ual1'),
   loadUal2Runtime: () => externalAnimations.load('ual2'),
   playKayKitClip: (name, options = {}) => externalAnimations.playClip('kaykit', name, options),
+  playUal1Clip: (name, options = {}) => externalAnimations.playClip('ual1', name, options),
   playUal2Clip: (name, options = {}) => externalAnimations.playClip('ual2', name, options),
   get loadedAnimationSources() { return [...externalAnimations.libraries.keys()]; },
   get legacyScriptsLoaded() {

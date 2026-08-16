@@ -75,6 +75,15 @@ test('cached UAL2 playback preserves the clip selected by the author', async () 
 
     assert.equal(elements.kaykitClip.value, 'UAL2/Sword_Regular_B');
     assert.deepEqual(played, ['UAL2/Sword_Regular_B']);
+
+    elements.animationPackSource.value = 'ual1';
+    controller.libraries.set('ual1', {
+      clips: new Map([['UAL1/Sword_Attack', { duration: 1.533 }], ['UAL1/Sword_Idle', { duration: 1.667 }]]),
+    });
+    elements.kaykitClip.value = 'UAL1/Sword_Idle';
+    await controller.playSelected();
+    assert.equal(elements.kaykitClip.value, 'UAL1/Sword_Idle');
+    assert.deepEqual(played, ['UAL2/Sword_Regular_B', 'UAL1/Sword_Idle']);
   } finally {
     if (previousDocument === undefined) delete globalThis.document;
     else globalThis.document = previousDocument;

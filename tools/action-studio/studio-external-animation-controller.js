@@ -4,14 +4,19 @@ import {
   loadKayKitAnimationLibrary,
 } from '../../src/animation/kaykit-animation-library.js';
 import {
+  UAL1_ANIMATION_FILES,
+  loadUal1AnimationLibrary,
+} from '../../src/animation/ual1-animation-library.js';
+import {
   UAL2_ANIMATION_FILES,
   loadUal2AnimationLibrary,
 } from '../../src/animation/ual2-animation-library.js';
 import { readAnimationBindingView } from './studio-editor-view.js';
 
 const SOURCE_INFO = Object.freeze({
-  ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length }),
-  kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length }),
+  ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
+  ual1: Object.freeze({ label: 'UAL1 Sword Basics', count: UAL1_ANIMATION_FILES.length, defaultClip: 'UAL1/Sword_Attack' }),
+  kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length, defaultClip: 'Idle_A' }),
 });
 
 function shouldLoopClip(name) {
@@ -59,12 +64,12 @@ export function createStudioExternalAnimationController(options) {
     [...library.clips.keys()].forEach((name) => {
       const option = document.createElement('option');
       option.value = name;
-      option.textContent = name.replace(/^UAL2\//, '');
+      option.textContent = name.replace(/^UAL[12]\//, '');
       clipSelect.appendChild(option);
     });
     clipSelect.value = library.clips.has(preferredClipId)
       ? preferredClipId
-      : (source === 'ual2' ? 'UAL2/Sword_Regular_A' : 'Idle_A');
+      : SOURCE_INFO[source].defaultClip;
   }
 
   async function load(source = selectedSource()) {
@@ -74,20 +79,30 @@ export function createStudioExternalAnimationController(options) {
     const info = SOURCE_INFO[source];
     setStatus(`Loading ${info.label} · ${info.count} files…`);
     const loader = new THREE.GLTFLoader();
-    const library = source === 'ual2'
-      ? await loadUal2AnimationLibrary(loader, {
+    let library;
+    if (source === 'ual1') {
+      library = await loadUal1AnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/UAL1_Animation_Split_Package/Animation_Only/No_Root_Motion/',
+        fps: 30,
+      });
+    } else if (source === 'ual2') {
+      library = await loadUal2AnimationLibrary(loader, {
         THREE,
         rig: character.rig,
         baseUrl: '../../assets/UAL2_Sword_Combat_Package/Animation_Only/No_Root_Motion/',
         fps: 30,
-      })
-      : await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
+      });
+    } else {
+      library = await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
+    }
     character.registerAnimations(library);
     libraries.set(source, library);
     populate(source, getAction()?.animationBinding?.clipId);
-    const detail = source === 'ual2'
-      ? `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`
-      : `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`;
+    const detail = source === 'kaykit'
+      ? `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`
+      : `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`;
     setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
     renderBinding();
     return library;
@@ -131,8 +146,10 @@ export function createStudioExternalAnimationController(options) {
     clearWeaponTrail();
     setAnimationSource(`${source}-preview`);
     character.playAnimation(name, { loop: shouldLoopClip(name), inPlace: true });
-    document.getElementById('clipNow').textContent = name.replace(/^UAL2\//, '').toUpperCase();
-    document.getElementById('phaseNow').textContent = source === 'ual2' ? 'UAL2 RETARGET PREVIEW' : 'KAYKIT RUNTIME';
+    document.getElementById('clipNow').textContent = name.replace(/^UAL[12]\//, '').toUpperCase();
+    document.getElementById('phaseNow').textContent = source === 'kaykit'
+      ? 'KAYKIT RUNTIME'
+      : `${source.toUpperCase()} RETARGET PREVIEW`;
     updatePlaybackButtons();
   }
 
