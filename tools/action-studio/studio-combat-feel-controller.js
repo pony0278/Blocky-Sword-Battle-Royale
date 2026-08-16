@@ -20,26 +20,24 @@ function updateSlider(id, value, digits = 2, suffix = '') {
   output.textContent = `${Number(value).toFixed(digits)}${suffix}`;
 }
 
-function applyProfile(slot) {
-  const select = document.getElementById(`feelProfile${slot}`);
-  const name = select?.value || 'light';
-  const values = PROFILE_VALUES[name];
-  if (!values) return;
-  window.dispatchEvent(new CustomEvent('action-studio-feel-profile', {
-    detail: { profile: name },
-  }));
-  updateSlider('hitstop', values.hitstop, values.hitstop % 0.01 === 0 ? 2 : 3, 's');
-  updateSlider('shake', values.shake);
-  updateSlider('knockback', values.knockback);
-  const status = document.getElementById('feelProfileStatus');
-  if (status) status.textContent = `Active ${slot} · ${PROFILE_LABELS[name]} · same animation, different impact response`;
-  document.getElementById('feelUseA')?.classList.toggle('on', slot === 'A');
-  document.getElementById('feelUseB')?.classList.toggle('on', slot === 'B');
-}
+export function createStudioCombatFeelController(preview) {
+  function applyProfile(slot) {
+    const select = document.getElementById(`feelProfile${slot}`);
+    const name = select?.value || 'light';
+    const values = PROFILE_VALUES[name];
+    if (!values) return;
+    preview.applyFeelProfile(name);
+    updateSlider('hitstop', values.hitstop, values.hitstop % 0.01 === 0 ? 2 : 3, 's');
+    updateSlider('shake', values.shake);
+    updateSlider('knockback', values.knockback);
+    const status = document.getElementById('feelProfileStatus');
+    if (status) status.textContent = `Active ${slot} · ${PROFILE_LABELS[name]} · same animation, different impact response`;
+    document.getElementById('feelUseA')?.classList.toggle('on', slot === 'A');
+    document.getElementById('feelUseB')?.classList.toggle('on', slot === 'B');
+  }
 
-function bind() {
   const controls = document.getElementById('feelAbControls');
-  if (!controls) return;
+  if (!controls) return { applyProfile };
   document.getElementById('feelUseA')?.addEventListener('click', () => applyProfile('A'));
   document.getElementById('feelUseB')?.addEventListener('click', () => applyProfile('B'));
   document.getElementById('feelProfileA')?.addEventListener('change', () => {
@@ -49,7 +47,5 @@ function bind() {
     if (document.getElementById('feelUseB')?.classList.contains('on')) applyProfile('B');
   });
   applyProfile('A');
+  return { applyProfile };
 }
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, { once: true });
-else bind();
