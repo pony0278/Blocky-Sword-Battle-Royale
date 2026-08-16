@@ -9,6 +9,7 @@ import { ActionMotionPlayer } from '../../src/animation/action-motion-player.js'
 import { ACTION_TEMPLATE_FACTORIES } from '../../src/animation/action-templates.js';
 import { createActionDefinition, isFrameInWindow } from '../../src/combat/action-definition.js';
 import { createStudioPreviewRuntime } from './studio-preview-runtime.js';
+import { createStudioCombatFeelController } from './studio-combat-feel-controller.js';
 import { createWholeBodyMotionGuideOverlay } from './studio-motion-guide-overlay.js';
 import { createStudioMotionGuideEditor } from './studio-motion-guide-editor.js';
 import { bakeStudioMotionConstraints } from './studio-motion-constraint-baker.js';
@@ -54,6 +55,7 @@ const preview = createStudioPreviewRuntime(THREE, {
   impactFlash: document.getElementById('impactFlash'),
   isDummyEnabled: () => document.getElementById('dummyToggle').checked,
 });
+const combatFeelController = createStudioCombatFeelController(preview);
 
 const player = new ActionMotionPlayer({
   adapter: {
@@ -527,7 +529,7 @@ document.getElementById('resetMount').addEventListener('click', () => {
   document.getElementById('socketStatus').textContent = 'attached · reset';
 });
 
-[['hitstop', 'hitstopValue', 'hitstop', (value) => `${value.toFixed(2)}s`],
+[['hitstop', 'hitstopValue', 'hitstop', (value) => `${value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}s`],
  ['shake', 'shakeValue', 'shake', (value) => value.toFixed(2)],
  ['knockback', 'knockbackValue', 'knockback', (value) => value.toFixed(2)]].forEach(([id, outputId, key, format]) => {
   document.getElementById(id).addEventListener('input', (event) => {
@@ -605,6 +607,8 @@ window.__actionStudio = {
     return { start: start.toArray(), end: end.toArray() };
   },
   get animationSource() { return animationSource; },
+  get combatFeelProfile() { return preview.activeFeelProfile; },
+  applyCombatFeelProfile: (slot) => combatFeelController.applyProfile(slot),
   get motionGuide() { return motionGuideEditor.guide; },
   get motionGuideDirty() { return motionGuideEditor.dirty; },
   get motionGuideDiagnostics() { return motionGuideOverlay.diagnostics; },
@@ -631,4 +635,3 @@ preview.resize();
 loadTemplate('slash_test');
 updatePlaybackButtons();
 requestAnimationFrame(tick);
-
