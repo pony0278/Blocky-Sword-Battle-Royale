@@ -26,7 +26,7 @@
         <span id="clipNow">SLASH TEST</span>
         <strong id="phaseNow">READY · 0F</strong>
       </div>
-      <div class="stage-help">橘色圓環編排舉劍蓄力 · 其他彩色圓環調整衝擊與重心 · 拖曳空白處旋轉</div>
+      <div class="stage-help">點選手腳／肘膝節點顯示 XYZ 軸 · 拖節點中心可自由移動 · Shift 軸向吸附 5cm · 拖曳空白處旋轉</div>
       <div id="impactFlash" class="impact-flash"></div>
       <div class="stage-legend">
         <span><i class="impact-dot"></i>Impact</span>
@@ -48,6 +48,55 @@
           <button data-template="parry">Parry</button>
           <button data-template="counter">Counter</button>
         </div>
+      </section>
+
+      <section class="panel pose-drag-panel">
+        <div class="panel-title"><span>Direct Pose V3</span><small>select · XYZ gizmo · world / local</small></div>
+        <p class="pose-drag-intro">先點選任一手、腳、肘或膝節點，再拖紅 X／綠 Y／藍 Z 軸精確移動。直接拖節點中心仍是自由拖曳；自然極限後全身會繼續分攤動作。</p>
+        <div class="pose-drag-legend" aria-label="Direct Pose controls">
+          <span><i class="pose-hand-left"></i>Left hand</span><span><i class="pose-hand-right"></i>Right hand · weapon</span>
+          <span><i class="pose-foot-left"></i>Left foot</span><span><i class="pose-foot-right"></i>Right foot</span>
+          <span><i class="pose-joint-arm"></i>Elbow bend</span><span><i class="pose-joint-leg"></i>Knee bend</span>
+          <span><i class="pose-axis-x"></i>X · left / right</span><span><i class="pose-axis-y"></i>Y · up / down</span>
+          <span><i class="pose-axis-z"></i>Z · forward / back</span>
+        </div>
+        <div class="pose-drag-toggles">
+          <label class="check"><input id="poseDragEnabled" type="checkbox" checked> Show four limb controls</label>
+          <label class="check"><input id="poseJointHandles" type="checkbox" checked> Show elbow / knee handles</label>
+          <label class="check"><input id="poseAxisGizmo" type="checkbox" checked> Show XYZ on selected node</label>
+          <label class="check"><input id="posePinLeftFoot" type="checkbox" checked> Pin left foot</label>
+          <label class="check"><input id="posePinRightFoot" type="checkbox" checked> Pin right foot</label>
+        </div>
+        <div class="pose-drag-modes">
+          <label><span>Axis space</span><select id="poseAxisSpace"><option value="world">World axes</option><option value="local">Local joint axes</option></select></label>
+          <label><span>Free-drag plane</span><select id="poseDragPlane"><option value="screen">Screen plane</option><option value="vertical">Vertical plane</option><option value="ground">Ground plane</option></select></label>
+        </div>
+        <div id="poseAxisReadout" class="pose-axis-readout">Select a hand, foot, elbow, or knee</div>
+        <label class="pose-drag-coupling"><span>Whole-body coupling</span><output id="poseDragCouplingValue">0.85</output><input id="poseDragCoupling" type="range" min="0" max="1" step="0.01" value="0.85"></label>
+        <div class="pose-drag-limit">Limb stretch limit <b>1.05×</b> · Hold <b>Shift</b> for 0.05m axis snap · Esc clears selection · Release commits the selected Pose Key</div>
+        <div id="poseDragStatus" class="status-line">Select a pose node, then drag X / Y / Z or drag the node freely.</div>
+      </section>
+
+      <section class="panel blocking-panel">
+        <div class="panel-title"><span>Action Blocking V1</span><small>capture · onion skin · motion arcs</small></div>
+        <p class="blocking-intro">把目前姿勢複製成下一個 Key，再拖曳成揮砍下一段；每次 Capture 都會建立可還原的本機 JSON 備份。</p>
+        <div class="blocking-capture-row">
+          <button id="captureNextKey" class="primary">◆ Capture Next Key</button>
+          <label><span>Gap</span><input id="blockingFrameStep" type="number" min="1" max="60" step="1" value="4"><small>frames</small></label>
+        </div>
+        <div class="blocking-toggles">
+          <label class="check"><input id="blockingGhostPrevious" type="checkbox" checked> Previous ghost</label>
+          <label class="check"><input id="blockingGhostNext" type="checkbox" checked> Next ghost</label>
+          <label class="check"><input id="blockingTrajectories" type="checkbox" checked> Palm / sword-tip paths</label>
+        </div>
+        <div class="blocking-legend" aria-label="Blocking visualization legend">
+          <span><i class="blocking-previous"></i>Previous pose</span>
+          <span><i class="blocking-next"></i>Next pose</span>
+          <span><i class="blocking-hand-left"></i>Left palm</span>
+          <span><i class="blocking-hand-right"></i>Weapon palm</span>
+          <span><i class="blocking-sword-tip"></i>Sword tip</span>
+        </div>
+        <div id="blockingStatus" class="status-line">Capture the raised pose, then drag the new key downward.</div>
       </section>
 
       <section class="panel motion-guide-panel">
@@ -150,9 +199,16 @@
       </section>
 
       <section class="panel io-panel">
-        <div class="panel-title"><span>Project JSON</span><small>legacy Punch snapshots accepted</small></div>
+        <div class="panel-title"><span>Project JSON</span><small>downloadable pose + action snapshots</small></div>
         <textarea id="projectJson" spellcheck="false" placeholder="Export or paste a project / legacy snapshot"></textarea>
-        <div class="button-grid two"><button id="exportProject">Export</button><button id="importProject" class="primary">Import</button></div>
+        <div class="button-grid three">
+          <button id="exportProject">Copy JSON</button><button id="downloadProject" class="primary">↓ Download .json</button><button id="importProject">Import text</button>
+        </div>
+        <div class="button-grid two io-file-row">
+          <button id="openProjectFile">Open .json file</button><button id="restoreAutosave">Restore auto backup</button>
+        </div>
+        <input id="projectFileInput" class="io-file-input" type="file" accept="application/json,.json">
+        <div id="autosaveStatus" class="status-line">Auto backup starts after your first edit or Capture.</div>
         <div id="ioStatus" class="status-line"></div>
       </section>
 

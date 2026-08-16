@@ -9,12 +9,14 @@ import { ActionMotionPlayer } from '../../src/animation/action-motion-player.js'
 import { createFittedAnimationBinding } from '../../src/animation/animation-binding.js';
 import { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } from '../../src/animation/kaykit-animation-library.js';
 import { ACTION_TEMPLATE_FACTORIES } from '../../src/animation/action-templates.js';
-import { importLegacyPunchSnapshot } from '../../src/animation/legacy-punch-import.js';
 import { createActionDefinition, isFrameInWindow } from '../../src/combat/action-definition.js';
 import { createStudioPreviewRuntime } from './studio-preview-runtime.js';
 import { createWholeBodyMotionGuideOverlay } from './studio-motion-guide-overlay.js';
 import { createStudioMotionGuideEditor } from './studio-motion-guide-editor.js';
 import { bakeStudioMotionConstraints } from './studio-motion-constraint-baker.js';
+import { createStudioPoseDragController } from './studio-pose-drag-controller.js';
+import { captureNextBlockingKey, createStudioBlockingWorkflow } from './studio-blocking-workflow.js';
+import { createStudioProjectIoController } from './studio-project-io-controller.js';
 import {
   renderComboQueueView,
   readAnimationBindingView,
@@ -74,13 +76,67 @@ let slowEnabled = false;
 let comboQueue = [];
 let lastTick = performance.now();
 let previousPlaybackFrame = 0;
+let blockingWorkflow = null, projectIo = null;
 const motionGuideOverlay = createWholeBodyMotionGuideOverlay(THREE, { scene: preview.scene, camera: preview.camera, canvas, character, sword });
 const motionGuideEditor = createStudioMotionGuideEditor({
-  overlay: motionGuideOverlay, applyProject: (project, options) => setProject(project, options),
+  overlay: motionGuideOverlay, applyProject: (project, options) => { setProject(project, options); projectIo?.saveAutosave('motion guide bake'); },
   bakeProject: (project, guide) => bakeStudioMotionConstraints(project, { character, sword, guide }),
   getFrame: () => player.frame, onStatus: (message, error) => setIoStatus(message, error),
 });
 
+const poseDragController = createStudioPoseDragController(THREE, {
+  scene: preview.scene,
+  camera: preview.camera,
+  canvas,
+  character,
+  prepareDrag: () => {
+    const keyframe = clip.timeline[selectedKeyIndex];
+    player.pause();
+    if (action.animationBinding.source !== 'authored') {
+      action = createActionDefinition({
+        ...action,
+        animationBinding: { source: 'authored', clipId: clip.id },
+      }, clip.durationFrames);
+      player.setAction(action);
+      renderAnimationBinding();
+    }
+    player.seek(keyframe.frame);
+    previousPlaybackFrame = player.frame;
+    applyEvaluation(player.evaluate());
+    updatePlaybackButtons();
+    return { pose: clip.poses[keyframe.name], keyName: keyframe.name, frame: keyframe.frame };
+  },
+  applyPose: (pose, context) => {
+    clip.poses[context.keyName] = normalizePose(pose);
+    player.pause();
+    player.seek(context.frame);
+    previousPlaybackFrame = player.frame;
+    applyEvaluation(player.evaluate());
+  },
+  finishDrag: (_pose, context) => {
+    renderPoseControls();
+    updatePlaybackButtons();
+    setIoStatus(`Direct Pose baked into ${context.keyName}.`);
+    projectIo?.saveAutosave(`Direct Pose · ${context.keyName}`);
+    blockingWorkflow?.refresh();
+  },
+});
+
+blockingWorkflow = createStudioBlockingWorkflow(THREE, {
+  scene: preview.scene,
+  camera: preview.camera,
+  getClip: () => clip,
+  getSelectedKeyIndex: () => selectedKeyIndex,
+  getMountCalibration: () => mountCalibration,
+  onCapture: (frameStep) => {
+    const current = clip.timeline[selectedKeyIndex];
+    const captured = captureNextBlockingKey(clip, selectedKeyIndex, clip.poses[current.name], { frameStep });
+    rebuildClip(captured.name, captured.frame);
+    projectIo?.saveAutosave(`Capture Next Key · ${captured.name}`);
+    projectIo?.syncText();
+    blockingWorkflow.setStatus(`Captured ${captured.name} at ${captured.frame}f · ready to drag the next pose.`);
+  },
+});
 function loadMountCalibration() {
   return normalizeMountCalibration(readStoredJson(localStorage, MOUNT_KEY, DEFAULT_KAYKIT_SWORD_MOUNT));
 }
@@ -246,6 +302,7 @@ function renderEditor() {
   document.getElementById('clipNow').textContent = clip.name.toUpperCase();
   document.getElementById('libraryName').value = clip.id;
   document.getElementById('poseAxisSummary').textContent = `${POSE_KEYS.length} axes from POSE_KEYS`;
+  blockingWorkflow?.refresh();
 }
 
 function renderTimeline() {
@@ -263,6 +320,7 @@ function selectKey(index) {
   renderPoseControls();
   applyEvaluation(player.evaluate());
   updatePlaybackButtons();
+  blockingWorkflow.refresh();
 }
 
 function renderKeyEditor() {
@@ -280,6 +338,8 @@ function renderPoseControls() {
       applyEvaluation(player.evaluate());
       previousPlaybackFrame = player.frame;
       updatePlaybackButtons();
+      blockingWorkflow.scheduleRefresh();
+      projectIo.scheduleAutosave(`Pose slider · ${keyframe.name}`);
     },
   });
 }
@@ -293,6 +353,7 @@ function renderWindowEditor() {
       windows[type] = enabled ? [{ startFrame, endFrame, label }] : [];
       action = createActionDefinition({ ...action, windows }, clip.durationFrames);
       player.setAction(action);
+      projectIo.scheduleAutosave(`Action window · ${type}`);
     },
   });
 }
@@ -307,6 +368,8 @@ function renderMountEditor() {
       mountCalibration = normalizeMountCalibration(mountCalibration);
       applyMountCalibration(sword.object3d, mountCalibration);
       document.getElementById('socketStatus').textContent = 'attached · unsaved';
+      blockingWorkflow.scheduleRefresh();
+      projectIo.scheduleAutosave('Weapon mount');
     },
   });
 }
@@ -387,6 +450,12 @@ function setIoStatus(message, error = false) {
   status.textContent = message;
   status.style.color = error ? 'var(--impact)' : 'var(--cyan)';
 }
+
+projectIo = createStudioProjectIoController({
+  getProject: currentProject,
+  applyProject: setProject,
+  onStatus: setIoStatus,
+});
 
 function bindV3AppearanceToggle(buttonId, setter) {
   const button = document.getElementById(buttonId);
@@ -480,6 +549,7 @@ document.getElementById('applyKey').addEventListener('click', () => {
   key.impact = document.getElementById('keyImpact').checked;
   key.cancel = document.getElementById('keyCancel').checked;
   rebuildClip(desiredName);
+  projectIo.saveAutosave(`Key data · ${desiredName}`);
 });
 document.getElementById('addKey').addEventListener('click', () => {
   const current = clip.timeline[selectedKeyIndex];
@@ -491,6 +561,7 @@ document.getElementById('addKey').addEventListener('click', () => {
   clip.timeline.push({ name, frame, ease: 'out', tag: 'custom' });
   clip.poses[name] = normalizePose(clip.poses[current.name]);
   rebuildClip(name, frame);
+  projectIo.saveAutosave(`Add Key · ${name}`);
 });
 document.getElementById('duplicateKey').addEventListener('click', () => {
   const current = clip.timeline[selectedKeyIndex];
@@ -503,6 +574,7 @@ document.getElementById('duplicateKey').addEventListener('click', () => {
   clip.timeline.push({ ...current, name, frame, impact: false, cancel: false });
   clip.poses[name] = normalizePose(clip.poses[current.name]);
   rebuildClip(name, frame);
+  projectIo.saveAutosave(`Duplicate Key · ${name}`);
 });
 document.getElementById('deleteKey').addEventListener('click', () => {
   if (clip.timeline.length <= 1) return;
@@ -510,6 +582,7 @@ document.getElementById('deleteKey').addEventListener('click', () => {
   delete clip.poses[removed.name];
   const next = clip.timeline[Math.max(0, selectedKeyIndex - 1)];
   rebuildClip(next.name, next.frame);
+  projectIo.saveAutosave(`Delete Key · ${removed.name}`);
 });
 document.getElementById('saveMount').addEventListener('click', () => {
   localStorage.setItem(MOUNT_KEY, JSON.stringify(mountCalibration));
@@ -538,6 +611,7 @@ document.getElementById('saveClip').addEventListener('click', () => {
   writeLibrary(library);
   renderLibrary();
   setIoStatus(`Saved ${name} to the local clip library.`);
+  projectIo.saveAutosave(`Save library clip · ${name}`);
 });
 document.getElementById('playCombo').addEventListener('click', () => {
   if (!comboQueue.length) {
@@ -549,33 +623,6 @@ document.getElementById('playCombo').addEventListener('click', () => {
 document.getElementById('clearCombo').addEventListener('click', () => {
   comboQueue = [];
   renderComboQueue();
-});
-document.getElementById('exportProject').addEventListener('click', () => {
-  const textarea = document.getElementById('projectJson');
-  textarea.value = JSON.stringify(currentProject(), null, 2);
-  textarea.select();
-  navigator.clipboard?.writeText(textarea.value).catch(() => {});
-  setIoStatus('Exported Action Studio project JSON.');
-});
-document.getElementById('importProject').addEventListener('click', () => {
-  try {
-    const data = JSON.parse(document.getElementById('projectJson').value);
-    if (data.format === 'action-studio-project' && data.clip) {
-      setProject(data);
-      setIoStatus('Imported Action Studio project.');
-    } else if (data.format === 'action-studio-clip' || (data.timeline && data.poses)) {
-      setProject({ clip: data });
-      setIoStatus('Imported Action Studio clip.');
-    } else if (data.seq || data.SEQ || data.phases || data.PHASES) {
-      const result = importLegacyPunchSnapshot(data);
-      setProject({ clip: result.clip });
-      setIoStatus(`Imported legacy Punch snapshot. Ignored editor-only keys: ${result.report.ignoredPoseKeys.join(', ') || 'none'}.`);
-    } else {
-      throw new Error('Unknown project shape');
-    }
-  } catch (error) {
-    setIoStatus(`Import failed: ${error.message}`, true);
-  }
 });
 
 function tick(now) {
@@ -600,8 +647,10 @@ function tick(now) {
     if (!player.playing) updatePlaybackButtons();
   }
   character.update(deltaSeconds, preview.camera);
+  poseDragController.update();
   motionGuideOverlay.update();
   sword.update();
+  blockingWorkflow.update();
   preview.update(deltaSeconds);
   preview.advanceShake(deltaSeconds);
   preview.render();
@@ -629,6 +678,9 @@ window.__actionStudio = {
   get motionGuideDirty() { return motionGuideEditor.dirty; },
   get motionGuideDiagnostics() { return motionGuideOverlay.diagnostics; },
   get motionConstraintReport() { return motionGuideEditor.constraintReport; },
+  get poseDragEffector() { return poseDragController.dragging; },
+  get poseDragDiagnostics() { return poseDragController.diagnostics; },
+  get blockingDiagnostics() { return blockingWorkflow.diagnostics; },
   get renderStyle() { return 'v3-rig-line'; },
   loadKayKitRuntime,
   playKayKitClip(name, options = {}) { animationSource = 'kaykit-preview'; return character.playAnimation(name, options); },

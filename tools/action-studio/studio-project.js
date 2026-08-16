@@ -20,6 +20,32 @@ export function createStudioProject({ clip, action, weaponMount }) {
   };
 }
 
+export function serializeStudioProject(project) {
+  return JSON.stringify(project, null, 2);
+}
+
+export function studioProjectFilename(project, date = new Date()) {
+  const source = project?.clip?.id || project?.clip?.name || project?.action?.id || 'action-studio-project';
+  const safeName = String(source)
+    .trim()
+    .replace(/[^a-z0-9._-]+/gi, '-')
+    .replace(/^-+|-+$/g, '') || 'action-studio-project';
+  const stamp = date instanceof Date && Number.isFinite(date.getTime())
+    ? date.toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
+    : 'snapshot';
+  return `${safeName}_${stamp}.json`;
+}
+
+export function createStudioAutosave(project, reason = 'edit', savedAt = new Date().toISOString()) {
+  return {
+    format: 'action-studio-autosave',
+    version: 1,
+    savedAt,
+    reason: String(reason || 'edit'),
+    project: cloneSerializable(project),
+  };
+}
+
 export function readStoredJson(storage, key, fallback) {
   try {
     const stored = JSON.parse(storage.getItem(key) || 'null');

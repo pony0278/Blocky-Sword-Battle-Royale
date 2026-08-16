@@ -11,6 +11,9 @@ The entry file is a composition root. Its extracted responsibilities live in:
 - `studio-project.js` — project serialization, local storage and combo-project assembly.
 - `studio-motion-guide-editor.js` — semantic whole-body controls and Pose Key baking.
 - `studio-motion-guide-overlay.js` — draggable windup, impact, center-of-mass, and foot targets in the Three.js stage.
+- `studio-pose-drag-controller.js` — direct hand/foot manipulators, foot pins, live whole-body solving, and selected Pose Key commits.
+- `studio-blocking-workflow.js` — one-click next-key capture, adjacent-key onion skins, and sampled palm / sword-tip trajectories.
+- `studio-project-io-controller.js` — JSON copy/download/file import plus recoverable local autosaves.
 - `studio-motion-constraint-baker.js` — editor-only sword-hand windup fitting and off-hand fitting against the procedural sword's secondary grip.
 
 Action motion is driven by `src/animation/action-motion-player.js`. Every action owns a normalized `animationBinding`: `authored` uses Action Studio pose keys, while `kaykit` references a clip by name and deterministically maps the action frame to animation time. The JSON never embeds a Three.js `AnimationClip` or GLB data.
@@ -18,6 +21,16 @@ Action motion is driven by `src/animation/action-motion-player.js`. Every action
 The first Whole-Body Motion preset is `advancing_vertical_chop`. Its compact guide data is stored in `clip.metadata.motionGuide`; the editor bakes it into seven ordinary Pose Keys, so runtime playback does not depend on the editor or solver.
 
 Motion guide version 3 adds a draggable overhead windup target. Windup height and pullback stage the sword hand, while windup body load and readability coupling produce explicit anticipation through the torso, center of mass, and legs. Impact, center-of-mass, and plant targets remain draggable; lead-foot locking and the two-hand grip fit are preserved. Both constraint solvers write ordinary Pose Keys and an error report into the clip, so they are never required during playback.
+
+Direct Pose is preset-independent. It solves the selected hand or foot first, caps authored limb stretch at `1.05`, then recruits the torso, pelvis, and support legs when the local chain cannot reach. Optional world-space foot pins are restored during the same live solve. Dragging previews immediately and commits ordinary Pose Keys on pointer release.
+
+Direct Pose V2 adds elbow and knee bend handles. The solver first moves the selected joint, then restores the anchored hand or foot endpoint without recruiting the whole body. Screen, vertical, and ground drag planes make depth placement explicit while retaining the same Pose Key output.
+
+Direct Pose V3 adds a single selection-based XYZ gizmo to every hand, foot, elbow, and knee handle. World axes provide predictable stage-space vertical, horizontal, and depth edits; Local axes inherit the selected joint orientation. Axis targets are locked for the duration of a drag, Shift snaps signed travel to `0.05m`, and the live readout exposes axis, space, and displacement without changing whole-body solving or Pose Key output.
+
+Action Blocking V1 captures the selected pose into a new key at a configurable frame gap. If the next key occupies that gap, later keys shift forward as a group. Previous and next keys render as real procedural-rig onion skins, while both palms and the sword tip are sampled across the authored clip to show motion arcs and key-point spacing.
+
+Project JSON contains the complete normalized clip, combat action metadata, and weapon mount calibration. It can be copied, downloaded as a timestamped `.json` file, opened from disk, or restored from the local autosave written after pose and timeline edits.
 
 The KayKit library currently registers eight `Rig_Medium` packs: general, basic movement, advanced movement, melee, ranged, simulation, special, and tools.
 

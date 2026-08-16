@@ -5040,41 +5040,8 @@ const ACTION_TEMPLATE_FACTORIES = Object.freeze({
 return Object.freeze({ T_POSE, IDLE_POSE, createTPoseTemplate, createIdleTemplate, createSlashTestTemplate, createGuardTemplate, createParryTemplate, createCounterTemplate, createAdvancingVerticalChopTemplate, ACTION_TEMPLATE_FACTORIES });
 })();
 
-// src/animation/legacy-punch-import.js
-const __actionStudioModule24 = (() => {
-const { LEGACY_NON_HUMANOID_POSE_KEYS, POSE_KEYS } = __actionStudioModule10;
-const { createAnimationClip } = __actionStudioModule16;
-
-function importLegacyPunchSnapshot(snapshot = {}) {
-  const phases = snapshot.phases || snapshot.PHASES || {};
-  const ignoredKeys = new Set();
-  const poses = {};
-  for (const [name, sourcePose] of Object.entries(phases)) {
-    poses[name] = {};
-    for (const key of POSE_KEYS) {
-      if (sourcePose && sourcePose[key] !== undefined) poses[name][key] = sourcePose[key];
-    }
-    for (const key of LEGACY_NON_HUMANOID_POSE_KEYS) {
-      if (sourcePose && sourcePose[key] !== undefined) ignoredKeys.add(key);
-    }
-  }
-  return {
-    clip: createAnimationClip({
-      id: snapshot.id || snapshot.name || 'imported_punch_action',
-      name: snapshot.name || 'Imported Punch Action',
-      fps: snapshot.fps || 60,
-      timeline: snapshot.seq || snapshot.SEQ,
-      poses,
-      metadata: { importedFrom: 'punch-studio', legacyVersion: snapshot.version ?? null },
-    }),
-    report: { ignoredPoseKeys: [...ignoredKeys].sort() },
-  };
-}
-return Object.freeze({ importLegacyPunchSnapshot });
-})();
-
 // tools/action-studio/studio-preview-runtime.js
-const __actionStudioModule25 = (() => {
+const __actionStudioModule24 = (() => {
 function createPreviewDummy(THREE) {
   const group = new THREE.Group();
   group.name = 'PREVIEW_DUMMY';
@@ -5300,7 +5267,7 @@ return Object.freeze({ createStudioPreviewRuntime });
 })();
 
 // tools/action-studio/studio-motion-guide-overlay.js
-const __actionStudioModule26 = (() => {
+const __actionStudioModule25 = (() => {
 const { normalizeMotionGuide } = __actionStudioModule21;
 
 const GUIDE_COLORS = Object.freeze({
@@ -5592,7 +5559,7 @@ return Object.freeze({ createWholeBodyMotionGuideOverlay });
 })();
 
 // tools/action-studio/studio-motion-guide-editor.js
-const __actionStudioModule27 = (() => {
+const __actionStudioModule26 = (() => {
 const { createAdvancingVerticalChopTemplate } = __actionStudioModule20;
 const { createAdvancingVerticalChopGuide, isWholeBodyMotionGuide, normalizeMotionGuide } = __actionStudioModule21;
 
@@ -5776,7 +5743,7 @@ return Object.freeze({ createStudioMotionGuideEditor });
 })();
 
 // tools/action-studio/studio-motion-constraint-baker.js
-const __actionStudioModule28 = (() => {
+const __actionStudioModule27 = (() => {
 const { createAnimationClip } = __actionStudioModule16;
 const { normalizeMotionGuide } = __actionStudioModule21;
 const { normalizePose } = __actionStudioModule9;
@@ -5979,8 +5946,1521 @@ function bakeStudioMotionConstraints(projectInput, { character, sword, guide: gu
 return Object.freeze({ WINDUP_HAND_POSE_KEYS, SECONDARY_GRIP_POSE_KEYS, bakeStudioMotionConstraints });
 })();
 
-// tools/action-studio/studio-editor-view.js
+// src/animation/whole-body-drag-solver.js
 const __actionStudioModule29 = (() => {
+const { normalizePose } = __actionStudioModule9;
+
+const WHOLE_BODY_DRAG_EFFECTORS = Object.freeze([
+  'handL', 'handR', 'footL', 'footR',
+]);
+
+const WHOLE_BODY_JOINT_EFFECTORS = Object.freeze([
+  'elbowL', 'elbowR', 'kneeL', 'kneeR',
+]);
+
+const EFFECTOR_CHAINS = Object.freeze({
+  handL: Object.freeze({ prefix: 'aL', kind: 'arm' }),
+  handR: Object.freeze({ prefix: 'aR', kind: 'arm' }),
+  footL: Object.freeze({ prefix: 'lL', kind: 'leg' }),
+  footR: Object.freeze({ prefix: 'lR', kind: 'leg' }),
+  elbowL: Object.freeze({ prefix: 'aL', kind: 'arm' }),
+  elbowR: Object.freeze({ prefix: 'aR', kind: 'arm' }),
+  kneeL: Object.freeze({ prefix: 'lL', kind: 'leg' }),
+  kneeR: Object.freeze({ prefix: 'lR', kind: 'leg' }),
+});
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function finite(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function point(value, label) {
+  const result = {
+    x: Number(value?.x),
+    y: Number(value?.y),
+    z: Number(value?.z),
+  };
+  if (!Number.isFinite(result.x) || !Number.isFinite(result.y) || !Number.isFinite(result.z)) {
+    throw new Error(`Whole-body drag evaluator returned an invalid ${label} point`);
+  }
+  return result;
+}
+
+function distanceSquared(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return dx * dx + dy * dy + dz * dz;
+}
+
+function armSpecs(prefix, maxStretch) {
+  return [
+    [`${prefix}_sx`, -180, 80, 24, 90],
+    [`${prefix}_sy`, -140, 140, 24, 90],
+    [`${prefix}_sz`, -110, 110, 20, 80],
+    [`${prefix}_ex`, -15, 165, 22, 85],
+    [`${prefix}_wx`, -120, 120, 16, 80],
+    [`${prefix}_wy`, -120, 120, 16, 80],
+    [`${prefix}_wz`, -120, 120, 16, 80],
+    [`${prefix}_stretch`, 0.72, maxStretch, 0.025, 0.08],
+  ];
+}
+
+function legSpecs(prefix, maxStretch) {
+  return [
+    [`${prefix}_hx`, -130, 130, 22, 90],
+    [`${prefix}_hy`, -100, 100, 18, 75],
+    [`${prefix}_hz`, -100, 100, 18, 75],
+    [`${prefix}_kx`, -15, 165, 22, 85],
+    [`${prefix}_ax`, -100, 100, 16, 70],
+    [`${prefix}_ty`, -100, 100, 16, 70],
+    [`${prefix}_stretch`, 0.72, maxStretch, 0.025, 0.08],
+  ];
+}
+
+function bodySpecs(reference, coupling, allowVerticalRoot) {
+  const scale = 0.28 + coupling * 0.72;
+  const specs = [
+    ['root_pz', clamp(reference.root_pz - 0.7, -1.2, 2), clamp(reference.root_pz + 0.7, -1.2, 2), 0.07 * scale, 0.5],
+    ['root_x', -65, 65, 7 * scale, 45],
+    ['root_y', -100, 100, 8 * scale, 60],
+    ['spine_x', -70, 70, 8 * scale, 45],
+    ['spine_y', -90, 90, 9 * scale, 55],
+    ['pelvis_y', -90, 90, 9 * scale, 55],
+    ['squat', 0, 80, 7 * scale, 45],
+  ];
+  if (allowVerticalRoot) {
+    specs.push([
+      'root_py',
+      clamp(reference.root_py - 0.55, -0.8, 0.8),
+      clamp(reference.root_py + 0.55, -0.8, 0.8),
+      0.055 * scale,
+      0.45,
+    ]);
+  }
+  return specs;
+}
+
+function uniqueSpecs(groups) {
+  const seen = new Set();
+  const result = [];
+  groups.flat().forEach((spec) => {
+    if (seen.has(spec[0])) return;
+    seen.add(spec[0]);
+    result.push(spec);
+  });
+  return result;
+}
+
+function regularization(pose, reference, specs) {
+  return specs.reduce((total, [key, _min, _max, _step, normalizer]) => {
+    const delta = (pose[key] - reference[key]) / Math.max(0.001, normalizer);
+    return total + delta * delta;
+  }, 0);
+}
+
+function improvePose(seedPose, specs, scorePose, passes, decay = 0.58) {
+  const candidate = { ...seedPose };
+  specs.forEach(([key, min, max]) => {
+    candidate[key] = clamp(finite(candidate[key], 0), min, max);
+  });
+  let bestScore = scorePose(candidate);
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    const stepScale = decay ** pass;
+    for (const [key, min, max, baseStep] of specs) {
+      const startValue = candidate[key];
+      let bestValue = startValue;
+      for (const direction of [-1, 1]) {
+        candidate[key] = clamp(startValue + direction * baseStep * stepScale, min, max);
+        const score = scorePose(candidate);
+        if (score < bestScore) {
+          bestScore = score;
+          bestValue = candidate[key];
+        }
+      }
+      candidate[key] = bestValue;
+    }
+  }
+  return { pose: candidate, score: bestScore };
+}
+
+function createScore({
+  evaluatePose,
+  effector,
+  target,
+  pins,
+  secondaryTargets,
+  reference,
+  regularizedSpecs,
+  pinWeight,
+  regularizationWeight,
+}) {
+  return (pose) => {
+    const evaluated = evaluatePose(pose);
+    let score = distanceSquared(point(evaluated[effector], effector), target);
+    for (const [pinEffector, pinTarget] of Object.entries(pins)) {
+      score += distanceSquared(point(evaluated[pinEffector], pinEffector), pinTarget) * pinWeight;
+    }
+    for (const [secondaryEffector, constraint] of Object.entries(secondaryTargets)) {
+      score += distanceSquared(point(evaluated[secondaryEffector], secondaryEffector), constraint.target)
+        * constraint.weight;
+    }
+    score += regularization(pose, reference, regularizedSpecs) * regularizationWeight;
+    return score;
+  };
+}
+
+function solveWholeBodyDragPose(options = {}) {
+  const {
+    evaluatePose,
+    effector,
+    target: targetInput,
+    pinnedFeet = {},
+  } = options;
+  if (typeof evaluatePose !== 'function') throw new Error('Whole-body drag requires an evaluatePose function');
+  const chain = EFFECTOR_CHAINS[effector];
+  if (!chain) throw new Error(`Unknown whole-body drag effector: ${effector}`);
+
+  const coupling = clamp(finite(options.coupling, 0.85), 0, 1);
+  const maxStretch = clamp(finite(options.maxStretch, 1.05), 1, 1.12);
+  const passes = Math.round(clamp(finite(options.passes, 4), 1, 10));
+  const activationDistance = clamp(finite(options.activationDistance, 0.025), 0, 0.25);
+  const reference = normalizePose(options.referencePose || options.pose);
+  const seed = normalizePose(options.seedPose || options.pose || reference);
+  const target = point(targetInput, 'target');
+  const pins = {};
+  for (const pinEffector of ['footL', 'footR']) {
+    if (pinEffector === effector || !pinnedFeet?.[pinEffector]) continue;
+    pins[pinEffector] = point(pinnedFeet[pinEffector], `${pinEffector} pin`);
+  }
+  const secondaryTargets = {};
+  for (const [secondaryEffector, constraintInput] of Object.entries(options.secondaryTargets || {})) {
+    const constraint = constraintInput?.target ? constraintInput : { target: constraintInput };
+    secondaryTargets[secondaryEffector] = {
+      target: point(constraint.target, `${secondaryEffector} secondary target`),
+      weight: clamp(finite(constraint.weight, 2), 0, 10),
+    };
+  }
+
+  const localSpecs = chain.kind === 'arm'
+    ? armSpecs(chain.prefix, maxStretch)
+    : legSpecs(chain.prefix, maxStretch);
+  const supportSpecs = Object.keys(pins).map((pinEffector) => (
+    legSpecs(EFFECTOR_CHAINS[pinEffector].prefix, maxStretch)
+  ));
+  const allSupportSpecs = uniqueSpecs(supportSpecs);
+  const localScore = createScore({
+    evaluatePose,
+    effector,
+    target,
+    pins: {},
+    secondaryTargets: {},
+    reference,
+    regularizedSpecs: localSpecs,
+    pinWeight: 0,
+    regularizationWeight: 0.0015,
+  });
+  let result = improvePose(seed, localSpecs, localScore, passes);
+  if (Object.keys(secondaryTargets).length) {
+    const anchoredLocalScore = createScore({
+      evaluatePose,
+      effector,
+      target,
+      pins: {},
+      secondaryTargets,
+      reference,
+      regularizedSpecs: localSpecs,
+      pinWeight: 0,
+      regularizationWeight: 0.0015,
+    });
+    result = improvePose(result.pose, localSpecs, anchoredLocalScore, passes);
+  }
+  let evaluated = evaluatePose(result.pose);
+  let targetError = Math.sqrt(distanceSquared(point(evaluated[effector], effector), target));
+  const activatedWholeBody = options.allowWholeBody !== false
+    && coupling > 0.01
+    && targetError > activationDistance;
+
+  if (activatedWholeBody) {
+    const coupledBodySpecs = bodySpecs(reference, coupling, Object.keys(pins).length === 0);
+    const coupledSpecs = uniqueSpecs([localSpecs, coupledBodySpecs, allSupportSpecs]);
+    const coupledScore = createScore({
+      evaluatePose,
+      effector,
+      target,
+      pins,
+      secondaryTargets,
+      reference,
+      regularizedSpecs: coupledSpecs,
+      pinWeight: 0.65 + coupling * 0.55,
+      regularizationWeight: 0.002 + (1 - coupling) * 0.018,
+    });
+    result = improvePose(result.pose, coupledSpecs, coupledScore, passes);
+
+    if (allSupportSpecs.length) {
+      const settleSpecs = uniqueSpecs([localSpecs, allSupportSpecs]);
+      const settleScore = createScore({
+        evaluatePose,
+        effector,
+        target,
+        pins,
+        secondaryTargets,
+        reference,
+        regularizedSpecs: settleSpecs,
+        pinWeight: 7,
+        regularizationWeight: 0.001,
+      });
+      result = improvePose(result.pose, settleSpecs, settleScore, passes);
+    }
+  }
+
+  const pose = normalizePose(result.pose);
+  const finalEvaluation = evaluatePose(pose);
+  const referenceEvaluation = evaluatePose(reference);
+  targetError = Math.sqrt(distanceSquared(point(finalEvaluation[effector], effector), target));
+  const pinErrors = Object.fromEntries(Object.entries(pins).map(([pinEffector, pinTarget]) => [
+    pinEffector,
+    Math.sqrt(distanceSquared(point(finalEvaluation[pinEffector], pinEffector), pinTarget)),
+  ]));
+  const secondaryErrors = Object.fromEntries(Object.entries(secondaryTargets).map(([secondaryEffector, constraint]) => [
+    secondaryEffector,
+    Math.sqrt(distanceSquared(point(finalEvaluation[secondaryEffector], secondaryEffector), constraint.target)),
+  ]));
+
+  return {
+    pose,
+    targetError,
+    pinErrors,
+    secondaryErrors,
+    activatedWholeBody,
+    bodyLift: finalEvaluation.hips && referenceEvaluation.hips
+      ? point(finalEvaluation.hips, 'hips').y - point(referenceEvaluation.hips, 'reference hips').y
+      : 0,
+  };
+}
+return Object.freeze({ WHOLE_BODY_DRAG_EFFECTORS, WHOLE_BODY_JOINT_EFFECTORS, solveWholeBodyDragPose });
+})();
+
+// tools/action-studio/studio-axis-gizmo.js
+const __actionStudioModule30 = (() => {
+const DIRECT_POSE_AXES = Object.freeze({
+  x: Object.freeze({ color: 0xff4d5e, vector: Object.freeze({ x: 1, y: 0, z: 0 }) }),
+  y: Object.freeze({ color: 0x62df76, vector: Object.freeze({ x: 0, y: 1, z: 0 }) }),
+  z: Object.freeze({ color: 0x4c8dff, vector: Object.freeze({ x: 0, y: 0, z: 1 }) }),
+});
+
+function snapAxisDragDistance(distance, snapEnabled = false, snapStep = 0.05) {
+  const value = Number(distance) || 0;
+  const step = Math.max(0.001, Number(snapStep) || 0.05);
+  const snapped = Math.round(value / step) * step;
+  return snapEnabled ? Number(snapped.toFixed(10)) : value;
+}
+
+function axisConstrainedTarget(origin, axis, distance, options = {}) {
+  const length = Math.hypot(Number(axis?.x) || 0, Number(axis?.y) || 0, Number(axis?.z) || 0) || 1;
+  const direction = {
+    x: (Number(axis?.x) || 0) / length,
+    y: (Number(axis?.y) || 0) / length,
+    z: (Number(axis?.z) || 0) / length,
+  };
+  const constrainedDistance = snapAxisDragDistance(distance, options.snap, options.snapStep);
+  return {
+    distance: constrainedDistance,
+    target: {
+      x: (Number(origin?.x) || 0) + direction.x * constrainedDistance,
+      y: (Number(origin?.y) || 0) + direction.y * constrainedDistance,
+      z: (Number(origin?.z) || 0) + direction.z * constrainedDistance,
+    },
+  };
+}
+
+function createAxisHandle(THREE, axis, definition) {
+  const root = new THREE.Group();
+  root.name = `POSE_AXIS_${axis.toUpperCase()}`;
+  const material = new THREE.MeshBasicMaterial({
+    color: definition.color,
+    transparent: true,
+    opacity: 0.96,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.32, 8), material);
+  shaft.position.y = 0.16;
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.13, 10), material);
+  arrow.position.y = 0.385;
+  const pickMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+  const pickShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.42, 8), pickMaterial);
+  pickShaft.position.y = 0.21;
+  const pickArrow = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), pickMaterial);
+  pickArrow.position.y = 0.40;
+  const direction = new THREE.Vector3(definition.vector.x, definition.vector.y, definition.vector.z);
+  root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  [shaft, arrow, pickShaft, pickArrow].forEach((object) => {
+    object.name = `POSE_AXIS_${axis.toUpperCase()}_${object.geometry.type}`;
+    object.renderOrder = 101;
+    object.userData.poseDragAxis = axis;
+    object.userData.poseDragAxisRoot = root;
+    root.add(object);
+  });
+  return { root, material, pickables: [shaft, arrow, pickShaft, pickArrow] };
+}
+
+function createStudioAxisGizmo(THREE, parent) {
+  const group = new THREE.Group();
+  group.name = 'POSE_AXIS_GIZMO';
+  group.visible = false;
+  parent.add(group);
+  const handles = Object.fromEntries(Object.entries(DIRECT_POSE_AXES).map(([axis, definition]) => [
+    axis,
+    createAxisHandle(THREE, axis, definition),
+  ]));
+  Object.values(handles).forEach((handle) => group.add(handle.root));
+  const pickables = Object.values(handles).flatMap((handle) => handle.pickables);
+  const worldQuaternion = new THREE.Quaternion();
+  const basis = new THREE.Vector3();
+  let hoveredAxis = null;
+  let activeAxis = null;
+
+  function updateAppearance() {
+    Object.entries(handles).forEach(([axis, handle]) => {
+      const emphasized = axis === activeAxis || axis === hoveredAxis;
+      handle.root.scale.setScalar(emphasized ? 1.13 : 1);
+      handle.material.opacity = emphasized ? 1 : 0.9;
+    });
+  }
+
+  return {
+    group,
+    handles,
+    setVisible(value) { group.visible = Boolean(value); },
+    setTransform(position, quaternion, space = 'world') {
+      group.position.copy(position);
+      if (space === 'local' && quaternion) group.quaternion.copy(quaternion);
+      else group.quaternion.identity();
+      group.updateMatrixWorld(true);
+    },
+    updateScale(camera) {
+      const distance = camera.position.distanceTo(group.position);
+      group.scale.setScalar(Math.max(0.72, Math.min(1.8, distance / 5.1)));
+    },
+    pick(raycaster) {
+      if (!group.visible) return null;
+      return raycaster.intersectObjects(pickables, false)[0]?.object?.userData?.poseDragAxis || null;
+    },
+    setHovered(axis) {
+      hoveredAxis = axis || null;
+      updateAppearance();
+    },
+    setActive(axis) {
+      activeAxis = axis || null;
+      updateAppearance();
+    },
+    getWorldAxis(axis, target) {
+      const definition = DIRECT_POSE_AXES[axis];
+      if (!definition) return target.set(0, 0, 0);
+      group.getWorldQuaternion(worldQuaternion);
+      return target.set(definition.vector.x, definition.vector.y, definition.vector.z)
+        .applyQuaternion(worldQuaternion)
+        .normalize();
+    },
+  };
+}
+return Object.freeze({ DIRECT_POSE_AXES, snapAxisDragDistance, axisConstrainedTarget, createStudioAxisGizmo });
+})();
+
+// tools/action-studio/studio-pose-drag-controller.js
+const __actionStudioModule28 = (() => {
+const { normalizePose } = __actionStudioModule9;
+const { solveWholeBodyDragPose } = __actionStudioModule29;
+const { applyPoseToProceduralKayKitRig } = __actionStudioModule8;
+const { axisConstrainedTarget, createStudioAxisGizmo } = __actionStudioModule30;
+
+const EFFECTORS = Object.freeze({
+  handL: Object.freeze({ bone: 'handslot.l', label: 'LEFT HAND', color: 0xb99aff, radius: 0.065 }),
+  handR: Object.freeze({ bone: 'handslot.r', label: 'RIGHT HAND · WEAPON', color: 0xff3b81, radius: 0.082 }),
+  footL: Object.freeze({ bone: 'foot.l', label: 'LEFT FOOT', color: 0x65e6a5, radius: 0.075 }),
+  footR: Object.freeze({ bone: 'foot.r', label: 'RIGHT FOOT', color: 0x59d8ff, radius: 0.075 }),
+  elbowL: Object.freeze({ bone: 'lowerarm.l', label: 'LEFT ELBOW', color: 0xd9b8ff, radius: 0.052, joint: true, anchor: 'handL' }),
+  elbowR: Object.freeze({ bone: 'lowerarm.r', label: 'RIGHT ELBOW', color: 0xff8fb5, radius: 0.052, joint: true, anchor: 'handR' }),
+  kneeL: Object.freeze({ bone: 'lowerleg.l', label: 'LEFT KNEE', color: 0xaaffcf, radius: 0.057, joint: true, anchor: 'footL' }),
+  kneeR: Object.freeze({ bone: 'lowerleg.r', label: 'RIGHT KNEE', color: 0x9ce9ff, radius: 0.057, joint: true, anchor: 'footR' }),
+});
+
+function createEffectorMarker(THREE, effector, definition) {
+  const geometry = definition.joint
+    ? new THREE.SphereGeometry(definition.radius, 10, 8)
+    : new THREE.OctahedronGeometry(definition.radius, 0);
+  const marker = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({
+      color: definition.color,
+      transparent: true,
+      opacity: definition.joint ? 0.78 : 0.95,
+      wireframe: Boolean(definition.joint),
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  marker.name = `POSE_DRAG_${effector.toUpperCase()}`;
+  marker.renderOrder = 96;
+  marker.userData.poseDragEffector = effector;
+  return marker;
+}
+
+function createPinRing(THREE, name, color) {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.105, 0.012, 7, 24),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.72,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  ring.name = name;
+  ring.rotation.x = Math.PI / 2;
+  ring.renderOrder = 94;
+  return ring;
+}
+
+function createTargetRing(THREE) {
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.105, 0.014, 7, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.92,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  ring.name = 'POSE_DRAG_TARGET';
+  ring.renderOrder = 98;
+  ring.visible = false;
+  return ring;
+}
+
+function createLink(THREE) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.68,
+    depthTest: false,
+    depthWrite: false,
+  }));
+  line.name = 'POSE_DRAG_ERROR_LINK';
+  line.frustumCulled = false;
+  line.renderOrder = 97;
+  line.visible = false;
+  return line;
+}
+
+function setLink(line, start, end) {
+  const position = line.geometry.attributes.position;
+  position.setXYZ(0, start.x, start.y, start.z);
+  position.setXYZ(1, end.x, end.y, end.z);
+  position.needsUpdate = true;
+  line.geometry.computeBoundingSphere();
+}
+
+function centimeters(value) {
+  return `${Math.round(Math.max(0, value) * 100)}cm`;
+}
+
+function signedCentimeters(value) {
+  return `${value >= 0 ? '+' : '-'}${Math.round(Math.abs(value) * 100)}cm`;
+}
+
+function createStudioPoseDragController(THREE, options) {
+  const {
+    scene,
+    camera,
+    canvas,
+    character,
+    prepareDrag,
+    applyPose,
+    finishDrag,
+  } = options;
+  const enabledControl = document.getElementById('poseDragEnabled');
+  const pinLeftControl = document.getElementById('posePinLeftFoot');
+  const pinRightControl = document.getElementById('posePinRightFoot');
+  const jointControl = document.getElementById('poseJointHandles');
+  const planeControl = document.getElementById('poseDragPlane');
+  const axisEnabledControl = document.getElementById('poseAxisGizmo');
+  const axisSpaceControl = document.getElementById('poseAxisSpace');
+  const axisReadout = document.getElementById('poseAxisReadout');
+  const couplingControl = document.getElementById('poseDragCoupling');
+  const couplingOutput = document.getElementById('poseDragCouplingValue');
+  const status = document.getElementById('poseDragStatus');
+
+  const group = new THREE.Group();
+  group.name = 'DIRECT_POSE_MANIPULATORS';
+  scene.add(group);
+  const axisGizmo = createStudioAxisGizmo(THREE, group);
+  const markers = Object.fromEntries(Object.entries(EFFECTORS).map(([effector, definition]) => [
+    effector,
+    createEffectorMarker(THREE, effector, definition),
+  ]));
+  const pinRings = {
+    footL: createPinRing(THREE, 'POSE_PIN_FOOT_L', EFFECTORS.footL.color),
+    footR: createPinRing(THREE, 'POSE_PIN_FOOT_R', EFFECTORS.footR.color),
+  };
+  const targetMarker = createTargetRing(THREE);
+  const errorLink = createLink(THREE);
+  Object.values(markers).forEach((marker) => group.add(marker));
+  Object.values(pinRings).forEach((ring) => group.add(ring));
+  group.add(targetMarker, errorLink);
+
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const dragPlane = new THREE.Plane();
+  const planeNormal = new THREE.Vector3();
+  const ringNormal = new THREE.Vector3(0, 0, 1);
+  const dragPoint = new THREE.Vector3();
+  const dragAxisWorld = new THREE.Vector3();
+  const axisStartPoint = new THREE.Vector3();
+  const axisStartTarget = new THREE.Vector3();
+  const boneWorldQuaternion = new THREE.Quaternion();
+  const dragGizmoQuaternion = new THREE.Quaternion();
+  const targetPoint = new THREE.Vector3();
+  const rigPoints = Object.fromEntries([
+    ...Object.keys(EFFECTORS), 'hips', 'chest',
+  ].map((key) => [key, new THREE.Vector3()]));
+  let dragging = null;
+  let selectedEffector = null;
+  let hovered = null;
+  let hoveredAxis = null;
+  let dragAxis = null;
+  let dragAxisSpace = 'world';
+  let axisDistance = 0;
+  let axisSnap = false;
+  let dragContext = null;
+  let referencePose = null;
+  let workingPose = null;
+  let pinnedFeet = {};
+  let secondaryTargets = {};
+  let lastResult = null;
+
+  function settings() {
+    return {
+      enabled: enabledControl.checked,
+      pinLeftFoot: pinLeftControl.checked,
+      pinRightFoot: pinRightControl.checked,
+      coupling: Number(couplingControl.value),
+      showJointHandles: jointControl.checked,
+      dragPlane: planeControl.value,
+      showAxisGizmo: axisEnabledControl.checked,
+      axisSpace: axisSpaceControl.value,
+      maxStretch: 1.05,
+    };
+  }
+
+  function setStatus(message, pending = false) {
+    status.textContent = message;
+    status.classList.toggle('pending', pending);
+  }
+
+  function readRigPoints() {
+    character.object3d.updateMatrixWorld(true);
+    Object.entries(EFFECTORS).forEach(([effector, definition]) => {
+      character.rig.bones[definition.bone].getWorldPosition(rigPoints[effector]);
+    });
+    character.rig.bones.hips.getWorldPosition(rigPoints.hips);
+    character.rig.bones.chest.getWorldPosition(rigPoints.chest);
+    return Object.fromEntries(Object.entries(rigPoints).map(([key, value]) => [
+      key,
+      { x: value.x, y: value.y, z: value.z },
+    ]));
+  }
+
+  function evaluatePose(pose) {
+    applyPoseToProceduralKayKitRig(character.rig, pose);
+    return readRigPoints();
+  }
+
+  function setPointer(event) {
+    const rect = canvas.getBoundingClientRect();
+    pointer.set(
+      ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+      -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1,
+    );
+    raycaster.setFromCamera(pointer, camera);
+  }
+
+  function pickControl(event) {
+    if (!group.visible) return null;
+    setPointer(event);
+    const axis = selectedEffector && settings().showAxisGizmo ? axisGizmo.pick(raycaster) : null;
+    if (axis) return { axis, effector: selectedEffector, marker: null };
+    const marker = raycaster.intersectObjects(Object.values(markers).filter((entry) => entry.visible), false)[0]?.object || null;
+    return marker ? { axis: null, effector: marker.userData.poseDragEffector, marker } : null;
+  }
+
+  function solve(passes) {
+    lastResult = solveWholeBodyDragPose({
+      pose: referencePose,
+      seedPose: workingPose,
+      referencePose,
+      evaluatePose,
+      effector: dragging,
+      target: targetPoint,
+      pinnedFeet,
+      coupling: settings().coupling,
+      secondaryTargets,
+      allowWholeBody: !EFFECTORS[dragging].joint,
+      maxStretch: settings().maxStretch,
+      passes,
+    });
+    workingPose = lastResult.pose;
+    applyPose?.(workingPose, dragContext, { ...lastResult, effector: dragging, live: true });
+    const pins = Object.values(lastResult.pinErrors);
+    const pinError = pins.length ? Math.max(...pins) : 0;
+    const anchors = Object.values(lastResult.secondaryErrors || {});
+    const anchorError = anchors.length ? Math.max(...anchors) : 0;
+    const lift = Math.abs(lastResult.bodyLift) >= 0.005
+      ? ` · body ${signedCentimeters(lastResult.bodyLift)}`
+      : '';
+    const anchor = anchors.length ? ` · anchor ${centimeters(anchorError)}` : '';
+    const axis = dragAxis
+      ? ` · ${dragAxisSpace.toUpperCase()} ${dragAxis.toUpperCase()} ${signedCentimeters(axisDistance)}${axisSnap ? ' · SNAP' : ''}`
+      : '';
+    setStatus(`${EFFECTORS[dragging].label} · target ${centimeters(lastResult.targetError)} · pins ${centimeters(pinError)}${anchor}${lift}${axis}`, true);
+    axisReadout.textContent = dragAxis
+      ? `${dragAxisSpace.toUpperCase()} ${dragAxis.toUpperCase()} · ${signedCentimeters(axisDistance)}${axisSnap ? ' · Shift snap 5cm' : ''}`
+      : 'FREE · constrained by the selected drag plane';
+  }
+
+  function configureDragPlane() {
+    const mode = settings().dragPlane;
+    if (mode === 'ground') {
+      planeNormal.set(0, 1, 0);
+    } else if (mode === 'vertical') {
+      camera.getWorldDirection(planeNormal);
+      planeNormal.y = 0;
+      if (planeNormal.lengthSq() < 0.0001) planeNormal.set(0, 0, 1);
+      planeNormal.normalize();
+    } else {
+      camera.getWorldDirection(planeNormal);
+    }
+    dragPlane.setFromNormalAndCoplanarPoint(planeNormal, targetPoint);
+    targetMarker.quaternion.setFromUnitVectors(ringNormal, planeNormal);
+    return planeControl.options[planeControl.selectedIndex]?.text || mode;
+  }
+
+  function setSelectedGizmoTransform(position, locked = false) {
+    const space = locked ? dragAxisSpace : settings().axisSpace;
+    const quaternion = locked
+      ? dragGizmoQuaternion
+      : character.rig.bones[EFFECTORS[selectedEffector].bone].getWorldQuaternion(boneWorldQuaternion);
+    axisGizmo.setTransform(position, quaternion, space);
+  }
+
+  function configureAxisDrag() {
+    dragAxisSpace = settings().axisSpace;
+    character.rig.bones[EFFECTORS[dragging].bone].getWorldQuaternion(dragGizmoQuaternion);
+    setSelectedGizmoTransform(targetPoint, true);
+    axisGizmo.getWorldAxis(dragAxis, dragAxisWorld);
+    axisStartTarget.copy(targetPoint);
+    camera.getWorldDirection(planeNormal);
+    planeNormal.addScaledVector(dragAxisWorld, -planeNormal.dot(dragAxisWorld));
+    if (planeNormal.lengthSq() < 0.0001) {
+      planeNormal.set(0, 1, 0);
+      if (Math.abs(planeNormal.dot(dragAxisWorld)) > 0.92) planeNormal.set(1, 0, 0);
+      planeNormal.addScaledVector(dragAxisWorld, -planeNormal.dot(dragAxisWorld));
+    }
+    planeNormal.normalize();
+    dragPlane.setFromNormalAndCoplanarPoint(planeNormal, targetPoint);
+    axisStartPoint.copy(targetPoint);
+    raycaster.ray.intersectPlane(dragPlane, axisStartPoint);
+    targetMarker.quaternion.setFromUnitVectors(ringNormal, dragAxisWorld);
+    axisGizmo.setActive(dragAxis);
+    return `${dragAxisSpace.toUpperCase()} ${dragAxis.toUpperCase()} axis`;
+  }
+
+  function beginDrag(event, effector, axis = null) {
+    dragContext = prepareDrag?.(effector);
+    if (!dragContext?.pose) return;
+    dragging = effector;
+    selectedEffector = effector;
+    dragAxis = axis;
+    axisDistance = 0;
+    axisSnap = false;
+    referencePose = normalizePose(dragContext.pose);
+    workingPose = { ...referencePose };
+    evaluatePose(referencePose);
+    readRigPoints();
+    targetPoint.copy(rigPoints[dragging]);
+    pinnedFeet = {};
+    if (pinLeftControl.checked && dragging !== 'footL') pinnedFeet.footL = rigPoints.footL.clone();
+    if (pinRightControl.checked && dragging !== 'footR') pinnedFeet.footR = rigPoints.footR.clone();
+    secondaryTargets = {};
+    const anchorEffector = EFFECTORS[dragging].anchor;
+    if (anchorEffector) {
+      secondaryTargets[anchorEffector] = { target: rigPoints[anchorEffector].clone(), weight: 2 };
+    }
+    const planeLabel = dragAxis ? configureAxisDrag() : configureDragPlane();
+    markers[dragging].scale.setScalar(1.28);
+    targetMarker.visible = true;
+    targetMarker.position.copy(targetPoint);
+    errorLink.visible = true;
+    canvas.style.cursor = 'grabbing';
+    canvas.setPointerCapture(event.pointerId);
+    setStatus(`${EFFECTORS[dragging].label} selected · ${planeLabel} plane`, true);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  function moveDrag(event) {
+    setPointer(event);
+    if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+    if (dragAxis) {
+      const rawDistance = dragPoint.sub(axisStartPoint).dot(dragAxisWorld);
+      const constrained = axisConstrainedTarget(axisStartTarget, dragAxisWorld, rawDistance, {
+        snap: event.shiftKey,
+        snapStep: 0.05,
+      });
+      targetPoint.set(constrained.target.x, constrained.target.y, constrained.target.z);
+      axisDistance = constrained.distance;
+      axisSnap = event.shiftKey;
+    } else {
+      targetPoint.copy(dragPoint);
+    }
+    targetMarker.position.copy(targetPoint);
+    solve(2);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  function endDrag(event) {
+    if (!dragging) return;
+    solve(6);
+    if (dragging === 'footL' || dragging === 'footR') {
+      const contactKey = dragging === 'footL' ? 'lL_contact' : 'lR_contact';
+      const startPoint = evaluatePose(referencePose)[dragging];
+      workingPose[contactKey] = Math.abs(targetPoint.y - startPoint.y) < 0.05 ? 1 : 0;
+    }
+    applyPose?.(workingPose, dragContext, { ...lastResult, effector: dragging, live: false });
+    finishDrag?.(workingPose, dragContext, { ...lastResult, effector: dragging });
+    const finishedLabel = EFFECTORS[dragging].label;
+    const finishedError = lastResult?.targetError || 0;
+    const finishedAxis = dragAxis ? ` · ${dragAxisSpace.toUpperCase()} ${dragAxis.toUpperCase()} ${signedCentimeters(axisDistance)}` : '';
+    Object.values(markers).forEach((marker) => marker.scale.setScalar(1));
+    dragging = null;
+    dragAxis = null;
+    dragContext = null;
+    referencePose = null;
+    workingPose = null;
+    pinnedFeet = {};
+    secondaryTargets = {};
+    targetMarker.visible = false;
+    errorLink.visible = false;
+    axisGizmo.setActive(null);
+    canvas.style.cursor = '';
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    axisReadout.textContent = `${finishedLabel} selected · choose X / Y / Z or drag the center freely`;
+    setStatus(`${finishedLabel} baked into the selected Pose Key · error ${centimeters(finishedError)}${finishedAxis}`);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    const control = pickControl(event);
+    if (control) beginDrag(event, control.effector, control.axis);
+  }, true);
+  canvas.addEventListener('pointermove', (event) => {
+    if (dragging) {
+      moveDrag(event);
+      return;
+    }
+    const control = pickControl(event);
+    hovered = control?.marker || null;
+    hoveredAxis = control?.axis || null;
+    axisGizmo.setHovered(hoveredAxis);
+    if (hoveredAxis) canvas.style.cursor = 'move';
+    else if (hovered) canvas.style.cursor = 'grab';
+    else if (canvas.style.cursor === 'grab' || canvas.style.cursor === 'move') canvas.style.cursor = '';
+  }, true);
+  canvas.addEventListener('pointerup', endDrag, true);
+  canvas.addEventListener('pointercancel', endDrag, true);
+
+  enabledControl.addEventListener('change', () => {
+    group.visible = enabledControl.checked;
+    setStatus(enabledControl.checked
+      ? 'Drag a hand or foot control in the stage.'
+      : 'Direct Pose controls hidden.');
+  });
+  axisEnabledControl.addEventListener('change', () => {
+    setStatus(axisEnabledControl.checked
+      ? 'XYZ axis gizmo enabled · select a pose node.'
+      : 'XYZ axis gizmo hidden · free drag remains available.');
+  });
+  axisSpaceControl.addEventListener('change', () => {
+    axisReadout.textContent = `${axisSpaceControl.value.toUpperCase()} axes · select X / Y / Z`;
+    setStatus(`Axis space · ${axisSpaceControl.value.toUpperCase()}`);
+  });
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || dragging) return;
+    selectedEffector = null;
+    hoveredAxis = null;
+    axisGizmo.setHovered(null);
+    axisGizmo.setVisible(false);
+    axisReadout.textContent = 'No node selected';
+    setStatus('Axis selection cleared.');
+  });
+  couplingControl.addEventListener('input', () => {
+    couplingOutput.textContent = Number(couplingControl.value).toFixed(2);
+  });
+  [pinLeftControl, pinRightControl].forEach((control) => {
+    control.addEventListener('change', () => {
+      setStatus(`Foot pins · L ${pinLeftControl.checked ? 'ON' : 'OFF'} · R ${pinRightControl.checked ? 'ON' : 'OFF'}`);
+    });
+  });
+  jointControl.addEventListener('change', () => {
+    setStatus(jointControl.checked
+      ? 'Elbow and knee bend handles visible.'
+      : 'Elbow and knee bend handles hidden.');
+  });
+  planeControl.addEventListener('change', () => {
+    setStatus(`Drag plane · ${planeControl.options[planeControl.selectedIndex].text}`);
+  });
+
+  function update() {
+    group.visible = settings().enabled;
+    if (!group.visible) return;
+    readRigPoints();
+    Object.keys(markers).forEach((effector) => {
+      markers[effector].visible = !EFFECTORS[effector].joint || settings().showJointHandles || dragging === effector;
+      markers[effector].position.copy(rigPoints[effector]);
+      const scale = dragging === effector ? 1.28 : selectedEffector === effector ? 1.17 : hovered === markers[effector] ? 1.14 : 1;
+      markers[effector].scale.setScalar(scale);
+    });
+    const selectedVisible = selectedEffector && markers[selectedEffector]?.visible;
+    axisGizmo.setVisible(Boolean(selectedVisible && settings().showAxisGizmo));
+    if (selectedVisible && settings().showAxisGizmo) {
+      if (dragAxis) setSelectedGizmoTransform(targetPoint, true);
+      else setSelectedGizmoTransform(rigPoints[selectedEffector]);
+      axisGizmo.updateScale(camera);
+    }
+    pinRings.footL.position.copy(rigPoints.footL);
+    pinRings.footR.position.copy(rigPoints.footR);
+    pinRings.footL.visible = settings().pinLeftFoot && dragging !== 'footL';
+    pinRings.footR.visible = settings().pinRightFoot && dragging !== 'footR';
+    if (dragging) {
+      setLink(errorLink, rigPoints[dragging], targetPoint);
+    }
+  }
+
+  group.visible = settings().enabled;
+  couplingOutput.textContent = settings().coupling.toFixed(2);
+  axisReadout.textContent = 'Select a hand, foot, elbow, or knee';
+  setStatus('Select a pose node, then drag X / Y / Z or drag the node freely.');
+  return {
+    group,
+    markers,
+    axisGizmo,
+    update,
+    get dragging() { return dragging; },
+    get selected() { return selectedEffector; },
+    get axis() { return dragAxis; },
+    get diagnostics() {
+      return { selectedEffector, dragAxis, axisSpace: settings().axisSpace, axisDistance, axisSnap, ...(lastResult || {}) };
+    },
+  };
+}
+return Object.freeze({ createStudioPoseDragController });
+})();
+
+// tools/action-studio/studio-blocking-workflow.js
+const __actionStudioModule31 = (() => {
+const { evaluateClip } = __actionStudioModule16;
+const { normalizePose } = __actionStudioModule9;
+const { createDefaultCharacter } = __actionStudioModule1;
+const { createDebugSword, mountDebugSword } = __actionStudioModule12;
+const { applyMountCalibration } = __actionStudioModule3;
+
+const GHOST_STYLES = Object.freeze({
+  previous: Object.freeze({ color: 0x648dff, opacity: 0.28 }),
+  next: Object.freeze({ color: 0xffad5b, opacity: 0.24 }),
+});
+
+const TRAJECTORY_STYLES = Object.freeze({
+  handL: Object.freeze({ color: 0xcaa8ff, label: 'left palm' }),
+  handR: Object.freeze({ color: 0xff3b81, label: 'weapon palm' }),
+  swordTip: Object.freeze({ color: 0x55e6c1, label: 'sword tip' }),
+});
+
+function boundedFrameStep(value) {
+  const number = Math.round(Number(value) || 4);
+  return Math.max(1, Math.min(60, number));
+}
+
+function uniqueBlockingName(clip, selectedKeyIndex, frame) {
+  const root = `block_${String(selectedKeyIndex + 1).padStart(2, '0')}_${frame}f`;
+  let name = root;
+  let suffix = 2;
+  while (clip.poses[name] || clip.timeline.some((key) => key.name === name)) name = `${root}_${suffix++}`;
+  return name;
+}
+
+function captureNextBlockingKey(clip, selectedKeyIndex, pose, options = {}) {
+  if (!clip?.timeline?.length || !clip?.poses) throw new Error('Capture requires an Action Studio clip');
+  const index = Math.max(0, Math.min(Math.round(Number(selectedKeyIndex) || 0), clip.timeline.length - 1));
+  const current = clip.timeline[index];
+  const frameStep = boundedFrameStep(options.frameStep);
+  const frame = current.frame + frameStep;
+  const next = clip.timeline[index + 1];
+  if (next && next.frame <= frame) {
+    clip.timeline.forEach((key) => {
+      if (key.frame > current.frame) key.frame += frameStep;
+    });
+  }
+  const name = uniqueBlockingName(clip, index, frame);
+  clip.timeline.splice(index + 1, 0, {
+    name,
+    frame,
+    frames: frameStep,
+    ease: options.ease || 'out',
+    tag: options.tag || 'blocking',
+    impact: false,
+    cancel: false,
+  });
+  clip.poses[name] = normalizePose(pose || clip.poses[current.name]);
+  return { name, frame, frameStep };
+}
+
+function ghostLineStyle(style) {
+  return {
+    lineColor: style.color,
+    glowColor: style.color,
+    contourColor: style.color,
+    headColor: style.color,
+    jointColor: style.color,
+    lineOpacity: style.opacity,
+    headOpacity: style.opacity,
+    glowOpacity: 0,
+    contourOpacity: style.opacity * 0.82,
+    jointOpacity: style.opacity * 0.72,
+  };
+}
+
+function ghostSwordStyle(style) {
+  return {
+    outlineColor: style.color,
+    skeletonColor: style.color,
+    glowColor: style.color,
+    jointColor: style.color,
+    outlineOpacity: style.opacity,
+    skeletonOpacity: style.opacity * 0.8,
+    glowOpacity: 0,
+    jointOpacity: style.opacity * 0.6,
+  };
+}
+
+function createGhostRig(THREE, scene, kind, mountCalibration) {
+  const style = GHOST_STYLES[kind];
+  const character = createDefaultCharacter(THREE, { lineStyle: ghostLineStyle(style) });
+  const sword = createDebugSword(THREE, { style: ghostSwordStyle(style) });
+  mountDebugSword(character, sword, mountCalibration);
+  character.object3d.name = `BLOCKING_${kind.toUpperCase()}_GHOST`;
+  character.setRigNodesVisible(false);
+  character.setRigGlowVisible(false);
+  sword.setNodesVisible(false);
+  sword.setGlowVisible(false);
+  character.object3d.visible = false;
+  scene.add(character.object3d);
+  return { character, sword, keyName: null };
+}
+
+function createTrajectory(THREE, scene, id, style) {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
+      color: style.color,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      depthTest: false,
+    }),
+  );
+  line.name = `BLOCKING_TRAJECTORY_${id.toUpperCase()}`;
+  line.frustumCulled = false;
+  line.renderOrder = 8;
+  const keys = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({
+      color: style.color,
+      transparent: true,
+      opacity: 0.92,
+      size: id === 'swordTip' ? 0.07 : 0.055,
+      sizeAttenuation: true,
+      depthWrite: false,
+      depthTest: false,
+    }),
+  );
+  keys.name = `BLOCKING_TRAJECTORY_KEYS_${id.toUpperCase()}`;
+  keys.frustumCulled = false;
+  keys.renderOrder = 9;
+  scene.add(line, keys);
+  return { line, keys, sampleCount: 0, keyCount: 0 };
+}
+
+function replacePoints(object, THREE, points) {
+  object.geometry.dispose();
+  object.geometry = new THREE.BufferGeometry().setFromPoints(points);
+}
+
+function sampleFrames(clip, maximumSamples = 121) {
+  const first = clip.timeline[0].frame;
+  const duration = Math.max(first, clip.durationFrames);
+  const step = Math.max(1, Math.ceil(Math.max(1, duration - first) / maximumSamples));
+  const frames = new Set(clip.timeline.map((key) => key.frame));
+  for (let frame = first; frame <= duration; frame += step) frames.add(frame);
+  frames.add(duration);
+  return [...frames].sort((a, b) => a - b);
+}
+
+function createStudioBlockingWorkflow(THREE, options) {
+  const {
+    scene,
+    camera,
+    getClip,
+    getSelectedKeyIndex,
+    getMountCalibration,
+    onCapture,
+  } = options;
+  const mount = getMountCalibration();
+  const ghosts = {
+    previous: createGhostRig(THREE, scene, 'previous', mount),
+    next: createGhostRig(THREE, scene, 'next', mount),
+  };
+  const probe = {
+    character: createDefaultCharacter(THREE, {
+      lineStyle: { lineOpacity: 0, headOpacity: 0, glowOpacity: 0, contourOpacity: 0, jointOpacity: 0 },
+    }),
+    sword: createDebugSword(THREE, {
+      style: { outlineOpacity: 0, skeletonOpacity: 0, glowOpacity: 0, jointOpacity: 0 },
+    }),
+  };
+  mountDebugSword(probe.character, probe.sword, mount);
+  const trajectories = Object.fromEntries(Object.entries(TRAJECTORY_STYLES).map(([id, style]) => [
+    id,
+    createTrajectory(THREE, scene, id, style),
+  ]));
+  const scratch = {
+    handL: new THREE.Vector3(),
+    handR: new THREE.Vector3(),
+    swordTip: new THREE.Vector3(),
+  };
+  let trajectorySampleCount = 0;
+  let refreshQueued = false;
+
+  function enabled(id, fallback = true) {
+    const control = document.getElementById(id);
+    return control ? control.checked : fallback;
+  }
+
+  function showGhost(kind, key) {
+    const ghost = ghosts[kind];
+    const clip = getClip();
+    const visible = Boolean(key) && enabled(`blockingGhost${kind === 'previous' ? 'Previous' : 'Next'}`);
+    ghost.character.object3d.visible = visible;
+    ghost.keyName = visible ? key.name : null;
+    if (!visible) return;
+    applyMountCalibration(ghost.sword.object3d, getMountCalibration());
+    ghost.character.applyPose(clip.poses[key.name]);
+    ghost.character.object3d.updateMatrixWorld(true);
+    ghost.character.update(0, camera);
+    ghost.sword.update();
+  }
+
+  function setTrajectoryVisible(visible) {
+    Object.values(trajectories).forEach((track) => {
+      track.line.visible = visible && track.sampleCount > 1;
+      track.keys.visible = visible && track.keyCount > 0;
+    });
+  }
+
+  function rebuildTrajectories() {
+    const clip = getClip();
+    const visible = enabled('blockingTrajectories');
+    if (!clip?.timeline?.length) {
+      setTrajectoryVisible(false);
+      return;
+    }
+    applyMountCalibration(probe.sword.object3d, getMountCalibration());
+    const sampled = { handL: [], handR: [], swordTip: [] };
+    const keyPoints = { handL: [], handR: [], swordTip: [] };
+    const keyFrames = new Set(clip.timeline.map((key) => key.frame));
+    const frames = sampleFrames(clip);
+    frames.forEach((frame) => {
+      const evaluation = evaluateClip(clip, frame);
+      probe.character.applyPose(evaluation.pose);
+      probe.character.object3d.updateMatrixWorld(true);
+      probe.sword.update();
+      probe.character.rig.bones['hand.l'].getWorldPosition(scratch.handL);
+      probe.character.rig.bones['hand.r'].getWorldPosition(scratch.handR);
+      probe.sword.trailTip.getWorldPosition(scratch.swordTip);
+      Object.keys(sampled).forEach((id) => {
+        const point = scratch[id].clone();
+        sampled[id].push(point);
+        if (keyFrames.has(frame)) keyPoints[id].push(point.clone());
+      });
+    });
+    Object.keys(trajectories).forEach((id) => {
+      const track = trajectories[id];
+      replacePoints(track.line, THREE, sampled[id]);
+      replacePoints(track.keys, THREE, keyPoints[id]);
+      track.sampleCount = sampled[id].length;
+      track.keyCount = keyPoints[id].length;
+    });
+    trajectorySampleCount = frames.length;
+    setTrajectoryVisible(visible);
+  }
+
+  function refresh() {
+    const clip = getClip();
+    if (!clip?.timeline?.length) return;
+    const index = Math.max(0, Math.min(getSelectedKeyIndex(), clip.timeline.length - 1));
+    showGhost('previous', clip.timeline[index - 1]);
+    showGhost('next', clip.timeline[index + 1]);
+    rebuildTrajectories();
+    const status = document.getElementById('blockingStatus');
+    if (status) {
+      const previous = clip.timeline[index - 1]?.name || '—';
+      const next = clip.timeline[index + 1]?.name || '—';
+      status.textContent = `Selected ${clip.timeline[index].name} · ghost ${previous} ← / → ${next} · ${trajectorySampleCount} path samples`;
+    }
+  }
+
+  function scheduleRefresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    window.requestAnimationFrame(() => {
+      refreshQueued = false;
+      refresh();
+    });
+  }
+
+  function update() {
+    Object.values(ghosts).forEach((ghost) => {
+      if (!ghost.character.object3d.visible) return;
+      ghost.character.update(0, camera);
+      ghost.sword.update();
+    });
+  }
+
+  ['blockingGhostPrevious', 'blockingGhostNext', 'blockingTrajectories'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', refresh);
+  });
+  document.getElementById('captureNextKey')?.addEventListener('click', () => {
+    const step = boundedFrameStep(document.getElementById('blockingFrameStep')?.value);
+    onCapture?.(step);
+  });
+
+  return {
+    refresh,
+    scheduleRefresh,
+    update,
+    setStatus(message, error = false) {
+      const status = document.getElementById('blockingStatus');
+      if (!status) return;
+      status.textContent = message;
+      status.classList.toggle('error', error);
+    },
+    get diagnostics() {
+      return {
+        previousKey: ghosts.previous.keyName,
+        nextKey: ghosts.next.keyName,
+        trajectorySampleCount,
+        trajectories: Object.fromEntries(Object.entries(trajectories).map(([id, track]) => [id, {
+          label: TRAJECTORY_STYLES[id].label,
+          samples: track.sampleCount,
+          keys: track.keyCount,
+          visible: track.line.visible,
+        }])),
+      };
+    },
+  };
+}
+return Object.freeze({ captureNextBlockingKey, createStudioBlockingWorkflow });
+})();
+
+// src/animation/legacy-punch-import.js
+const __actionStudioModule33 = (() => {
+const { LEGACY_NON_HUMANOID_POSE_KEYS, POSE_KEYS } = __actionStudioModule10;
+const { createAnimationClip } = __actionStudioModule16;
+
+function importLegacyPunchSnapshot(snapshot = {}) {
+  const phases = snapshot.phases || snapshot.PHASES || {};
+  const ignoredKeys = new Set();
+  const poses = {};
+  for (const [name, sourcePose] of Object.entries(phases)) {
+    poses[name] = {};
+    for (const key of POSE_KEYS) {
+      if (sourcePose && sourcePose[key] !== undefined) poses[name][key] = sourcePose[key];
+    }
+    for (const key of LEGACY_NON_HUMANOID_POSE_KEYS) {
+      if (sourcePose && sourcePose[key] !== undefined) ignoredKeys.add(key);
+    }
+  }
+  return {
+    clip: createAnimationClip({
+      id: snapshot.id || snapshot.name || 'imported_punch_action',
+      name: snapshot.name || 'Imported Punch Action',
+      fps: snapshot.fps || 60,
+      timeline: snapshot.seq || snapshot.SEQ,
+      poses,
+      metadata: { importedFrom: 'punch-studio', legacyVersion: snapshot.version ?? null },
+    }),
+    report: { ignoredPoseKeys: [...ignoredKeys].sort() },
+  };
+}
+return Object.freeze({ importLegacyPunchSnapshot });
+})();
+
+// tools/action-studio/studio-project.js
+const __actionStudioModule34 = (() => {
+const { createAnimationClip } = __actionStudioModule16;
+const { ACTION_WINDOW_TYPES, createActionDefinition } = __actionStudioModule23;
+
+const ACTION_STUDIO_PROJECT_FORMAT = 'action-studio-project';
+
+function cloneSerializable(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createStudioProject({ clip, action, weaponMount }) {
+  return {
+    format: ACTION_STUDIO_PROJECT_FORMAT,
+    version: 1,
+    clip: cloneSerializable(clip),
+    action: cloneSerializable(action),
+    weaponMount: cloneSerializable(weaponMount),
+  };
+}
+
+function serializeStudioProject(project) {
+  return JSON.stringify(project, null, 2);
+}
+
+function studioProjectFilename(project, date = new Date()) {
+  const source = project?.clip?.id || project?.clip?.name || project?.action?.id || 'action-studio-project';
+  const safeName = String(source)
+    .trim()
+    .replace(/[^a-z0-9._-]+/gi, '-')
+    .replace(/^-+|-+$/g, '') || 'action-studio-project';
+  const stamp = date instanceof Date && Number.isFinite(date.getTime())
+    ? date.toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
+    : 'snapshot';
+  return `${safeName}_${stamp}.json`;
+}
+
+function createStudioAutosave(project, reason = 'edit', savedAt = new Date().toISOString()) {
+  return {
+    format: 'action-studio-autosave',
+    version: 1,
+    savedAt,
+    reason: String(reason || 'edit'),
+    project: cloneSerializable(project),
+  };
+}
+
+function readStoredJson(storage, key, fallback) {
+  try {
+    const stored = JSON.parse(storage.getItem(key) || 'null');
+    return stored == null ? fallback : stored;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredJson(storage, key, value) {
+  storage.setItem(key, JSON.stringify(value));
+  return value;
+}
+
+function buildComboProjectData(queue, weaponMount) {
+  const timeline = [];
+  const poses = {};
+  const windows = Object.fromEntries(ACTION_WINDOW_TYPES.map((type) => [type, []]));
+  let endFrame = 0;
+
+  queue.forEach((entry, clipIndex) => {
+    const sourceClip = createAnimationClip(entry.project.clip);
+    const sourceAction = createActionDefinition(entry.project.action, sourceClip.durationFrames);
+    const firstFrame = sourceClip.timeline[0].frame;
+    const offset = clipIndex === 0 ? -firstFrame : endFrame + 4 - firstFrame;
+    sourceClip.timeline.forEach((key) => {
+      const name = `combo_${clipIndex + 1}_${key.name}`;
+      timeline.push({ ...key, name, frame: key.frame + offset });
+      poses[name] = sourceClip.poses[key.name];
+    });
+    ACTION_WINDOW_TYPES.forEach((type) => {
+      sourceAction.windows[type].forEach((window) => windows[type].push({
+        ...window,
+        startFrame: window.startFrame + offset,
+        endFrame: window.endFrame + offset,
+      }));
+    });
+    endFrame = sourceClip.durationFrames + offset;
+  });
+
+  const comboClip = createAnimationClip({ id: 'combo_preview', name: 'Combo Preview', timeline, poses });
+  return {
+    clip: comboClip,
+    action: createActionDefinition({
+      id: comboClip.id,
+      clipId: comboClip.id,
+      category: 'combo-preview',
+      windows,
+    }, comboClip.durationFrames),
+    weaponMount: cloneSerializable(weaponMount),
+  };
+}
+return Object.freeze({ ACTION_STUDIO_PROJECT_FORMAT, cloneSerializable, createStudioProject, serializeStudioProject, studioProjectFilename, createStudioAutosave, readStoredJson, writeStoredJson, buildComboProjectData });
+})();
+
+// tools/action-studio/studio-project-io-controller.js
+const __actionStudioModule32 = (() => {
+const { importLegacyPunchSnapshot } = __actionStudioModule33;
+const { createStudioAutosave, readStoredJson, serializeStudioProject, studioProjectFilename, writeStoredJson } = __actionStudioModule34;
+
+const ACTION_STUDIO_AUTOSAVE_KEY = 'ACTION_STUDIO_AUTOSAVE_V1';
+
+function describeSavedAt(value) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'unknown time';
+}
+
+function createStudioProjectIoController(options) {
+  const {
+    getProject,
+    applyProject,
+    onStatus,
+    storage = localStorage,
+  } = options;
+  let autosaveTimer = 0;
+
+  function setStatus(message, error = false) {
+    onStatus?.(message, error);
+  }
+
+  function updateAutosaveStatus() {
+    const host = document.getElementById('autosaveStatus');
+    if (!host) return;
+    const autosave = readStoredJson(storage, ACTION_STUDIO_AUTOSAVE_KEY, null);
+    host.textContent = autosave?.project
+      ? `Auto backup · ${describeSavedAt(autosave.savedAt)} · ${autosave.reason}`
+      : 'Auto backup starts after your first edit or Capture.';
+  }
+
+  function syncText() {
+    const text = serializeStudioProject(getProject());
+    const textarea = document.getElementById('projectJson');
+    textarea.value = text;
+    return text;
+  }
+
+  function saveAutosave(reason = 'edit') {
+    const autosave = createStudioAutosave(getProject(), reason);
+    writeStoredJson(storage, ACTION_STUDIO_AUTOSAVE_KEY, autosave);
+    updateAutosaveStatus();
+    return autosave;
+  }
+
+  function scheduleAutosave(reason = 'edit', delay = 320) {
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = window.setTimeout(() => saveAutosave(reason), delay);
+  }
+
+  function importData(input, sourceLabel = 'JSON text') {
+    let data = input;
+    if (data?.format === 'action-studio-autosave' && data.project) data = data.project;
+    if (data?.format === 'action-studio-project' && data.clip) {
+      applyProject(data);
+    } else if (data?.format === 'action-studio-clip' || (data?.timeline && data?.poses)) {
+      applyProject({ clip: data });
+    } else if (data?.seq || data?.SEQ || data?.phases || data?.PHASES) {
+      const result = importLegacyPunchSnapshot(data);
+      applyProject({ clip: result.clip });
+      setStatus(`Imported legacy Punch snapshot from ${sourceLabel}. Ignored editor-only keys: ${result.report.ignoredPoseKeys.join(', ') || 'none'}.`);
+      return result;
+    } else {
+      throw new Error('Unknown project shape');
+    }
+    setStatus(`Imported Action Studio project from ${sourceLabel}.`);
+    return data;
+  }
+
+  function importText(text, sourceLabel) {
+    try {
+      return importData(JSON.parse(text), sourceLabel);
+    } catch (error) {
+      setStatus(`Import failed: ${error.message}`, true);
+      return null;
+    }
+  }
+
+  document.getElementById('exportProject')?.addEventListener('click', () => {
+    const text = syncText();
+    document.getElementById('projectJson').select();
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setStatus('Project JSON copied and shown below.');
+  });
+  document.getElementById('downloadProject')?.addEventListener('click', () => {
+    const project = getProject();
+    const text = serializeStudioProject(project);
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = studioProjectFilename(project);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    syncText();
+    saveAutosave('download JSON snapshot');
+    setStatus(`Downloaded ${anchor.download}.`);
+  });
+  document.getElementById('importProject')?.addEventListener('click', () => {
+    importText(document.getElementById('projectJson').value, 'JSON text');
+  });
+  document.getElementById('openProjectFile')?.addEventListener('click', () => {
+    document.getElementById('projectFileInput').click();
+  });
+  document.getElementById('projectFileInput')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    importText(await file.text(), file.name);
+    event.target.value = '';
+  });
+  document.getElementById('restoreAutosave')?.addEventListener('click', () => {
+    const autosave = readStoredJson(storage, ACTION_STUDIO_AUTOSAVE_KEY, null);
+    if (!autosave?.project) {
+      setStatus('No Action Studio auto backup exists yet.', true);
+      return;
+    }
+    applyProject(autosave.project);
+    syncText();
+    setStatus(`Restored auto backup from ${describeSavedAt(autosave.savedAt)}.`);
+  });
+
+  updateAutosaveStatus();
+  return { syncText, saveAutosave, scheduleAutosave, importData, updateAutosaveStatus };
+}
+return Object.freeze({ ACTION_STUDIO_AUTOSAVE_KEY, createStudioProjectIoController });
+})();
+
+// tools/action-studio/studio-editor-view.js
+const __actionStudioModule35 = (() => {
 const { POSE_KEYS } = __actionStudioModule10;
 const { normalizeAnimationBinding } = __actionStudioModule19;
 const { clipMarkerSummary } = __actionStudioModule16;
@@ -6205,82 +7685,6 @@ function readAnimationBindingView() {
 return Object.freeze({ renderTimelineView, updateTimelineReadoutView, renderKeyEditorView, renderPoseControlsView, renderWindowEditorView, renderMountEditorView, renderLibraryView, renderComboQueueView, renderAnimationBindingView, readAnimationBindingView });
 })();
 
-// tools/action-studio/studio-project.js
-const __actionStudioModule30 = (() => {
-const { createAnimationClip } = __actionStudioModule16;
-const { ACTION_WINDOW_TYPES, createActionDefinition } = __actionStudioModule23;
-
-const ACTION_STUDIO_PROJECT_FORMAT = 'action-studio-project';
-
-function cloneSerializable(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function createStudioProject({ clip, action, weaponMount }) {
-  return {
-    format: ACTION_STUDIO_PROJECT_FORMAT,
-    version: 1,
-    clip: cloneSerializable(clip),
-    action: cloneSerializable(action),
-    weaponMount: cloneSerializable(weaponMount),
-  };
-}
-
-function readStoredJson(storage, key, fallback) {
-  try {
-    const stored = JSON.parse(storage.getItem(key) || 'null');
-    return stored == null ? fallback : stored;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStoredJson(storage, key, value) {
-  storage.setItem(key, JSON.stringify(value));
-  return value;
-}
-
-function buildComboProjectData(queue, weaponMount) {
-  const timeline = [];
-  const poses = {};
-  const windows = Object.fromEntries(ACTION_WINDOW_TYPES.map((type) => [type, []]));
-  let endFrame = 0;
-
-  queue.forEach((entry, clipIndex) => {
-    const sourceClip = createAnimationClip(entry.project.clip);
-    const sourceAction = createActionDefinition(entry.project.action, sourceClip.durationFrames);
-    const firstFrame = sourceClip.timeline[0].frame;
-    const offset = clipIndex === 0 ? -firstFrame : endFrame + 4 - firstFrame;
-    sourceClip.timeline.forEach((key) => {
-      const name = `combo_${clipIndex + 1}_${key.name}`;
-      timeline.push({ ...key, name, frame: key.frame + offset });
-      poses[name] = sourceClip.poses[key.name];
-    });
-    ACTION_WINDOW_TYPES.forEach((type) => {
-      sourceAction.windows[type].forEach((window) => windows[type].push({
-        ...window,
-        startFrame: window.startFrame + offset,
-        endFrame: window.endFrame + offset,
-      }));
-    });
-    endFrame = sourceClip.durationFrames + offset;
-  });
-
-  const comboClip = createAnimationClip({ id: 'combo_preview', name: 'Combo Preview', timeline, poses });
-  return {
-    clip: comboClip,
-    action: createActionDefinition({
-      id: comboClip.id,
-      clipId: comboClip.id,
-      category: 'combo-preview',
-      windows,
-    }, comboClip.durationFrames),
-    weaponMount: cloneSerializable(weaponMount),
-  };
-}
-return Object.freeze({ ACTION_STUDIO_PROJECT_FORMAT, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson, buildComboProjectData });
-})();
-
 // tools/action-studio/action-studio.js
 const __actionStudioModule0 = (() => {
 const { createDefaultCharacter } = __actionStudioModule1;
@@ -6294,14 +7698,16 @@ const { ActionMotionPlayer } = __actionStudioModule17;
 const { createFittedAnimationBinding } = __actionStudioModule19;
 const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioModule11;
 const { ACTION_TEMPLATE_FACTORIES } = __actionStudioModule20;
-const { importLegacyPunchSnapshot } = __actionStudioModule24;
 const { createActionDefinition, isFrameInWindow } = __actionStudioModule23;
-const { createStudioPreviewRuntime } = __actionStudioModule25;
-const { createWholeBodyMotionGuideOverlay } = __actionStudioModule26;
-const { createStudioMotionGuideEditor } = __actionStudioModule27;
-const { bakeStudioMotionConstraints } = __actionStudioModule28;
-const { renderComboQueueView, readAnimationBindingView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule29;
-const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule30;
+const { createStudioPreviewRuntime } = __actionStudioModule24;
+const { createWholeBodyMotionGuideOverlay } = __actionStudioModule25;
+const { createStudioMotionGuideEditor } = __actionStudioModule26;
+const { bakeStudioMotionConstraints } = __actionStudioModule27;
+const { createStudioPoseDragController } = __actionStudioModule28;
+const { captureNextBlockingKey, createStudioBlockingWorkflow } = __actionStudioModule31;
+const { createStudioProjectIoController } = __actionStudioModule32;
+const { renderComboQueueView, readAnimationBindingView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule35;
+const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule34;
 
 const THREE = window.THREE;
 if (!THREE) throw new Error('Action Studio requires Three.js r128');
@@ -6342,13 +7748,67 @@ let slowEnabled = false;
 let comboQueue = [];
 let lastTick = performance.now();
 let previousPlaybackFrame = 0;
+let blockingWorkflow = null, projectIo = null;
 const motionGuideOverlay = createWholeBodyMotionGuideOverlay(THREE, { scene: preview.scene, camera: preview.camera, canvas, character, sword });
 const motionGuideEditor = createStudioMotionGuideEditor({
-  overlay: motionGuideOverlay, applyProject: (project, options) => setProject(project, options),
+  overlay: motionGuideOverlay, applyProject: (project, options) => { setProject(project, options); projectIo?.saveAutosave('motion guide bake'); },
   bakeProject: (project, guide) => bakeStudioMotionConstraints(project, { character, sword, guide }),
   getFrame: () => player.frame, onStatus: (message, error) => setIoStatus(message, error),
 });
 
+const poseDragController = createStudioPoseDragController(THREE, {
+  scene: preview.scene,
+  camera: preview.camera,
+  canvas,
+  character,
+  prepareDrag: () => {
+    const keyframe = clip.timeline[selectedKeyIndex];
+    player.pause();
+    if (action.animationBinding.source !== 'authored') {
+      action = createActionDefinition({
+        ...action,
+        animationBinding: { source: 'authored', clipId: clip.id },
+      }, clip.durationFrames);
+      player.setAction(action);
+      renderAnimationBinding();
+    }
+    player.seek(keyframe.frame);
+    previousPlaybackFrame = player.frame;
+    applyEvaluation(player.evaluate());
+    updatePlaybackButtons();
+    return { pose: clip.poses[keyframe.name], keyName: keyframe.name, frame: keyframe.frame };
+  },
+  applyPose: (pose, context) => {
+    clip.poses[context.keyName] = normalizePose(pose);
+    player.pause();
+    player.seek(context.frame);
+    previousPlaybackFrame = player.frame;
+    applyEvaluation(player.evaluate());
+  },
+  finishDrag: (_pose, context) => {
+    renderPoseControls();
+    updatePlaybackButtons();
+    setIoStatus(`Direct Pose baked into ${context.keyName}.`);
+    projectIo?.saveAutosave(`Direct Pose · ${context.keyName}`);
+    blockingWorkflow?.refresh();
+  },
+});
+
+blockingWorkflow = createStudioBlockingWorkflow(THREE, {
+  scene: preview.scene,
+  camera: preview.camera,
+  getClip: () => clip,
+  getSelectedKeyIndex: () => selectedKeyIndex,
+  getMountCalibration: () => mountCalibration,
+  onCapture: (frameStep) => {
+    const current = clip.timeline[selectedKeyIndex];
+    const captured = captureNextBlockingKey(clip, selectedKeyIndex, clip.poses[current.name], { frameStep });
+    rebuildClip(captured.name, captured.frame);
+    projectIo?.saveAutosave(`Capture Next Key · ${captured.name}`);
+    projectIo?.syncText();
+    blockingWorkflow.setStatus(`Captured ${captured.name} at ${captured.frame}f · ready to drag the next pose.`);
+  },
+});
 function loadMountCalibration() {
   return normalizeMountCalibration(readStoredJson(localStorage, MOUNT_KEY, DEFAULT_KAYKIT_SWORD_MOUNT));
 }
@@ -6514,6 +7974,7 @@ function renderEditor() {
   document.getElementById('clipNow').textContent = clip.name.toUpperCase();
   document.getElementById('libraryName').value = clip.id;
   document.getElementById('poseAxisSummary').textContent = `${POSE_KEYS.length} axes from POSE_KEYS`;
+  blockingWorkflow?.refresh();
 }
 
 function renderTimeline() {
@@ -6531,6 +7992,7 @@ function selectKey(index) {
   renderPoseControls();
   applyEvaluation(player.evaluate());
   updatePlaybackButtons();
+  blockingWorkflow.refresh();
 }
 
 function renderKeyEditor() {
@@ -6548,6 +8010,8 @@ function renderPoseControls() {
       applyEvaluation(player.evaluate());
       previousPlaybackFrame = player.frame;
       updatePlaybackButtons();
+      blockingWorkflow.scheduleRefresh();
+      projectIo.scheduleAutosave(`Pose slider · ${keyframe.name}`);
     },
   });
 }
@@ -6561,6 +8025,7 @@ function renderWindowEditor() {
       windows[type] = enabled ? [{ startFrame, endFrame, label }] : [];
       action = createActionDefinition({ ...action, windows }, clip.durationFrames);
       player.setAction(action);
+      projectIo.scheduleAutosave(`Action window · ${type}`);
     },
   });
 }
@@ -6575,6 +8040,8 @@ function renderMountEditor() {
       mountCalibration = normalizeMountCalibration(mountCalibration);
       applyMountCalibration(sword.object3d, mountCalibration);
       document.getElementById('socketStatus').textContent = 'attached · unsaved';
+      blockingWorkflow.scheduleRefresh();
+      projectIo.scheduleAutosave('Weapon mount');
     },
   });
 }
@@ -6655,6 +8122,12 @@ function setIoStatus(message, error = false) {
   status.textContent = message;
   status.style.color = error ? 'var(--impact)' : 'var(--cyan)';
 }
+
+projectIo = createStudioProjectIoController({
+  getProject: currentProject,
+  applyProject: setProject,
+  onStatus: setIoStatus,
+});
 
 function bindV3AppearanceToggle(buttonId, setter) {
   const button = document.getElementById(buttonId);
@@ -6748,6 +8221,7 @@ document.getElementById('applyKey').addEventListener('click', () => {
   key.impact = document.getElementById('keyImpact').checked;
   key.cancel = document.getElementById('keyCancel').checked;
   rebuildClip(desiredName);
+  projectIo.saveAutosave(`Key data · ${desiredName}`);
 });
 document.getElementById('addKey').addEventListener('click', () => {
   const current = clip.timeline[selectedKeyIndex];
@@ -6759,6 +8233,7 @@ document.getElementById('addKey').addEventListener('click', () => {
   clip.timeline.push({ name, frame, ease: 'out', tag: 'custom' });
   clip.poses[name] = normalizePose(clip.poses[current.name]);
   rebuildClip(name, frame);
+  projectIo.saveAutosave(`Add Key · ${name}`);
 });
 document.getElementById('duplicateKey').addEventListener('click', () => {
   const current = clip.timeline[selectedKeyIndex];
@@ -6771,6 +8246,7 @@ document.getElementById('duplicateKey').addEventListener('click', () => {
   clip.timeline.push({ ...current, name, frame, impact: false, cancel: false });
   clip.poses[name] = normalizePose(clip.poses[current.name]);
   rebuildClip(name, frame);
+  projectIo.saveAutosave(`Duplicate Key · ${name}`);
 });
 document.getElementById('deleteKey').addEventListener('click', () => {
   if (clip.timeline.length <= 1) return;
@@ -6778,6 +8254,7 @@ document.getElementById('deleteKey').addEventListener('click', () => {
   delete clip.poses[removed.name];
   const next = clip.timeline[Math.max(0, selectedKeyIndex - 1)];
   rebuildClip(next.name, next.frame);
+  projectIo.saveAutosave(`Delete Key · ${removed.name}`);
 });
 document.getElementById('saveMount').addEventListener('click', () => {
   localStorage.setItem(MOUNT_KEY, JSON.stringify(mountCalibration));
@@ -6806,6 +8283,7 @@ document.getElementById('saveClip').addEventListener('click', () => {
   writeLibrary(library);
   renderLibrary();
   setIoStatus(`Saved ${name} to the local clip library.`);
+  projectIo.saveAutosave(`Save library clip · ${name}`);
 });
 document.getElementById('playCombo').addEventListener('click', () => {
   if (!comboQueue.length) {
@@ -6817,33 +8295,6 @@ document.getElementById('playCombo').addEventListener('click', () => {
 document.getElementById('clearCombo').addEventListener('click', () => {
   comboQueue = [];
   renderComboQueue();
-});
-document.getElementById('exportProject').addEventListener('click', () => {
-  const textarea = document.getElementById('projectJson');
-  textarea.value = JSON.stringify(currentProject(), null, 2);
-  textarea.select();
-  navigator.clipboard?.writeText(textarea.value).catch(() => {});
-  setIoStatus('Exported Action Studio project JSON.');
-});
-document.getElementById('importProject').addEventListener('click', () => {
-  try {
-    const data = JSON.parse(document.getElementById('projectJson').value);
-    if (data.format === 'action-studio-project' && data.clip) {
-      setProject(data);
-      setIoStatus('Imported Action Studio project.');
-    } else if (data.format === 'action-studio-clip' || (data.timeline && data.poses)) {
-      setProject({ clip: data });
-      setIoStatus('Imported Action Studio clip.');
-    } else if (data.seq || data.SEQ || data.phases || data.PHASES) {
-      const result = importLegacyPunchSnapshot(data);
-      setProject({ clip: result.clip });
-      setIoStatus(`Imported legacy Punch snapshot. Ignored editor-only keys: ${result.report.ignoredPoseKeys.join(', ') || 'none'}.`);
-    } else {
-      throw new Error('Unknown project shape');
-    }
-  } catch (error) {
-    setIoStatus(`Import failed: ${error.message}`, true);
-  }
 });
 
 function tick(now) {
@@ -6868,8 +8319,10 @@ function tick(now) {
     if (!player.playing) updatePlaybackButtons();
   }
   character.update(deltaSeconds, preview.camera);
+  poseDragController.update();
   motionGuideOverlay.update();
   sword.update();
+  blockingWorkflow.update();
   preview.update(deltaSeconds);
   preview.advanceShake(deltaSeconds);
   preview.render();
@@ -6897,6 +8350,9 @@ window.__actionStudio = {
   get motionGuideDirty() { return motionGuideEditor.dirty; },
   get motionGuideDiagnostics() { return motionGuideOverlay.diagnostics; },
   get motionConstraintReport() { return motionGuideEditor.constraintReport; },
+  get poseDragEffector() { return poseDragController.dragging; },
+  get poseDragDiagnostics() { return poseDragController.diagnostics; },
+  get blockingDiagnostics() { return blockingWorkflow.diagnostics; },
   get renderStyle() { return 'v3-rig-line'; },
   loadKayKitRuntime,
   playKayKitClip(name, options = {}) { animationSource = 'kaykit-preview'; return character.playAnimation(name, options); },
