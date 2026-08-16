@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-test('generated Action Studio entry is a classic script compatible with file URLs', async () => {
+test('generated Action Studio entry keeps a classic file URL fallback and HTTP source path', async () => {
   const html = await readFile(new URL('../tools/action-studio/index.html', import.meta.url), 'utf8');
-  assert.match(html, /<script src="\.\/action-studio\.bundle\.js"><\/script>/);
+  assert.match(html, /location\.protocol\s*===\s*['"]file:['"]/);
+  assert.match(html, /script\.src\s*=\s*['"]\.\/action-studio\.bundle\.js['"]/);
+  assert.match(html, /import\(['"]\.\/action-studio\.js['"]\)/);
   assert.doesNotMatch(html, /<script[^>]+type=["']module["']/i);
-  assert.doesNotMatch(html, /src=["']\.\/action-studio\.js["']/i);
 });
 
 test('standalone bundle contains no browser ESM syntax', async () => {
@@ -22,4 +23,3 @@ test('legacy compatibility entry redirects to an explicit HTML file', async () =
   assert.match(html, /\.\/action-studio\/index\.html/);
   assert.doesNotMatch(html, /\.\/action-studio\/["']/);
 });
-
