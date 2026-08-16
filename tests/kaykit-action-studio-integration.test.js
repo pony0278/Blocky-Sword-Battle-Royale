@@ -4,12 +4,14 @@ import { readFile } from 'node:fs/promises';
 
 test('Action Studio uses the procedural KayKit character as its default character factory', async () => {
   const source = await readFile(new URL('../tools/action-studio/action-studio.js', import.meta.url), 'utf8');
+  const external = await readFile(new URL('../tools/action-studio/studio-external-animation-controller.js', import.meta.url), 'utf8');
   assert.match(source, /createDefaultCharacter/);
   assert.doesNotMatch(source, /createBlockCharacter/);
-  assert.match(source, /loadKayKitAnimationLibrary/);
-  assert.match(source, /character\.registerAnimations/);
+  assert.match(external, /loadKayKitAnimationLibrary/);
+  assert.match(external, /loadUal2AnimationLibrary/);
+  assert.match(external, /character\.registerAnimations/);
   assert.match(source, /ActionMotionPlayer/);
-  assert.match(source, /createFittedAnimationBinding/);
+  assert.match(external, /createFittedAnimationBinding/);
   assert.match(source, /createStudioPreviewRuntime/);
   assert.match(source, /createWholeBodyMotionGuideOverlay/);
   assert.match(source, /createStudioMotionGuideEditor/);
@@ -38,6 +40,7 @@ test('Action Studio separates preview, project, and editor view responsibilities
   const dragSolver = await readFile(new URL('../src/animation/whole-body-drag-solver.js', import.meta.url), 'utf8');
   const blocking = await readFile(new URL('../tools/action-studio/studio-blocking-workflow.js', import.meta.url), 'utf8');
   const projectIo = await readFile(new URL('../tools/action-studio/studio-project-io-controller.js', import.meta.url), 'utf8');
+  const external = await readFile(new URL('../tools/action-studio/studio-external-animation-controller.js', import.meta.url), 'utf8');
   assert.match(preview, /createStudioPreviewRuntime/);
   assert.match(preview, /sword\.trailTip\.getWorldPosition/);
   assert.match(project, /createStudioProject/);
@@ -75,11 +78,16 @@ test('Action Studio separates preview, project, and editor view responsibilities
   assert.match(blocking, /sword\.trailTip\.getWorldPosition/);
   assert.match(projectIo, /downloadProject/);
   assert.match(projectIo, /ACTION_STUDIO_AUTOSAVE_V1/);
+  assert.match(external, /loadUal2AnimationLibrary/);
+  assert.match(external, /UAL2 RETARGET PREVIEW/);
+  assert.match(external, /readAnimationBindingView\(source\)/);
 });
 
 test('Action Studio exposes explicit KayKit runtime controls and GLTFLoader', async () => {
   const template = await readFile(new URL('../tools/action-studio/index.template.html', import.meta.url), 'utf8');
   assert.match(template, /GLTFLoader\.js/);
+  assert.match(template, /id="animationPackSource"/);
+  assert.match(template, /UAL2 Sword Combat/);
   assert.match(template, /id="loadKayKitAnimations"/);
   assert.match(template, /id="kaykitClip"/);
   assert.match(template, /id="playKayKitAnimation"/);

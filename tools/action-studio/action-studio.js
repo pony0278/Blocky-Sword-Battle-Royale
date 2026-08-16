@@ -6,8 +6,6 @@ import { POSE_KEYS } from '../../src/animation/pose-schema.js';
 import { normalizePose } from '../../src/animation/pose-utils.js';
 import { createAnimationClip } from '../../src/animation/animation-clip.js';
 import { ActionMotionPlayer } from '../../src/animation/action-motion-player.js';
-import { createFittedAnimationBinding } from '../../src/animation/animation-binding.js';
-import { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } from '../../src/animation/kaykit-animation-library.js';
 import { ACTION_TEMPLATE_FACTORIES } from '../../src/animation/action-templates.js';
 import { createActionDefinition, isFrameInWindow } from '../../src/combat/action-definition.js';
 import { createStudioPreviewRuntime } from './studio-preview-runtime.js';
@@ -17,9 +15,9 @@ import { bakeStudioMotionConstraints } from './studio-motion-constraint-baker.js
 import { createStudioPoseDragController } from './studio-pose-drag-controller.js';
 import { captureNextBlockingKey, createStudioBlockingWorkflow } from './studio-blocking-workflow.js';
 import { createStudioProjectIoController } from './studio-project-io-controller.js';
+import { createStudioExternalAnimationController } from './studio-external-animation-controller.js';
 import {
   renderComboQueueView,
-  readAnimationBindingView,
   renderAnimationBindingView,
   renderKeyEditorView,
   renderLibraryView,
@@ -67,7 +65,7 @@ const player = new ActionMotionPlayer({
   },
 });
 let animationSource = 'authored';
-let kayKitLibrary = null;
+let externalAnimations = null;
 let clip = null;
 let action = null;
 let selectedKeyIndex = 0;
@@ -171,10 +169,10 @@ function setProject(project, options = {}) {
   motionGuideEditor.setClip(clip);
   renderEditor();
   applyEvaluation(player.evaluate());
-  if (action.animationBinding.source === 'kaykit' && !kayKitLibrary) {
-    loadKayKitRuntime()
-      .then(() => applyEvaluation(player.evaluate()))
-      .catch((error) => setKayKitStatus(error.message, true));
+  if (action.animationBinding.source !== 'authored' && !externalAnimations.hasLoaded(action.animationBinding.source)) {
+    externalAnimations.ensureBinding(action.animationBinding)
+      .then(() => { renderAnimationBinding(); applyEvaluation(player.evaluate()); })
+      .catch((error) => externalAnimations.setStatus(error.message, true));
   }
   if (options.autoplay) {
     player.play({ restart: true });
@@ -188,52 +186,13 @@ function loadTemplate(id, autoplay = false) {
   setProject(factory(), { autoplay });
 }
 
-function setKayKitStatus(message, isError = false) {
-  const status = document.getElementById('kaykitStatus');
-  status.textContent = message;
-  status.classList.toggle('error', isError);
-}
-
-async function loadKayKitRuntime() {
-  if (kayKitLibrary) return kayKitLibrary;
-  if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
-  if (location.protocol === 'file:') {
-    throw new Error('KayKit GLB animation packs require the local HTTP server');
-  }
-  setKayKitStatus(`Loading ${KAYKIT_ANIMATION_PACKS.length} animation packs…`);
-  const loader = new THREE.GLTFLoader();
-  kayKitLibrary = await loadKayKitAnimationLibrary(loader, {
-    baseUrl: '../../assets/kaykit/animations/',
-  });
-  character.registerAnimations(kayKitLibrary);
-  const select = document.getElementById('kaykitClip');
-  select.innerHTML = '';
-  [...kayKitLibrary.clips.keys()].forEach((name) => {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    select.appendChild(option);
-  });
-  const boundClipId = action?.animationBinding?.source === 'kaykit' ? action.animationBinding.clipId : '';
-  select.value = kayKitLibrary.clips.has(boundClipId) ? boundClipId : 'Idle_A';
-  setKayKitStatus(
-    `ready · ${kayKitLibrary.clips.size} unique clips · ${kayKitLibrary.duplicates.length} duplicates ignored · ${Object.keys(character.rig.bones).length} procedural bones`,
-  );
-  renderAnimationBinding();
-  return kayKitLibrary;
-}
-
-function shouldLoopKayKitClip(name) {
-  return /Idle|Walking|Running|Blocking|Crouching|Sneaking|Crawling/.test(name);
-}
-
 function renderAnimationBinding() {
   if (!action) return;
   const binding = action.animationBinding;
   renderAnimationBindingView({
     action,
     clip,
-    available: binding.source === 'kaykit' && character.hasAnimation(binding.clipId),
+    available: externalAnimations?.isAvailable(binding) || false,
   });
 }
 
@@ -246,30 +205,17 @@ function setAnimationBinding(binding) {
   updatePlaybackButtons();
 }
 
-async function bindSelectedKayKitClip(fitToAction = false) {
-  await loadKayKitRuntime();
-  const controlBinding = readAnimationBindingView();
-  const { clipId } = controlBinding;
-  const sourceClip = kayKitLibrary.clips.get(clipId);
-  setAnimationBinding(fitToAction ? createFittedAnimationBinding({
-    ...controlBinding,
-    animationDurationSeconds: sourceClip.duration,
-    durationFrames: clip.durationFrames,
-    fps: clip.fps,
-  }) : controlBinding);
-}
-
-async function playSelectedKayKitClip() {
-  await loadKayKitRuntime();
-  const name = document.getElementById('kaykitClip').value;
-  player.pause();
-  clearWeaponTrail();
-  animationSource = 'kaykit-preview';
-  character.playAnimation(name, { loop: shouldLoopKayKitClip(name), inPlace: true });
-  document.getElementById('clipNow').textContent = name.toUpperCase();
-  document.getElementById('phaseNow').textContent = 'KAYKIT RUNTIME';
-  updatePlaybackButtons();
-}
+externalAnimations = createStudioExternalAnimationController({
+  THREE, character,
+  getAction: () => action, getClip: () => clip,
+  setBinding: setAnimationBinding,
+  pausePlayer: () => player.pause(),
+  applyCurrentEvaluation: () => applyEvaluation(player.evaluate()),
+  clearWeaponTrail,
+  updatePlaybackButtons,
+  setAnimationSource: (source) => { animationSource = source; },
+  renderBinding: renderAnimationBinding,
+});
 
 function rebuildClip(selectedName, seekFrame) {
   clip = createAnimationClip({
@@ -382,7 +328,9 @@ function applyEvaluation(evaluation) {
   if (!evaluation) return;
   const applied = player.apply(evaluation);
   animationSource = applied.motion.pending ? 'authored-fallback' : applied.motion.appliedSource;
-  const motionLabel = applied.motion.appliedSource === 'kaykit' ? ' · KAYKIT BOUND' : '';
+  const motionLabel = applied.motion.appliedSource === 'authored'
+    ? ''
+    : ` · ${applied.motion.appliedSource.toUpperCase()} BOUND`;
   document.getElementById('phaseNow').textContent = `${evaluation.to.toUpperCase()} · ${evaluation.frame.toFixed(1)}F${motionLabel}`;
   updateTimelineReadout();
   return applied;
@@ -473,23 +421,6 @@ bindV3AppearanceToggle('toggleRigNodes', (visible) => {
 bindV3AppearanceToggle('toggleRigGlow', (visible) => {
   character.setRigGlowVisible(visible);
   sword.setGlowVisible(visible);
-});
-
-document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
-  loadKayKitRuntime().catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('playKayKitAnimation').addEventListener('click', () => {
-  playSelectedKayKitClip().catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('stopKayKitAnimation').addEventListener('click', () => applyEvaluation(player.evaluate()));
-document.getElementById('bindKayKitAnimation').addEventListener('click', () => {
-  bindSelectedKayKitClip(false).catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('fitKayKitAnimation').addEventListener('click', () => {
-  bindSelectedKayKitClip(true).catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('clearAnimationBinding').addEventListener('click', () => {
-  setAnimationBinding({ source: 'authored', clipId: clip.id });
 });
 
 document.getElementById('showTPose').addEventListener('click', () => loadTemplate('t_pose'));
@@ -682,8 +613,11 @@ window.__actionStudio = {
   get poseDragDiagnostics() { return poseDragController.diagnostics; },
   get blockingDiagnostics() { return blockingWorkflow.diagnostics; },
   get renderStyle() { return 'v3-rig-line'; },
-  loadKayKitRuntime,
-  playKayKitClip(name, options = {}) { animationSource = 'kaykit-preview'; return character.playAnimation(name, options); },
+  loadKayKitRuntime: () => externalAnimations.load('kaykit'),
+  loadUal2Runtime: () => externalAnimations.load('ual2'),
+  playKayKitClip: (name, options = {}) => externalAnimations.playClip('kaykit', name, options),
+  playUal2Clip: (name, options = {}) => externalAnimations.playClip('ual2', name, options),
+  get loadedAnimationSources() { return [...externalAnimations.libraries.keys()]; },
   get legacyScriptsLoaded() {
     return [...document.scripts].map((script) => script.src).filter((src) => /\/ps\//.test(src));
   },

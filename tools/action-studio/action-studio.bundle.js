@@ -4312,7 +4312,7 @@ return Object.freeze({ ClipPlayer });
 
 // src/animation/animation-binding.js
 const __actionStudioModule19 = (() => {
-const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit']);
+const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2']);
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -4341,7 +4341,7 @@ function createFittedAnimationBinding(options = {}) {
   const speed = actionSeconds > 0 && animationSeconds > 0 ? animationSeconds / actionSeconds : 1;
   return normalizeAnimationBinding({
     ...options,
-    source: 'kaykit',
+    source: options.source === 'ual2' ? 'ual2' : 'kaykit',
     speed,
     startOffsetSeconds: 0,
     loop: false,
@@ -4408,7 +4408,8 @@ class ActionMotionPlayer {
   decorate(evaluation) {
     if (!evaluation) return null;
     const binding = this.binding;
-    const hasAnimation = binding.source === 'kaykit'
+    const external = binding.source !== 'authored';
+    const hasAnimation = external
       && binding.clipId
       && (this.adapter.hasAnimation ? this.adapter.hasAnimation(binding.clipId) : Boolean(this.adapter.sampleAnimation));
     const animationDurationSeconds = hasAnimation && this.adapter.getAnimationDuration
@@ -4421,8 +4422,8 @@ class ActionMotionPlayer {
         clipId: binding.clipId,
         binding,
         available: Boolean(hasAnimation),
-        pending: binding.source === 'kaykit' && !hasAnimation,
-        timeSeconds: binding.source === 'kaykit'
+        pending: external && !hasAnimation,
+        timeSeconds: external
           ? animationTimeAtFrame(binding, evaluation.frame, this.clip?.fps, animationDurationSeconds)
           : evaluation.frame / Math.max(1, this.clip?.fps || 30),
       },
@@ -4432,12 +4433,12 @@ class ActionMotionPlayer {
   apply(evaluation = this.evaluate()) {
     if (!evaluation) return null;
     const { motion } = evaluation;
-    if (motion.source === 'kaykit' && motion.available && this.adapter.sampleAnimation) {
+    if (motion.source !== 'authored' && motion.available && this.adapter.sampleAnimation) {
       this.adapter.sampleAnimation(motion.clipId, motion.timeSeconds, motion.binding);
-      this.appliedSource = 'kaykit';
-      return { ...evaluation, motion: { ...motion, appliedSource: 'kaykit' } };
+      this.appliedSource = motion.source;
+      return { ...evaluation, motion: { ...motion, appliedSource: motion.source } };
     }
-    if (this.appliedSource === 'kaykit') this.adapter.stopAnimation?.();
+    if (this.appliedSource && this.appliedSource !== 'authored') this.adapter.stopAnimation?.();
     this.adapter.applyPose?.(evaluation.pose);
     this.appliedSource = 'authored';
     return { ...evaluation, motion: { ...motion, appliedSource: 'authored' } };
@@ -7459,8 +7460,225 @@ function createStudioProjectIoController(options) {
 return Object.freeze({ ACTION_STUDIO_AUTOSAVE_KEY, createStudioProjectIoController });
 })();
 
+// src/animation/ual2-animation-library.js
+const __actionStudioModule36 = (() => {
+const { sanitizeAnimationTargetName } = __actionStudioModule6;
+
+const UAL2_ANIMATION_FILES = Object.freeze([
+  Object.freeze({ id: 'Sword_Regular_A', file: 'Sword_Regular_A.glb' }),
+  Object.freeze({ id: 'Sword_Regular_B', file: 'Sword_Regular_B.glb' }),
+  Object.freeze({ id: 'Sword_Regular_C', file: 'Sword_Regular_C.glb' }),
+  Object.freeze({ id: 'Sword_Regular_Combo', file: 'Sword_Regular_Combo.glb' }),
+  Object.freeze({ id: 'Sword_Heavy_Combo', file: 'Sword_Heavy_Combo.glb' }),
+  Object.freeze({ id: 'Sword_Dash', file: 'Sword_Dash.glb' }),
+  Object.freeze({ id: 'Sword_Block', file: 'Sword_Block.glb' }),
+  Object.freeze({ id: 'Hit_Knockback', file: 'Hit_Knockback.glb' }),
+]);
+
+const UAL2_BONE_RETARGETS = Object.freeze([
+  Object.freeze({ source: 'root', target: 'root', position: true }),
+  Object.freeze({ source: 'pelvis', target: 'hips', position: true }),
+  Object.freeze({ source: 'spine_01', target: 'spine' }),
+  Object.freeze({ source: 'spine_03', target: 'chest' }),
+  Object.freeze({ source: 'Head', target: 'head' }),
+  Object.freeze({ source: 'upperarm_l', target: 'upperarm.l' }),
+  Object.freeze({ source: 'lowerarm_l', target: 'lowerarm.l' }),
+  Object.freeze({ source: 'hand_l', target: 'wrist.l' }),
+  Object.freeze({ source: 'upperarm_r', target: 'upperarm.r' }),
+  Object.freeze({ source: 'lowerarm_r', target: 'lowerarm.r' }),
+  Object.freeze({ source: 'hand_r', target: 'wrist.r' }),
+  Object.freeze({ source: 'thigh_l', target: 'upperleg.l' }),
+  Object.freeze({ source: 'calf_l', target: 'lowerleg.l' }),
+  Object.freeze({ source: 'foot_l', target: 'foot.l' }),
+  Object.freeze({ source: 'ball_l', target: 'toes.l' }),
+  Object.freeze({ source: 'thigh_r', target: 'upperleg.r' }),
+  Object.freeze({ source: 'calf_r', target: 'lowerleg.r' }),
+  Object.freeze({ source: 'foot_r', target: 'foot.r' }),
+  Object.freeze({ source: 'ball_r', target: 'toes.r' }),
+]);
+
+const DEFAULT_BASE_URL = '../../assets/UAL2_Sword_Combat_Package/Animation_Only/No_Root_Motion/';
+
+function loadGlb(loader, url) {
+  return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+}
+
+function disposeScene(scene) {
+  scene?.traverse?.((object3d) => {
+    if (!object3d.isMesh) return;
+    object3d.geometry?.dispose?.();
+    const materials = Array.isArray(object3d.material) ? object3d.material : [object3d.material];
+    materials.forEach((material) => material?.dispose?.());
+  });
+}
+
+function createTargetProxy(THREE, rig) {
+  const root = new THREE.Object3D();
+  const bones = {};
+  for (const definition of rig.definition.bones) {
+    const bone = new THREE.Object3D();
+    const rest = rig.restTransforms[definition.id];
+    bone.name = sanitizeAnimationTargetName(definition.id);
+    bone.position.fromArray(rest.position);
+    bone.quaternion.fromArray(rest.quaternion);
+    bone.scale.fromArray(rest.scale);
+    (definition.parent ? bones[definition.parent] : root).add(bone);
+    bones[definition.id] = bone;
+  }
+  root.updateMatrixWorld(true);
+  return { root, bones };
+}
+
+function restoreTargetProxy(proxy, rig) {
+  for (const [boneId, rest] of Object.entries(rig.restTransforms)) {
+    const bone = proxy.bones[boneId];
+    bone.position.fromArray(rest.position);
+    bone.quaternion.fromArray(rest.quaternion);
+    bone.scale.fromArray(rest.scale);
+  }
+  proxy.root.updateMatrixWorld(true);
+}
+
+function worldSnapshot(THREE, object3d) {
+  return {
+    position: object3d.getWorldPosition(new THREE.Vector3()),
+    quaternion: object3d.getWorldQuaternion(new THREE.Quaternion()),
+  };
+}
+
+function motionScale(sourceRest, targetRest) {
+  const sourceHeight = sourceRest.Head.position.distanceTo(sourceRest.root.position);
+  const targetHeight = targetRest.head.position.distanceTo(targetRest.root.position);
+  if (sourceHeight < 0.001 || targetHeight < 0.001) return 1;
+  return Math.max(0.5, Math.min(1.5, targetHeight / sourceHeight));
+}
+
+function sampleTimes(duration, fps) {
+  const step = 1 / Math.max(1, Number(fps) || 30);
+  const times = [];
+  for (let time = 0; time < duration - step * 0.25; time += step) times.push(time);
+  if (!times.length || Math.abs(times.at(-1) - duration) > 1e-5) times.push(duration);
+  return times;
+}
+
+function retargetUal2Clip(THREE, gltf, rig, options = {}) {
+  if (!THREE?.AnimationMixer || !THREE?.AnimationClip) {
+    throw new Error('UAL2 retargeting requires the Three.js animation runtime');
+  }
+  const sourceScene = gltf?.scene;
+  const sourceClip = gltf?.animations?.[0];
+  if (!sourceScene || !sourceClip) throw new Error('UAL2 GLB is missing its source hierarchy or animation');
+
+  sourceScene.updateMatrixWorld(true);
+  const sourceNodes = {};
+  UAL2_BONE_RETARGETS.forEach(({ source }) => { sourceNodes[source] = sourceScene.getObjectByName(source); });
+  const missing = UAL2_BONE_RETARGETS.filter(({ source }) => !sourceNodes[source]).map(({ source }) => source);
+  if (missing.length) throw new Error(`UAL2 clip ${sourceClip.name} is missing bones: ${missing.join(', ')}`);
+
+  const targetProxy = createTargetProxy(THREE, rig);
+  const sourceRest = {};
+  const targetRest = {};
+  UAL2_BONE_RETARGETS.forEach(({ source, target }) => {
+    sourceRest[source] = worldSnapshot(THREE, sourceNodes[source]);
+    targetRest[target] = worldSnapshot(THREE, targetProxy.bones[target]);
+  });
+  const translationScale = motionScale(sourceRest, targetRest);
+  const times = sampleTimes(sourceClip.duration, options.fps || 30);
+  const samples = new Map(UAL2_BONE_RETARGETS.map(({ target, position }) => [target, {
+    quaternion: [],
+    position: position ? [] : null,
+  }]));
+  const mixer = new THREE.AnimationMixer(sourceScene);
+  const action = mixer.clipAction(sourceClip).reset();
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+  const sourceWorldQuaternion = new THREE.Quaternion();
+  const sourceWorldPosition = new THREE.Vector3();
+  const rotationDelta = new THREE.Quaternion();
+  const desiredWorldQuaternion = new THREE.Quaternion();
+  const parentWorldQuaternion = new THREE.Quaternion();
+  const desiredWorldPosition = new THREE.Vector3();
+
+  times.forEach((time) => {
+    mixer.setTime(time);
+    sourceScene.updateMatrixWorld(true);
+    restoreTargetProxy(targetProxy, rig);
+    UAL2_BONE_RETARGETS.forEach(({ source, target, position }) => {
+      const sourceBone = sourceNodes[source];
+      const targetBone = targetProxy.bones[target];
+      sourceBone.getWorldQuaternion(sourceWorldQuaternion);
+      rotationDelta.copy(sourceWorldQuaternion).multiply(sourceRest[source].quaternion.clone().invert());
+      desiredWorldQuaternion.copy(rotationDelta).multiply(targetRest[target].quaternion);
+      targetBone.parent.getWorldQuaternion(parentWorldQuaternion);
+      targetBone.quaternion.copy(parentWorldQuaternion.invert().multiply(desiredWorldQuaternion)).normalize();
+      if (position) {
+        sourceBone.getWorldPosition(sourceWorldPosition);
+        desiredWorldPosition.copy(sourceWorldPosition)
+          .sub(sourceRest[source].position)
+          .multiplyScalar(translationScale)
+          .add(targetRest[target].position);
+        targetBone.position.copy(targetBone.parent.worldToLocal(desiredWorldPosition));
+      }
+      targetBone.updateMatrixWorld(true);
+      samples.get(target).quaternion.push(...targetBone.quaternion.toArray());
+      if (position) samples.get(target).position.push(...targetBone.position.toArray());
+    });
+  });
+  action.stop();
+
+  const clipName = `UAL2/${sourceClip.name || options.id || 'Sword_Action'}`;
+  const tracks = [];
+  UAL2_BONE_RETARGETS.forEach(({ target, position }) => {
+    const targetName = sanitizeAnimationTargetName(target);
+    tracks.push(new THREE.QuaternionKeyframeTrack(
+      `${targetName}.quaternion`, times, samples.get(target).quaternion,
+    ));
+    if (position) {
+      tracks.push(new THREE.VectorKeyframeTrack(
+        `${targetName}.position`, times, samples.get(target).position,
+      ));
+    }
+  });
+  const clip = new THREE.AnimationClip(clipName, sourceClip.duration, tracks);
+  clip.userData = {
+    source: 'ual2',
+    sourceClip: sourceClip.name,
+    retargetFps: options.fps || 30,
+    translationScale,
+  };
+  return clip;
+}
+
+const loadUal2AnimationLibrary = async (loader, options = {}) => {
+  if (!loader?.load) throw new Error('loadUal2AnimationLibrary requires a GLTFLoader instance');
+  const THREE = options.THREE;
+  const rig = options.rig;
+  if (!THREE || !rig?.definition || !rig?.restTransforms) {
+    throw new Error('loadUal2AnimationLibrary requires THREE and the target procedural rig');
+  }
+  const baseUrl = String(options.baseUrl || DEFAULT_BASE_URL).replace(/\/?$/, '/');
+  const loaded = await Promise.all(UAL2_ANIMATION_FILES.map(async (entry) => {
+    const gltf = await loadGlb(loader, `${baseUrl}${entry.file}`);
+    try {
+      return retargetUal2Clip(THREE, gltf, rig, { id: entry.id, fps: options.fps || 30 });
+    } finally {
+      disposeScene(gltf.scene);
+    }
+  }));
+  return {
+    clips: new Map(loaded.map((clip) => [clip.name, clip])),
+    files: UAL2_ANIMATION_FILES,
+    duplicates: [],
+    source: 'ual2',
+    retargetFps: options.fps || 30,
+  };
+};
+return Object.freeze({ UAL2_ANIMATION_FILES, UAL2_BONE_RETARGETS, retargetUal2Clip, loadUal2AnimationLibrary });
+})();
+
 // tools/action-studio/studio-editor-view.js
-const __actionStudioModule35 = (() => {
+const __actionStudioModule37 = (() => {
 const { POSE_KEYS } = __actionStudioModule10;
 const { normalizeAnimationBinding } = __actionStudioModule19;
 const { clipMarkerSummary } = __actionStudioModule16;
@@ -7666,15 +7884,15 @@ function renderAnimationBindingView({ action, clip, available }) {
   document.getElementById('animationBindingInPlace').checked = binding.inPlace;
   document.getElementById('animationBindingLoop').checked = binding.loop;
   const status = document.getElementById('animationBindingStatus');
-  status.classList.toggle('pending', binding.source === 'kaykit' && !available);
+  status.classList.toggle('pending', binding.source !== 'authored' && !available);
   status.textContent = binding.source === 'authored'
     ? `Pose keys drive ${clip.id}`
     : `${binding.clipId} · ${binding.speed.toFixed(3)}× · offset ${binding.startOffsetSeconds.toFixed(3)}s · ${available ? 'timeline bound' : 'saved, pack not loaded'}`;
 }
 
-function readAnimationBindingView() {
+function readAnimationBindingView(source = 'kaykit') {
   return {
-    source: 'kaykit',
+    source,
     clipId: document.getElementById('kaykitClip').value,
     speed: Number(document.getElementById('animationBindingSpeed').value),
     startOffsetSeconds: Number(document.getElementById('animationBindingOffset').value),
@@ -7683,6 +7901,182 @@ function readAnimationBindingView() {
   };
 }
 return Object.freeze({ renderTimelineView, updateTimelineReadoutView, renderKeyEditorView, renderPoseControlsView, renderWindowEditorView, renderMountEditorView, renderLibraryView, renderComboQueueView, renderAnimationBindingView, readAnimationBindingView });
+})();
+
+// tools/action-studio/studio-external-animation-controller.js
+const __actionStudioModule35 = (() => {
+const { createFittedAnimationBinding } = __actionStudioModule19;
+const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioModule11;
+const { UAL2_ANIMATION_FILES, loadUal2AnimationLibrary } = __actionStudioModule36;
+const { readAnimationBindingView } = __actionStudioModule37;
+
+const SOURCE_INFO = Object.freeze({
+  ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length }),
+  kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length }),
+});
+
+function shouldLoopClip(name) {
+  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/.test(name);
+}
+
+function createStudioExternalAnimationController(options) {
+  const {
+    THREE,
+    character,
+    getAction,
+    getClip,
+    setBinding,
+    pausePlayer,
+    applyCurrentEvaluation,
+    clearWeaponTrail,
+    updatePlaybackButtons,
+    setAnimationSource,
+    renderBinding,
+  } = options;
+  const libraries = new Map();
+  const sourceSelect = document.getElementById('animationPackSource');
+  const clipSelect = document.getElementById('kaykitClip');
+  const status = document.getElementById('kaykitStatus');
+
+  function setStatus(message, isError = false) {
+    status.textContent = message;
+    status.classList.toggle('error', isError);
+  }
+
+  function selectedSource() {
+    return sourceSelect.value in SOURCE_INFO ? sourceSelect.value : 'ual2';
+  }
+
+  function populate(source, preferredClipId = '') {
+    clipSelect.innerHTML = '';
+    const library = libraries.get(source);
+    if (!library) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = `Load ${SOURCE_INFO[source].label} first`;
+      clipSelect.appendChild(option);
+      return;
+    }
+    [...library.clips.keys()].forEach((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name.replace(/^UAL2\//, '');
+      clipSelect.appendChild(option);
+    });
+    clipSelect.value = library.clips.has(preferredClipId)
+      ? preferredClipId
+      : (source === 'ual2' ? 'UAL2/Sword_Regular_A' : 'Idle_A');
+  }
+
+  async function load(source = selectedSource()) {
+    if (libraries.has(source)) return libraries.get(source);
+    if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
+    if (location.protocol === 'file:') throw new Error('External GLB animations require the local HTTP server');
+    const info = SOURCE_INFO[source];
+    setStatus(`Loading ${info.label} · ${info.count} files…`);
+    const loader = new THREE.GLTFLoader();
+    const library = source === 'ual2'
+      ? await loadUal2AnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/UAL2_Sword_Combat_Package/Animation_Only/No_Root_Motion/',
+        fps: 30,
+      })
+      : await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
+    character.registerAnimations(library);
+    libraries.set(source, library);
+    populate(source, getAction()?.animationBinding?.clipId);
+    const detail = source === 'ual2'
+      ? `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`
+      : `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`;
+    setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
+    renderBinding();
+    return library;
+  }
+
+  async function ensureBinding(binding) {
+    if (!binding || binding.source === 'authored') return null;
+    sourceSelect.value = binding.source;
+    const library = await load(binding.source);
+    populate(binding.source, binding.clipId);
+    return library;
+  }
+
+  function isAvailable(binding) {
+    return Boolean(binding?.source !== 'authored'
+      && libraries.get(binding.source)?.clips.has(binding.clipId)
+      && character.hasAnimation(binding.clipId));
+  }
+
+  async function bindSelected(fitToAction = false) {
+    const source = selectedSource();
+    const library = await load(source);
+    const controlBinding = readAnimationBindingView(source);
+    const sourceClip = library.clips.get(controlBinding.clipId);
+    if (!sourceClip) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+    setBinding(fitToAction ? createFittedAnimationBinding({
+      ...controlBinding,
+      source,
+      animationDurationSeconds: sourceClip.duration,
+      durationFrames: getClip().durationFrames,
+      fps: getClip().fps,
+    }) : controlBinding);
+  }
+
+  async function playSelected() {
+    const source = selectedSource();
+    await load(source);
+    const name = clipSelect.value;
+    if (!name) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+    pausePlayer();
+    clearWeaponTrail();
+    setAnimationSource(`${source}-preview`);
+    character.playAnimation(name, { loop: shouldLoopClip(name), inPlace: true });
+    document.getElementById('clipNow').textContent = name.replace(/^UAL2\//, '').toUpperCase();
+    document.getElementById('phaseNow').textContent = source === 'ual2' ? 'UAL2 RETARGET PREVIEW' : 'KAYKIT RUNTIME';
+    updatePlaybackButtons();
+  }
+
+  sourceSelect.addEventListener('change', () => {
+    const source = selectedSource();
+    populate(source, getAction()?.animationBinding?.source === source ? getAction().animationBinding.clipId : '');
+    const state = libraries.has(source) ? 'ready' : 'not loaded';
+    setStatus(`${SOURCE_INFO[source].label} · ${state}`);
+  });
+  document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
+    load().catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('playKayKitAnimation').addEventListener('click', () => {
+    playSelected().catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('stopKayKitAnimation').addEventListener('click', applyCurrentEvaluation);
+  document.getElementById('bindKayKitAnimation').addEventListener('click', () => {
+    bindSelected(false).catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('fitKayKitAnimation').addEventListener('click', () => {
+    bindSelected(true).catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('clearAnimationBinding').addEventListener('click', () => {
+    setBinding({ source: 'authored', clipId: getClip().id });
+  });
+  populate(selectedSource());
+
+  return {
+    get libraries() { return libraries; },
+    hasLoaded: (source) => libraries.has(source),
+    isAvailable,
+    ensureBinding,
+    load,
+    playSelected,
+    setStatus,
+    playClip(source, name, playOptions = {}) {
+      if (!libraries.has(source)) throw new Error(`${SOURCE_INFO[source]?.label || source} is not loaded`);
+      setAnimationSource(`${source}-preview`);
+      return character.playAnimation(name, playOptions);
+    },
+  };
+}
+return Object.freeze({ createStudioExternalAnimationController });
 })();
 
 // tools/action-studio/action-studio.js
@@ -7695,8 +8089,6 @@ const { POSE_KEYS } = __actionStudioModule10;
 const { normalizePose } = __actionStudioModule9;
 const { createAnimationClip } = __actionStudioModule16;
 const { ActionMotionPlayer } = __actionStudioModule17;
-const { createFittedAnimationBinding } = __actionStudioModule19;
-const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioModule11;
 const { ACTION_TEMPLATE_FACTORIES } = __actionStudioModule20;
 const { createActionDefinition, isFrameInWindow } = __actionStudioModule23;
 const { createStudioPreviewRuntime } = __actionStudioModule24;
@@ -7706,7 +8098,8 @@ const { bakeStudioMotionConstraints } = __actionStudioModule27;
 const { createStudioPoseDragController } = __actionStudioModule28;
 const { captureNextBlockingKey, createStudioBlockingWorkflow } = __actionStudioModule31;
 const { createStudioProjectIoController } = __actionStudioModule32;
-const { renderComboQueueView, readAnimationBindingView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule35;
+const { createStudioExternalAnimationController } = __actionStudioModule35;
+const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule37;
 const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule34;
 
 const THREE = window.THREE;
@@ -7739,7 +8132,7 @@ const player = new ActionMotionPlayer({
   },
 });
 let animationSource = 'authored';
-let kayKitLibrary = null;
+let externalAnimations = null;
 let clip = null;
 let action = null;
 let selectedKeyIndex = 0;
@@ -7843,10 +8236,10 @@ function setProject(project, options = {}) {
   motionGuideEditor.setClip(clip);
   renderEditor();
   applyEvaluation(player.evaluate());
-  if (action.animationBinding.source === 'kaykit' && !kayKitLibrary) {
-    loadKayKitRuntime()
-      .then(() => applyEvaluation(player.evaluate()))
-      .catch((error) => setKayKitStatus(error.message, true));
+  if (action.animationBinding.source !== 'authored' && !externalAnimations.hasLoaded(action.animationBinding.source)) {
+    externalAnimations.ensureBinding(action.animationBinding)
+      .then(() => { renderAnimationBinding(); applyEvaluation(player.evaluate()); })
+      .catch((error) => externalAnimations.setStatus(error.message, true));
   }
   if (options.autoplay) {
     player.play({ restart: true });
@@ -7860,52 +8253,13 @@ function loadTemplate(id, autoplay = false) {
   setProject(factory(), { autoplay });
 }
 
-function setKayKitStatus(message, isError = false) {
-  const status = document.getElementById('kaykitStatus');
-  status.textContent = message;
-  status.classList.toggle('error', isError);
-}
-
-async function loadKayKitRuntime() {
-  if (kayKitLibrary) return kayKitLibrary;
-  if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
-  if (location.protocol === 'file:') {
-    throw new Error('KayKit GLB animation packs require the local HTTP server');
-  }
-  setKayKitStatus(`Loading ${KAYKIT_ANIMATION_PACKS.length} animation packs…`);
-  const loader = new THREE.GLTFLoader();
-  kayKitLibrary = await loadKayKitAnimationLibrary(loader, {
-    baseUrl: '../../assets/kaykit/animations/',
-  });
-  character.registerAnimations(kayKitLibrary);
-  const select = document.getElementById('kaykitClip');
-  select.innerHTML = '';
-  [...kayKitLibrary.clips.keys()].forEach((name) => {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    select.appendChild(option);
-  });
-  const boundClipId = action?.animationBinding?.source === 'kaykit' ? action.animationBinding.clipId : '';
-  select.value = kayKitLibrary.clips.has(boundClipId) ? boundClipId : 'Idle_A';
-  setKayKitStatus(
-    `ready · ${kayKitLibrary.clips.size} unique clips · ${kayKitLibrary.duplicates.length} duplicates ignored · ${Object.keys(character.rig.bones).length} procedural bones`,
-  );
-  renderAnimationBinding();
-  return kayKitLibrary;
-}
-
-function shouldLoopKayKitClip(name) {
-  return /Idle|Walking|Running|Blocking|Crouching|Sneaking|Crawling/.test(name);
-}
-
 function renderAnimationBinding() {
   if (!action) return;
   const binding = action.animationBinding;
   renderAnimationBindingView({
     action,
     clip,
-    available: binding.source === 'kaykit' && character.hasAnimation(binding.clipId),
+    available: externalAnimations?.isAvailable(binding) || false,
   });
 }
 
@@ -7918,30 +8272,17 @@ function setAnimationBinding(binding) {
   updatePlaybackButtons();
 }
 
-async function bindSelectedKayKitClip(fitToAction = false) {
-  await loadKayKitRuntime();
-  const controlBinding = readAnimationBindingView();
-  const { clipId } = controlBinding;
-  const sourceClip = kayKitLibrary.clips.get(clipId);
-  setAnimationBinding(fitToAction ? createFittedAnimationBinding({
-    ...controlBinding,
-    animationDurationSeconds: sourceClip.duration,
-    durationFrames: clip.durationFrames,
-    fps: clip.fps,
-  }) : controlBinding);
-}
-
-async function playSelectedKayKitClip() {
-  await loadKayKitRuntime();
-  const name = document.getElementById('kaykitClip').value;
-  player.pause();
-  clearWeaponTrail();
-  animationSource = 'kaykit-preview';
-  character.playAnimation(name, { loop: shouldLoopKayKitClip(name), inPlace: true });
-  document.getElementById('clipNow').textContent = name.toUpperCase();
-  document.getElementById('phaseNow').textContent = 'KAYKIT RUNTIME';
-  updatePlaybackButtons();
-}
+externalAnimations = createStudioExternalAnimationController({
+  THREE, character,
+  getAction: () => action, getClip: () => clip,
+  setBinding: setAnimationBinding,
+  pausePlayer: () => player.pause(),
+  applyCurrentEvaluation: () => applyEvaluation(player.evaluate()),
+  clearWeaponTrail,
+  updatePlaybackButtons,
+  setAnimationSource: (source) => { animationSource = source; },
+  renderBinding: renderAnimationBinding,
+});
 
 function rebuildClip(selectedName, seekFrame) {
   clip = createAnimationClip({
@@ -8054,7 +8395,9 @@ function applyEvaluation(evaluation) {
   if (!evaluation) return;
   const applied = player.apply(evaluation);
   animationSource = applied.motion.pending ? 'authored-fallback' : applied.motion.appliedSource;
-  const motionLabel = applied.motion.appliedSource === 'kaykit' ? ' · KAYKIT BOUND' : '';
+  const motionLabel = applied.motion.appliedSource === 'authored'
+    ? ''
+    : ` · ${applied.motion.appliedSource.toUpperCase()} BOUND`;
   document.getElementById('phaseNow').textContent = `${evaluation.to.toUpperCase()} · ${evaluation.frame.toFixed(1)}F${motionLabel}`;
   updateTimelineReadout();
   return applied;
@@ -8145,23 +8488,6 @@ bindV3AppearanceToggle('toggleRigNodes', (visible) => {
 bindV3AppearanceToggle('toggleRigGlow', (visible) => {
   character.setRigGlowVisible(visible);
   sword.setGlowVisible(visible);
-});
-
-document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
-  loadKayKitRuntime().catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('playKayKitAnimation').addEventListener('click', () => {
-  playSelectedKayKitClip().catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('stopKayKitAnimation').addEventListener('click', () => applyEvaluation(player.evaluate()));
-document.getElementById('bindKayKitAnimation').addEventListener('click', () => {
-  bindSelectedKayKitClip(false).catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('fitKayKitAnimation').addEventListener('click', () => {
-  bindSelectedKayKitClip(true).catch((error) => setKayKitStatus(error.message, true));
-});
-document.getElementById('clearAnimationBinding').addEventListener('click', () => {
-  setAnimationBinding({ source: 'authored', clipId: clip.id });
 });
 
 document.getElementById('showTPose').addEventListener('click', () => loadTemplate('t_pose'));
@@ -8354,8 +8680,11 @@ window.__actionStudio = {
   get poseDragDiagnostics() { return poseDragController.diagnostics; },
   get blockingDiagnostics() { return blockingWorkflow.diagnostics; },
   get renderStyle() { return 'v3-rig-line'; },
-  loadKayKitRuntime,
-  playKayKitClip(name, options = {}) { animationSource = 'kaykit-preview'; return character.playAnimation(name, options); },
+  loadKayKitRuntime: () => externalAnimations.load('kaykit'),
+  loadUal2Runtime: () => externalAnimations.load('ual2'),
+  playKayKitClip: (name, options = {}) => externalAnimations.playClip('kaykit', name, options),
+  playUal2Clip: (name, options = {}) => externalAnimations.playClip('ual2', name, options),
+  get loadedAnimationSources() { return [...externalAnimations.libraries.keys()]; },
   get legacyScriptsLoaded() {
     return [...document.scripts].map((script) => script.src).filter((src) => /\/ps\//.test(src));
   },

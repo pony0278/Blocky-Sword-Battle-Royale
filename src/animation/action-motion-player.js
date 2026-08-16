@@ -46,7 +46,8 @@ export class ActionMotionPlayer {
   decorate(evaluation) {
     if (!evaluation) return null;
     const binding = this.binding;
-    const hasAnimation = binding.source === 'kaykit'
+    const external = binding.source !== 'authored';
+    const hasAnimation = external
       && binding.clipId
       && (this.adapter.hasAnimation ? this.adapter.hasAnimation(binding.clipId) : Boolean(this.adapter.sampleAnimation));
     const animationDurationSeconds = hasAnimation && this.adapter.getAnimationDuration
@@ -59,8 +60,8 @@ export class ActionMotionPlayer {
         clipId: binding.clipId,
         binding,
         available: Boolean(hasAnimation),
-        pending: binding.source === 'kaykit' && !hasAnimation,
-        timeSeconds: binding.source === 'kaykit'
+        pending: external && !hasAnimation,
+        timeSeconds: external
           ? animationTimeAtFrame(binding, evaluation.frame, this.clip?.fps, animationDurationSeconds)
           : evaluation.frame / Math.max(1, this.clip?.fps || 30),
       },
@@ -70,12 +71,12 @@ export class ActionMotionPlayer {
   apply(evaluation = this.evaluate()) {
     if (!evaluation) return null;
     const { motion } = evaluation;
-    if (motion.source === 'kaykit' && motion.available && this.adapter.sampleAnimation) {
+    if (motion.source !== 'authored' && motion.available && this.adapter.sampleAnimation) {
       this.adapter.sampleAnimation(motion.clipId, motion.timeSeconds, motion.binding);
-      this.appliedSource = 'kaykit';
-      return { ...evaluation, motion: { ...motion, appliedSource: 'kaykit' } };
+      this.appliedSource = motion.source;
+      return { ...evaluation, motion: { ...motion, appliedSource: motion.source } };
     }
-    if (this.appliedSource === 'kaykit') this.adapter.stopAnimation?.();
+    if (this.appliedSource && this.appliedSource !== 'authored') this.adapter.stopAnimation?.();
     this.adapter.applyPose?.(evaluation.pose);
     this.appliedSource = 'authored';
     return { ...evaluation, motion: { ...motion, appliedSource: 'authored' } };

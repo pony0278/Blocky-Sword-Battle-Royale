@@ -1,4 +1,4 @@
-export const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit']);
+export const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2']);
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -27,7 +27,7 @@ export function createFittedAnimationBinding(options = {}) {
   const speed = actionSeconds > 0 && animationSeconds > 0 ? animationSeconds / actionSeconds : 1;
   return normalizeAnimationBinding({
     ...options,
-    source: 'kaykit',
+    source: options.source === 'ual2' ? 'ual2' : 'kaykit',
     speed,
     startOffsetSeconds: 0,
     loop: false,

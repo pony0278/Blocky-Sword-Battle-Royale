@@ -1,0 +1,177 @@
+import { createFittedAnimationBinding } from '../../src/animation/animation-binding.js';
+import {
+  KAYKIT_ANIMATION_PACKS,
+  loadKayKitAnimationLibrary,
+} from '../../src/animation/kaykit-animation-library.js';
+import {
+  UAL2_ANIMATION_FILES,
+  loadUal2AnimationLibrary,
+} from '../../src/animation/ual2-animation-library.js';
+import { readAnimationBindingView } from './studio-editor-view.js';
+
+const SOURCE_INFO = Object.freeze({
+  ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length }),
+  kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length }),
+});
+
+function shouldLoopClip(name) {
+  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/.test(name);
+}
+
+export function createStudioExternalAnimationController(options) {
+  const {
+    THREE,
+    character,
+    getAction,
+    getClip,
+    setBinding,
+    pausePlayer,
+    applyCurrentEvaluation,
+    clearWeaponTrail,
+    updatePlaybackButtons,
+    setAnimationSource,
+    renderBinding,
+  } = options;
+  const libraries = new Map();
+  const sourceSelect = document.getElementById('animationPackSource');
+  const clipSelect = document.getElementById('kaykitClip');
+  const status = document.getElementById('kaykitStatus');
+
+  function setStatus(message, isError = false) {
+    status.textContent = message;
+    status.classList.toggle('error', isError);
+  }
+
+  function selectedSource() {
+    return sourceSelect.value in SOURCE_INFO ? sourceSelect.value : 'ual2';
+  }
+
+  function populate(source, preferredClipId = '') {
+    clipSelect.innerHTML = '';
+    const library = libraries.get(source);
+    if (!library) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = `Load ${SOURCE_INFO[source].label} first`;
+      clipSelect.appendChild(option);
+      return;
+    }
+    [...library.clips.keys()].forEach((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name.replace(/^UAL2\//, '');
+      clipSelect.appendChild(option);
+    });
+    clipSelect.value = library.clips.has(preferredClipId)
+      ? preferredClipId
+      : (source === 'ual2' ? 'UAL2/Sword_Regular_A' : 'Idle_A');
+  }
+
+  async function load(source = selectedSource()) {
+    if (libraries.has(source)) return libraries.get(source);
+    if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
+    if (location.protocol === 'file:') throw new Error('External GLB animations require the local HTTP server');
+    const info = SOURCE_INFO[source];
+    setStatus(`Loading ${info.label} · ${info.count} files…`);
+    const loader = new THREE.GLTFLoader();
+    const library = source === 'ual2'
+      ? await loadUal2AnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/UAL2_Sword_Combat_Package/Animation_Only/No_Root_Motion/',
+        fps: 30,
+      })
+      : await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
+    character.registerAnimations(library);
+    libraries.set(source, library);
+    populate(source, getAction()?.animationBinding?.clipId);
+    const detail = source === 'ual2'
+      ? `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`
+      : `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`;
+    setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
+    renderBinding();
+    return library;
+  }
+
+  async function ensureBinding(binding) {
+    if (!binding || binding.source === 'authored') return null;
+    sourceSelect.value = binding.source;
+    const library = await load(binding.source);
+    populate(binding.source, binding.clipId);
+    return library;
+  }
+
+  function isAvailable(binding) {
+    return Boolean(binding?.source !== 'authored'
+      && libraries.get(binding.source)?.clips.has(binding.clipId)
+      && character.hasAnimation(binding.clipId));
+  }
+
+  async function bindSelected(fitToAction = false) {
+    const source = selectedSource();
+    const library = await load(source);
+    const controlBinding = readAnimationBindingView(source);
+    const sourceClip = library.clips.get(controlBinding.clipId);
+    if (!sourceClip) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+    setBinding(fitToAction ? createFittedAnimationBinding({
+      ...controlBinding,
+      source,
+      animationDurationSeconds: sourceClip.duration,
+      durationFrames: getClip().durationFrames,
+      fps: getClip().fps,
+    }) : controlBinding);
+  }
+
+  async function playSelected() {
+    const source = selectedSource();
+    await load(source);
+    const name = clipSelect.value;
+    if (!name) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+    pausePlayer();
+    clearWeaponTrail();
+    setAnimationSource(`${source}-preview`);
+    character.playAnimation(name, { loop: shouldLoopClip(name), inPlace: true });
+    document.getElementById('clipNow').textContent = name.replace(/^UAL2\//, '').toUpperCase();
+    document.getElementById('phaseNow').textContent = source === 'ual2' ? 'UAL2 RETARGET PREVIEW' : 'KAYKIT RUNTIME';
+    updatePlaybackButtons();
+  }
+
+  sourceSelect.addEventListener('change', () => {
+    const source = selectedSource();
+    populate(source, getAction()?.animationBinding?.source === source ? getAction().animationBinding.clipId : '');
+    const state = libraries.has(source) ? 'ready' : 'not loaded';
+    setStatus(`${SOURCE_INFO[source].label} · ${state}`);
+  });
+  document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
+    load().catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('playKayKitAnimation').addEventListener('click', () => {
+    playSelected().catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('stopKayKitAnimation').addEventListener('click', applyCurrentEvaluation);
+  document.getElementById('bindKayKitAnimation').addEventListener('click', () => {
+    bindSelected(false).catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('fitKayKitAnimation').addEventListener('click', () => {
+    bindSelected(true).catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('clearAnimationBinding').addEventListener('click', () => {
+    setBinding({ source: 'authored', clipId: getClip().id });
+  });
+  populate(selectedSource());
+
+  return {
+    get libraries() { return libraries; },
+    hasLoaded: (source) => libraries.has(source),
+    isAvailable,
+    ensureBinding,
+    load,
+    playSelected,
+    setStatus,
+    playClip(source, name, playOptions = {}) {
+      if (!libraries.has(source)) throw new Error(`${SOURCE_INFO[source]?.label || source} is not loaded`);
+      setAnimationSource(`${source}-preview`);
+      return character.playAnimation(name, playOptions);
+    },
+  };
+}

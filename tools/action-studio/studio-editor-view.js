@@ -203,15 +203,15 @@ export function renderAnimationBindingView({ action, clip, available }) {
   document.getElementById('animationBindingInPlace').checked = binding.inPlace;
   document.getElementById('animationBindingLoop').checked = binding.loop;
   const status = document.getElementById('animationBindingStatus');
-  status.classList.toggle('pending', binding.source === 'kaykit' && !available);
+  status.classList.toggle('pending', binding.source !== 'authored' && !available);
   status.textContent = binding.source === 'authored'
     ? `Pose keys drive ${clip.id}`
     : `${binding.clipId} · ${binding.speed.toFixed(3)}× · offset ${binding.startOffsetSeconds.toFixed(3)}s · ${available ? 'timeline bound' : 'saved, pack not loaded'}`;
 }
 
-export function readAnimationBindingView() {
+export function readAnimationBindingView(source = 'kaykit') {
   return {
-    source: 'kaykit',
+    source,
     clipId: document.getElementById('kaykitClip').value,
     speed: Number(document.getElementById('animationBindingSpeed').value),
     startOffsetSeconds: Number(document.getElementById('animationBindingOffset').value),

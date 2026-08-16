@@ -147,7 +147,7 @@ h1 span { color: var(--cyan); }
   .button-grid.four { grid-template-columns: 1fr 1fr; }
 }
 
-.kaykit-runtime-controls { display: grid; grid-template-columns: 1fr 1.3fr 1fr 1fr; gap: 7px; }
+.kaykit-runtime-controls { display: grid; grid-template-columns: 1.05fr 1fr 1.35fr 1fr 1fr; gap: 7px; }
 .kaykit-runtime-controls select { min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: #111827; color: var(--text); padding: 8px; }
 .animation-binding-controls { display: grid; grid-template-columns: .7fr .7fr auto auto 1fr 1fr 1fr; gap: 7px; align-items: end; margin-top: 8px; }
 .animation-binding-controls label { display: grid; gap: 3px; color: var(--muted); font: 9px JetBrains Mono, monospace; }

@@ -51,6 +51,15 @@ test('animation bindings normalize legacy and fitted action data', () => {
   assert.equal(fitted.source, 'kaykit');
   assert.equal(fitted.speed, 1.5);
   assert.equal(animationTimeAtFrame(fitted, 15, 30, 1.5), 0.75);
+  const ual2 = createFittedAnimationBinding({
+    source: 'ual2',
+    clipId: 'UAL2/Sword_Regular_A',
+    animationDurationSeconds: 0.433,
+    durationFrames: 30,
+    fps: 30,
+  });
+  assert.equal(ual2.source, 'ual2');
+  assert.equal(normalizeAnimationBinding(ual2).clipId, 'UAL2/Sword_Regular_A');
 });
 
 test('ActionMotionPlayer applies authored poses through the shared action clock', () => {
@@ -85,6 +94,26 @@ test('ActionMotionPlayer deterministically samples a bound KayKit clip', () => {
   assert.equal(result.motion.timeSeconds, 1.1);
   assert.equal(result.motion.appliedSource, 'kaykit');
   assert.deepEqual(samples[0].slice(0, 2), ['Melee_1H_Attack_Chop', 1.1]);
+});
+
+test('ActionMotionPlayer samples a retargeted UAL2 clip through the external clock', () => {
+  const { clip, action } = createFixture({
+    source: 'ual2',
+    clipId: 'UAL2/Sword_Regular_A',
+    speed: 1,
+  });
+  const samples = [];
+  const player = new ActionMotionPlayer({
+    adapter: {
+      hasAnimation: () => true,
+      getAnimationDuration: () => 0.433,
+      sampleAnimation: (...args) => samples.push(args),
+    },
+  });
+  player.setProject(clip, action);
+  const result = player.apply(player.seek(6));
+  assert.equal(result.motion.appliedSource, 'ual2');
+  assert.deepEqual(samples[0].slice(0, 2), ['UAL2/Sword_Regular_A', 0.2]);
 });
 
 test('missing external animation remains a visible pending binding with pose fallback', () => {
