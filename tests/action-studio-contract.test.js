@@ -13,6 +13,7 @@ import { importLegacyPunchSnapshot } from '../src/animation/legacy-punch-import.
 import { createBlockCharacter } from '../src/character/block-character.js';
 import { createBlockRig } from '../src/character/block-rig.js';
 import { createDebugSword, mountDebugSword } from '../src/character/debug-sword.js';
+import { KAYKIT_GUARD_REVIEW_CLIPS } from '../src/combat/kaykit-guard-source-review.js';
 
 test('slash, parry and counter templates expose required authoring metadata', () => {
   const slash = createSlashTestTemplate();
@@ -76,6 +77,26 @@ test('combat feel A/B profiles are presentation-only and animation agnostic', as
   assert.match(controller, /feelProfileA/);
   assert.match(controller, /feelProfileB/);
   assert.doesNotMatch(`${runtime}\n${controller}`, /Sword_Regular|Sword_Heavy_Combo|Sword_Attack|UAL1\/|UAL2\//);
+});
+
+test('G1 KayKit Guard Source Review exposes the four source clips and hold comparison modes', async () => {
+  assert.deepEqual(KAYKIT_GUARD_REVIEW_CLIPS.map((entry) => entry.clipId), [
+    'Melee_Block',
+    'Melee_Blocking',
+    'Melee_Block_Hit',
+    'Melee_Block_Attack',
+  ]);
+  assert.equal(KAYKIT_GUARD_REVIEW_CLIPS.find((entry) => entry.clipId === 'Melee_Blocking')?.holdStrategy, 'authored-loop-candidate');
+
+  const html = await readFile(new URL('../tools/action-studio/guard-source-review.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../tools/action-studio/guard-source-review.js', import.meta.url), 'utf8');
+  assert.match(html, /G1 · KayKit Guard Source Review/);
+  assert.match(html, /previewLoop/);
+  assert.match(html, /holdEnd/);
+  assert.match(html, /sampleTime/);
+  assert.match(app, /packIds:\s*\['melee'\]/);
+  assert.match(app, /sampleAnimation/);
+  assert.doesNotMatch(`${html}\n${app}`, /attackDirection|incomingDirection|guardDirection/);
 });
 
 test('Three-dependent character modules are importable without gameplay globals', () => {
