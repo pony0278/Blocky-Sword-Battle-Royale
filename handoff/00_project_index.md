@@ -130,6 +130,19 @@
 - G2.1～G2.5 decode、mapping、bake、visual review、decision record
 - 通過後才進 G3 Guard Family 與 G4 三向 Triangle Guard additive authoring
 
+### 09 — G2.1 Skyrim → Action Studio Retarget Adapter
+`09_skyrim_action_studio_retarget_adapter.md`
+
+內容：
+- Action Studio Blockman rig 作為 canonical target skeleton
+- 19 個 Skyrim humanoid semantic bone mappings
+- bracketed Skyrim bone names 與 exporter alias resolution
+- decoder-independent `{ root, clip }` / `{ scene, animations }` contract
+- world-space rest-pose delta → target-local quaternion bake
+- root / pelvis translation scale policy
+- 30 fps `THREE.AnimationClip` runtime output
+- G2.2 decoder bridge 與 `shd_blockidle` first bake 接口
+
 ---
 
 ## 建議開發階段
