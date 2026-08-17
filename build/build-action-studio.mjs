@@ -68,14 +68,31 @@ await writeFile(outputFile, output, 'utf8');
 
 const htmlTemplate = await readFile(htmlTemplateFile, 'utf8');
 const moduleTag = '<script type="module" src="./action-studio.js"></script>';
-if (!htmlTemplate.includes(moduleTag)) {
-  throw new Error(`${normalizedRelativePath(htmlTemplateFile)} is missing the expected module entry tag`);
+const moduleBootstrap = [
+  '<script type="module">',
+  "    await import('./action-studio.js');",
+  "    await import('./studio-combat-feel-controller.js');",
+  '  </script>',
+].join('\n');
+const moduleEntry = htmlTemplate.includes(moduleTag)
+  ? moduleTag
+  : (htmlTemplate.includes(moduleBootstrap) ? moduleBootstrap : null);
+if (!moduleEntry) {
+  throw new Error(`${normalizedRelativePath(htmlTemplateFile)} is missing the expected Action Studio module entry`);
 }
-const standaloneHtml = htmlTemplate.replace(
-  moduleTag,
-  '<!-- Generated classic bundle keeps direct file:// opening compatible. -->\n  <script src="./action-studio.bundle.js"></script>',
-);
+const protocolAwareEntry = [
+  '<script>',
+  "    if (location.protocol === 'file:') {",
+  "      document.getElementById('feelAbControls')?.setAttribute('hidden', '');",
+  "      const script = document.createElement('script');",
+  "      script.src = './action-studio.bundle.js';",
+  '      document.body.appendChild(script);',
+  '    } else {',
+  "      import('./action-studio.js');",
+  '    }',
+  '  </script>',
+].join('\n');
+const standaloneHtml = htmlTemplate.replace(moduleEntry, protocolAwareEntry);
 await writeFile(htmlOutputFile, standaloneHtml, 'utf8');
 console.log(`Built ${normalizedRelativePath(outputFile)} from ${moduleIds.size} ES modules (${output.length} bytes).`);
 console.log(`Built ${normalizedRelativePath(htmlOutputFile)} from ${normalizedRelativePath(htmlTemplateFile)}.`);
-

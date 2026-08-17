@@ -64,10 +64,23 @@ test('Action Studio entry and module graph do not load legacy Punch scripts', as
   assert.match(html, /ACTION\s*<span>STUDIO/i);
 });
 
+test('combat feel A/B profiles are presentation-only and animation agnostic', async () => {
+  const runtime = await readFile(new URL('../tools/action-studio/studio-preview-runtime.js', import.meta.url), 'utf8');
+  const controller = await readFile(new URL('../tools/action-studio/studio-combat-feel-controller.js', import.meta.url), 'utf8');
+  assert.match(runtime, /Light Slash/);
+  assert.match(runtime, /Heavy Slash/);
+  assert.match(runtime, /Perfect Parry/);
+  assert.match(runtime, /attackerRecoil/);
+  assert.match(runtime, /cameraKick/);
+  assert.match(runtime, /releasePending/);
+  assert.match(controller, /feelProfileA/);
+  assert.match(controller, /feelProfileB/);
+  assert.doesNotMatch(`${runtime}\n${controller}`, /Sword_Regular|Sword_Heavy_Combo|Sword_Attack|UAL1\/|UAL2\//);
+});
+
 test('Three-dependent character modules are importable without gameplay globals', () => {
   assert.equal(typeof createBlockCharacter, 'function');
   assert.equal(typeof createBlockRig, 'function');
   assert.equal(typeof createDebugSword, 'function');
   assert.equal(typeof mountDebugSword, 'function');
 });
-

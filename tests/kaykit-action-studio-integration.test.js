@@ -123,7 +123,7 @@ test('Action Studio exposes explicit KayKit runtime controls and GLTFLoader', as
   assert.match(template, /23 generated bones/);
   assert.match(template, /id="toggleRigNodes"/);
   assert.match(template, /id="toggleRigGlow"/);
-  assert.doesNotMatch(template, />Hybrid<|>Block<|data-character-style/);
+  assert.doesNotMatch(template, />Hybrid<|data-character-style/);
   assert.match(template, /id="weaponRigStatus"/);
   assert.match(template, /11 weapon bones/);
   assert.match(template, /exact v3 edges/);

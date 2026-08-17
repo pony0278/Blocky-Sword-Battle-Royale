@@ -188,10 +188,21 @@
       </section>
 
       <section class="panel feel-panel">
-        <div class="panel-title"><span>Combat Feel Preview</span><small>editor presentation only</small></div>
-        <label>Hitstop <output id="hitstopValue">0.08s</output><input id="hitstop" type="range" min="0" max="0.25" step="0.01" value="0.08"></label>
-        <label>Camera shake <output id="shakeValue">0.45</output><input id="shake" type="range" min="0" max="1" step="0.01" value="0.45"></label>
-        <label>Dummy knockback <output id="knockbackValue">0.55</output><input id="knockback" type="range" min="0" max="1" step="0.01" value="0.55"></label>
+        <div class="panel-title"><span>Combat Feel Preview</span><small>same animation · A/B impact response</small></div>
+        <div id="feelAbControls">
+          <div class="button-grid two">
+            <label>Profile A<select id="feelProfileA"><option value="light">Light Slash</option><option value="heavy">Heavy Slash</option><option value="block">Block</option><option value="parry">Perfect Parry</option></select></label>
+            <label>Profile B<select id="feelProfileB"><option value="light">Light Slash</option><option value="heavy" selected>Heavy Slash</option><option value="block">Block</option><option value="parry">Perfect Parry</option></select></label>
+          </div>
+          <div class="button-grid two secondary-row">
+            <button id="feelUseA" class="on">Use A</button>
+            <button id="feelUseB">Use B</button>
+          </div>
+          <div id="feelProfileStatus" class="status-line">Active A · Light Slash · same animation, different impact response</div>
+        </div>
+        <label>Hitstop <output id="hitstopValue">0.03s</output><input id="hitstop" type="range" min="0" max="0.25" step="0.005" value="0.03"></label>
+        <label>Camera shake <output id="shakeValue">0.18</output><input id="shake" type="range" min="0" max="1" step="0.01" value="0.18"></label>
+        <label>Dummy knockback <output id="knockbackValue">0.22</output><input id="knockback" type="range" min="0" max="1" step="0.01" value="0.22"></label>
         <label class="check"><input id="dummyToggle" type="checkbox" checked> Preview dummy + impact flash</label>
       </section>
 
@@ -230,7 +241,9 @@
     </aside>
   </main>
 
-  <script type="module" src="./action-studio.js"></script>
+  <script type="module">
+    await import('./action-studio.js');
+    await import('./studio-combat-feel-controller.js');
+  </script>
 </body>
 </html>
-
