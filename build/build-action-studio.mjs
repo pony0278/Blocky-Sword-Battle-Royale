@@ -74,9 +74,12 @@ const moduleBootstrap = [
   "    await import('./studio-combat-feel-controller.js');",
   '  </script>',
 ].join('\n');
+const moduleBootstrapCrlf = moduleBootstrap.split(String.fromCharCode(10)).join(String.fromCharCode(13, 10));
 const moduleEntry = htmlTemplate.includes(moduleTag)
   ? moduleTag
-  : (htmlTemplate.includes(moduleBootstrap) ? moduleBootstrap : null);
+  : htmlTemplate.includes(moduleBootstrap)
+    ? moduleBootstrap
+    : (htmlTemplate.includes(moduleBootstrapCrlf) ? moduleBootstrapCrlf : null);
 if (!moduleEntry) {
   throw new Error(`${normalizedRelativePath(htmlTemplateFile)} is missing the expected Action Studio module entry`);
 }

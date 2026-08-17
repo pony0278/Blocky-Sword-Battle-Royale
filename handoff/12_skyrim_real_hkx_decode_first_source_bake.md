@@ -169,13 +169,12 @@ REJECT
 
 ## Current execution boundary
 
-Repository-side G2.3.1 input/output contracts are implemented and tested. The supplied skeleton is no longer the blocker.
+G2.3.1 is complete. HavokToolset `hk_to_gltf` decoded the real local `skeleton.hkx` + `shd_blockidle.hkx` pair at 30 fps into a self-contained `shd_blockidle.source.glb`; the repository validator accepted it and a Three.js runtime probe retargeted it through G2.1 to `SKYRIM_GUARD/shd_blockidle` on the canonical Blockman rig.
 
-The current ChatGPT execution container does **not** include Blender/PyNifly, hkxcmd, Wine, or another executable Skyrim LE Havok spline decoder. Therefore this environment cannot truthfully decompress `hkaSplineCompressedAnimation` into the first real keyframe stream today.
+No keyframes were synthesized and no skeleton-only placeholder GLB was used. The local output remains ignored by Git under the existing asset/licensing boundary.
 
-Do not approximate or synthesize the source motion from binary markers.
 
-G2.3.1 is considered **fully complete only after** an actual decoder produces `shd_blockidle.source.glb`, that file passes `validate:skyrim-source-glb`, and it successfully loads into the G2.3 Visual Review Lab.
+The remaining boundary is G2.3.2 visual judgment, not decode or adapter engineering. See `13_skyrim_guard_g2_3_2_execution_record.md`.
 
 ---
 

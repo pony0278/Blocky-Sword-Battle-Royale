@@ -243,12 +243,12 @@
 
   <script>
     if (location.protocol === 'file:') {
-      document.getElementById('feelAbControls').hidden = true;
+      document.getElementById('feelAbControls')?.setAttribute('hidden', '');
       const script = document.createElement('script');
       script.src = './action-studio.bundle.js';
       document.body.appendChild(script);
     } else {
-      import('./action-studio.js').then(() => import('./studio-combat-feel-controller.js'));
+      import('./action-studio.js');
     }
   </script>
 </body>
