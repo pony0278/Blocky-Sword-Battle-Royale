@@ -78,7 +78,7 @@ Capabilities:
 - real procedural longsword mounted on `HAND_R`
 - Once / Loop preview
 - timeline scrub and start/end freeze
-- Front / Side / 3/4 camera presets
+- Front / 3-quarter / Side / Back camera presets
 - mouse orbit
 - automatic start/end loop-seam measurement
 - five explicit visual gates
@@ -173,8 +173,6 @@ incomplete ratings
 
 ## Current completion boundary
 
-Repository engineering for G2.3 is ready, including the visual review lab and decision metrics.
+The real 30 fps source bake now exists locally, passes the repository validator, and retargets through G2.1 to the canonical Action Studio Blockman rig. See `13_skyrim_guard_g2_3_2_execution_record.md` for the reproducible evidence.
 
-The first real bake itself cannot be truthfully completed until a matching Skyrim LE humanoid `skeleton.hkx` is available to the offline HKX importer. The supplied `shd_blockidle.hkx` alone is not enough to reconstruct the source rest skeleton reliably.
-
-Once the source GLB exists, no further bridge or retarget architecture work should be required before the first visual decision.
+The final visual decision remains `PENDING`: the in-app browser execution runtime fails before browser startup on the review machine, so the required multi-view playback, freeze, loop, and scrub inspection has not been truthfully performed. No visual gate has been inferred from numerical seam metrics alone.

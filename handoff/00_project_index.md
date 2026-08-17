@@ -187,6 +187,17 @@
 - current execution container 無 Havok decoder 時的 truthful boundary
 - G2.3.2 First Real Visual Decision 完成條件
 
+### 13 - G2.3.2 Real Source Bake Execution Record
+`13_skyrim_guard_g2_3_2_execution_record.md`
+
+Contents:
+- real 30 fps HavokToolset `hk_to_gltf` conversion record
+- `shd_blockidle.source.glb` SHA-256, size, and validator result
+- G2.1 canonical Blockman retarget runtime probe
+- loop-seam engineering metric
+- Front / 3-quarter / Side / Back review support
+- Windows browser sandbox blocker and truthful `PENDING` visual decision
+
 ---
 
 ## 建議開發階段

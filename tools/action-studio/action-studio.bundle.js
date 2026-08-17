@@ -4312,7 +4312,7 @@ return Object.freeze({ ClipPlayer });
 
 // src/animation/animation-binding.js
 const __actionStudioModule19 = (() => {
-const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2', 'ual1']);
+const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2', 'ual1', 'skyrim']);
 
 function finiteNumber(value, fallback) {
   const number = Number(value);
@@ -5066,6 +5066,89 @@ function createPreviewDummy(THREE) {
   return group;
 }
 
+const COMBAT_FEEL_PROFILES = Object.freeze({
+  light: Object.freeze({
+    label: 'Light Slash',
+    hitstop: 0.03,
+    shake: 0.18,
+    knockback: 0.22,
+    attackerRecoil: 0.035,
+    cameraKick: 0.045,
+    cameraSide: 0.25,
+    cameraDown: 0.12,
+    flash: 0.22,
+    sparkScale: 0.42,
+    reactionDuration: 0.22,
+  }),
+  heavy: Object.freeze({
+    label: 'Heavy Slash',
+    hitstop: 0.065,
+    shake: 0.38,
+    knockback: 0.68,
+    attackerRecoil: 0.075,
+    cameraKick: 0.105,
+    cameraSide: 0.18,
+    cameraDown: 0.42,
+    flash: 0.44,
+    sparkScale: 0.85,
+    reactionDuration: 0.38,
+  }),
+  block: Object.freeze({
+    label: 'Block',
+    hitstop: 0.04,
+    shake: 0.24,
+    knockback: 0.08,
+    attackerRecoil: 0.11,
+    cameraKick: 0.075,
+    cameraSide: 0.72,
+    cameraDown: 0.08,
+    flash: 0.34,
+    sparkScale: 0.62,
+    reactionDuration: 0.2,
+  }),
+  parry: Object.freeze({
+    label: 'Perfect Parry',
+    hitstop: 0.085,
+    shake: 0.46,
+    knockback: 0.14,
+    attackerRecoil: 0.19,
+    cameraKick: 0.13,
+    cameraSide: 0.9,
+    cameraDown: 0.12,
+    flash: 0.62,
+    sparkScale: 1.15,
+    reactionDuration: 0.3,
+  }),
+});
+
+function createSparkBurst(THREE) {
+  const positions = [];
+  const rayCount = 18;
+  for (let index = 0; index < rayCount; index += 1) {
+    const angle = (index / rayCount) * Math.PI * 2;
+    const tilt = ((index % 5) - 2) * 0.12;
+    const length = 0.12 + (index % 4) * 0.035;
+    positions.push(0, 0, 0);
+    positions.push(
+      Math.cos(angle) * length,
+      Math.sin(angle) * length * 0.72 + tilt,
+      Math.sin(angle * 1.7) * length * 0.45,
+    );
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffd36b,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const burst = new THREE.LineSegments(geometry, material);
+  burst.visible = false;
+  burst.frustumCulled = false;
+  return burst;
+}
+
 function createStudioPreviewRuntime(THREE, options) {
   const {
     canvas,
@@ -5103,6 +5186,8 @@ function createStudioPreviewRuntime(THREE, options) {
 
   const dummy = createPreviewDummy(THREE);
   scene.add(dummy);
+  const sparkBurst = createSparkBurst(THREE);
+  scene.add(sparkBurst);
   const weaponTrail = new THREE.Line(
     new THREE.BufferGeometry(),
     new THREE.LineBasicMaterial({ color: 0x55e6c1, transparent: true, opacity: 0.92 }),
@@ -5112,10 +5197,24 @@ function createStudioPreviewRuntime(THREE, options) {
   const trailPoint = new THREE.Vector3();
   let trailPoints = [];
 
-  const feel = { hitstop: 0.08, shake: 0.45, knockback: 0.55 };
+  const feel = { ...COMBAT_FEEL_PROFILES.light };
+  let activeFeelProfile = 'light';
+  let impactFeel = { ...feel };
   let hitstopRemaining = 0;
+  let releasePending = false;
   let shakeRemaining = 0;
-  let dummyHitRemaining = 0;
+  let cameraImpulseRemaining = 0;
+  let reactionElapsed = 0;
+  let attackerReactionElapsed = 0;
+  let sparkRemaining = 0;
+  const cameraImpulseDuration = 0.18;
+  const sparkDuration = 0.16;
+  const dummyBaseZ = 2.15;
+  const attackerBasePosition = character.object3d.position.clone();
+  const cameraRight = new THREE.Vector3();
+  const cameraUp = new THREE.Vector3();
+  const cameraForward = new THREE.Vector3();
+  const cameraOffset = new THREE.Vector3();
 
   function placeCamera() {
     camera.position.set(
@@ -5150,56 +5249,137 @@ function createStudioPreviewRuntime(THREE, options) {
     }
   }
 
-  function triggerImpact() {
-    hitstopRemaining = feel.hitstop;
-    shakeRemaining = 0.18;
-    dummyHitRemaining = 0.34;
+  function applyFeelProfile(profileName) {
+    const key = String(profileName || '').toLowerCase();
+    const profile = COMBAT_FEEL_PROFILES[key];
+    if (!profile) throw new Error(`Unknown combat feel profile: ${profileName}`);
+    activeFeelProfile = key;
+    Object.assign(feel, profile);
+    return { name: key, ...feel };
+  }
+
+  function releaseImpact() {
+    releasePending = false;
+    shakeRemaining = cameraImpulseDuration;
+    cameraImpulseRemaining = cameraImpulseDuration;
+    reactionElapsed = 0.000001;
+    attackerReactionElapsed = 0.000001;
+    sparkRemaining = sparkDuration;
+    sparkBurst.visible = isDummyEnabled();
+    sparkBurst.position.set(0, 1.13, dummyBaseZ - 0.18);
+    sparkBurst.scale.setScalar(0.15);
+    sparkBurst.material.opacity = 1;
     if (isDummyEnabled()) {
       impactFlash.style.transition = 'none';
-      impactFlash.style.opacity = String(0.18 + feel.shake * 0.28);
+      impactFlash.style.opacity = String(impactFeel.flash);
       requestAnimationFrame(() => {
-        impactFlash.style.transition = 'opacity .16s ease-out';
+        impactFlash.style.transition = 'opacity .14s ease-out';
         impactFlash.style.opacity = '0';
       });
     }
   }
 
+  function triggerImpact() {
+    impactFeel = { ...feel };
+    hitstopRemaining = Math.max(0, impactFeel.hitstop);
+    releasePending = true;
+    reactionElapsed = 0;
+    attackerReactionElapsed = 0;
+    shakeRemaining = 0;
+    cameraImpulseRemaining = 0;
+    sparkRemaining = 0;
+    sparkBurst.visible = false;
+    dummy.position.z = dummyBaseZ;
+    dummy.rotation.x = 0;
+    character.object3d.position.copy(attackerBasePosition);
+    if (hitstopRemaining <= 0) releaseImpact();
+  }
+
   function consumeHitstop(deltaSeconds) {
-    if (hitstopRemaining <= 0) return false;
-    hitstopRemaining = Math.max(0, hitstopRemaining - deltaSeconds);
-    return true;
+    if (hitstopRemaining > 0) {
+      hitstopRemaining = Math.max(0, hitstopRemaining - deltaSeconds);
+      return true;
+    }
+    if (releasePending) releaseImpact();
+    return false;
+  }
+
+  function reactionCurve(elapsed, duration) {
+    if (elapsed <= 0 || duration <= 0) return 0;
+    const t = Math.min(1, elapsed / duration);
+    return Math.pow(Math.sin(Math.PI * t), 0.72);
   }
 
   function update(deltaSeconds) {
     dummy.visible = isDummyEnabled();
-    if (dummyHitRemaining > 0) {
-      dummyHitRemaining = Math.max(0, dummyHitRemaining - deltaSeconds);
-      const amount = dummyHitRemaining / 0.34;
-      dummy.position.z = 2.15 + feel.knockback * 0.72 * amount;
-      dummy.rotation.x = -feel.knockback * 0.18 * amount;
+    if (reactionElapsed > 0) {
+      reactionElapsed += deltaSeconds;
+      const amount = reactionCurve(reactionElapsed, impactFeel.reactionDuration);
+      dummy.position.z = dummyBaseZ + impactFeel.knockback * 0.72 * amount;
+      dummy.rotation.x = -impactFeel.knockback * 0.18 * amount;
+      if (reactionElapsed >= impactFeel.reactionDuration) {
+        reactionElapsed = 0;
+        dummy.position.z = dummyBaseZ;
+        dummy.rotation.x = 0;
+      }
     } else {
-      dummy.position.z = 2.15;
+      dummy.position.z = dummyBaseZ;
       dummy.rotation.x = 0;
+    }
+
+    if (attackerReactionElapsed > 0) {
+      attackerReactionElapsed += deltaSeconds;
+      const duration = Math.max(0.16, impactFeel.reactionDuration * 0.72);
+      const amount = reactionCurve(attackerReactionElapsed, duration);
+      character.object3d.position.copy(attackerBasePosition);
+      character.object3d.position.z -= impactFeel.attackerRecoil * amount;
+      if (attackerReactionElapsed >= duration) {
+        attackerReactionElapsed = 0;
+        character.object3d.position.copy(attackerBasePosition);
+      }
+    } else {
+      character.object3d.position.copy(attackerBasePosition);
+    }
+
+    if (sparkRemaining > 0) {
+      sparkRemaining = Math.max(0, sparkRemaining - deltaSeconds);
+      const t = 1 - sparkRemaining / sparkDuration;
+      const scale = impactFeel.sparkScale * (0.2 + t * 1.1);
+      sparkBurst.scale.setScalar(scale);
+      sparkBurst.material.opacity = Math.pow(1 - t, 1.8);
+      if (sparkRemaining <= 0) sparkBurst.visible = false;
     }
   }
 
   function render() {
-    let shakeX = 0;
-    let shakeY = 0;
-    if (shakeRemaining > 0) {
-      const amount = feel.shake * 0.08 * (shakeRemaining / 0.18);
-      shakeX = (Math.random() * 2 - 1) * amount;
-      shakeY = (Math.random() * 2 - 1) * amount;
-      camera.position.x += shakeX;
-      camera.position.y += shakeY;
+    cameraOffset.set(0, 0, 0);
+    if (cameraImpulseRemaining > 0) {
+      const t = cameraImpulseRemaining / cameraImpulseDuration;
+      const kick = impactFeel.cameraKick * t * t;
+      cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      cameraForward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      cameraOffset
+        .addScaledVector(cameraRight, kick * impactFeel.cameraSide)
+        .addScaledVector(cameraUp, -kick * impactFeel.cameraDown)
+        .addScaledVector(cameraForward, -kick * 0.55);
     }
+    if (shakeRemaining > 0) {
+      const amount = impactFeel.shake * 0.022 * (shakeRemaining / cameraImpulseDuration);
+      cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      cameraOffset
+        .addScaledVector(cameraRight, (Math.random() * 2 - 1) * amount)
+        .addScaledVector(cameraUp, (Math.random() * 2 - 1) * amount);
+    }
+    camera.position.add(cameraOffset);
     renderer.render(scene, camera);
-    camera.position.x -= shakeX;
-    camera.position.y -= shakeY;
+    camera.position.sub(cameraOffset);
   }
 
   function advanceShake(deltaSeconds) {
     shakeRemaining = Math.max(0, shakeRemaining - deltaSeconds);
+    cameraImpulseRemaining = Math.max(0, cameraImpulseRemaining - deltaSeconds);
   }
 
   function toggleGameCamera() {
@@ -5224,6 +5404,20 @@ function createStudioPreviewRuntime(THREE, options) {
     feel[key] = Number(value);
     return feel[key];
   }
+
+  function handleFeelProfileEvent(event) {
+    const profileName = event?.detail?.profile;
+    if (!profileName) return;
+    try {
+      const applied = applyFeelProfile(profileName);
+      window.dispatchEvent(new CustomEvent('action-studio-feel-profile-applied', {
+        detail: applied,
+      }));
+    } catch (_error) {
+      // UI validation owns invalid profile names; ignore unrelated custom events.
+    }
+  }
+  window.addEventListener('action-studio-feel-profile', handleFeelProfileEvent);
 
   let orbiting = false;
   let pointerX = 0;
@@ -5256,6 +5450,8 @@ function createStudioPreviewRuntime(THREE, options) {
     camera,
     renderer,
     feel,
+    get activeFeelProfile() { return activeFeelProfile; },
+    get feelProfiles() { return COMBAT_FEEL_PROFILES; },
     resize,
     render,
     update,
@@ -5266,13 +5462,79 @@ function createStudioPreviewRuntime(THREE, options) {
     triggerImpact,
     consumeHitstop,
     setFeel,
+    applyFeelProfile,
   };
 }
 return Object.freeze({ createStudioPreviewRuntime });
 })();
 
-// tools/action-studio/studio-motion-guide-overlay.js
+// tools/action-studio/studio-combat-feel-controller.js
 const __actionStudioModule25 = (() => {
+function updateSlider(id, value, digits = 2, suffix = '') {
+  const input = document.getElementById(id);
+  const output = document.getElementById(`${id}Value`);
+  if (!input || !output) return;
+  input.value = String(value);
+  output.textContent = `${Number(value).toFixed(digits)}${suffix}`;
+}
+
+function createStudioCombatFeelController(preview) {
+  let externalImpactReleaseTimer = null;
+
+  function applyProfile(slot) {
+    const select = document.getElementById(`feelProfile${slot}`);
+    const name = select?.value || 'light';
+    const applied = preview.applyFeelProfile(name);
+    updateSlider('hitstop', applied.hitstop, applied.hitstop % 0.01 === 0 ? 2 : 3, 's');
+    updateSlider('shake', applied.shake);
+    updateSlider('knockback', applied.knockback);
+    const status = document.getElementById('feelProfileStatus');
+    if (status) status.textContent = `Active ${slot} · ${applied.label} · same animation, different impact response`;
+    document.getElementById('feelUseA')?.classList.toggle('on', slot === 'A');
+    document.getElementById('feelUseB')?.classList.toggle('on', slot === 'B');
+  }
+
+  function releaseExternalImpact(hitstopSeconds) {
+    preview.consumeHitstop(hitstopSeconds + 0.001);
+    preview.consumeHitstop(0);
+  }
+
+  function handleExternalImpact() {
+    if (externalImpactReleaseTimer !== null) clearTimeout(externalImpactReleaseTimer);
+    preview.triggerImpact();
+    const hitstopSeconds = Math.max(0, Number(preview.feel?.hitstop) || 0);
+    if (hitstopSeconds <= 0) {
+      releaseExternalImpact(0);
+      return;
+    }
+    externalImpactReleaseTimer = setTimeout(() => {
+      externalImpactReleaseTimer = null;
+      releaseExternalImpact(hitstopSeconds);
+    }, hitstopSeconds * 1000);
+  }
+
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('action-studio-external-impact', handleExternalImpact);
+  }
+
+  const controls = document.getElementById('feelAbControls');
+  if (!controls) return { applyProfile, handleExternalImpact };
+  document.getElementById('feelUseA')?.addEventListener('click', () => applyProfile('A'));
+  document.getElementById('feelUseB')?.addEventListener('click', () => applyProfile('B'));
+  document.getElementById('feelProfileA')?.addEventListener('change', () => {
+    if (document.getElementById('feelUseA')?.classList.contains('on')) applyProfile('A');
+  });
+  document.getElementById('feelProfileB')?.addEventListener('change', () => {
+    if (document.getElementById('feelUseB')?.classList.contains('on')) applyProfile('B');
+  });
+  applyProfile('A');
+  return { applyProfile, handleExternalImpact };
+}
+return Object.freeze({ createStudioCombatFeelController });
+})();
+
+// tools/action-studio/studio-motion-guide-overlay.js
+const __actionStudioModule26 = (() => {
 const { normalizeMotionGuide } = __actionStudioModule21;
 
 const GUIDE_COLORS = Object.freeze({
@@ -5564,7 +5826,7 @@ return Object.freeze({ createWholeBodyMotionGuideOverlay });
 })();
 
 // tools/action-studio/studio-motion-guide-editor.js
-const __actionStudioModule26 = (() => {
+const __actionStudioModule27 = (() => {
 const { createAdvancingVerticalChopTemplate } = __actionStudioModule20;
 const { createAdvancingVerticalChopGuide, isWholeBodyMotionGuide, normalizeMotionGuide } = __actionStudioModule21;
 
@@ -5748,7 +6010,7 @@ return Object.freeze({ createStudioMotionGuideEditor });
 })();
 
 // tools/action-studio/studio-motion-constraint-baker.js
-const __actionStudioModule27 = (() => {
+const __actionStudioModule28 = (() => {
 const { createAnimationClip } = __actionStudioModule16;
 const { normalizeMotionGuide } = __actionStudioModule21;
 const { normalizePose } = __actionStudioModule9;
@@ -5952,7 +6214,7 @@ return Object.freeze({ WINDUP_HAND_POSE_KEYS, SECONDARY_GRIP_POSE_KEYS, bakeStud
 })();
 
 // src/animation/whole-body-drag-solver.js
-const __actionStudioModule29 = (() => {
+const __actionStudioModule30 = (() => {
 const { normalizePose } = __actionStudioModule9;
 
 const WHOLE_BODY_DRAG_EFFECTORS = Object.freeze([
@@ -6252,7 +6514,7 @@ return Object.freeze({ WHOLE_BODY_DRAG_EFFECTORS, WHOLE_BODY_JOINT_EFFECTORS, so
 })();
 
 // tools/action-studio/studio-axis-gizmo.js
-const __actionStudioModule30 = (() => {
+const __actionStudioModule31 = (() => {
 const DIRECT_POSE_AXES = Object.freeze({
   x: Object.freeze({ color: 0xff4d5e, vector: Object.freeze({ x: 1, y: 0, z: 0 }) }),
   y: Object.freeze({ color: 0x62df76, vector: Object.freeze({ x: 0, y: 1, z: 0 }) }),
@@ -6379,11 +6641,11 @@ return Object.freeze({ DIRECT_POSE_AXES, snapAxisDragDistance, axisConstrainedTa
 })();
 
 // tools/action-studio/studio-pose-drag-controller.js
-const __actionStudioModule28 = (() => {
+const __actionStudioModule29 = (() => {
 const { normalizePose } = __actionStudioModule9;
-const { solveWholeBodyDragPose } = __actionStudioModule29;
+const { solveWholeBodyDragPose } = __actionStudioModule30;
 const { applyPoseToProceduralKayKitRig } = __actionStudioModule8;
-const { axisConstrainedTarget, createStudioAxisGizmo } = __actionStudioModule30;
+const { axisConstrainedTarget, createStudioAxisGizmo } = __actionStudioModule31;
 
 const EFFECTORS = Object.freeze({
   handL: Object.freeze({ bone: 'handslot.l', label: 'LEFT HAND', color: 0xb99aff, radius: 0.065 }),
@@ -6884,7 +7146,7 @@ return Object.freeze({ createStudioPoseDragController });
 })();
 
 // tools/action-studio/studio-blocking-workflow.js
-const __actionStudioModule31 = (() => {
+const __actionStudioModule32 = (() => {
 const { evaluateClip } = __actionStudioModule16;
 const { normalizePose } = __actionStudioModule9;
 const { createDefaultCharacter } = __actionStudioModule1;
@@ -7199,7 +7461,7 @@ return Object.freeze({ captureNextBlockingKey, createStudioBlockingWorkflow });
 })();
 
 // src/animation/legacy-punch-import.js
-const __actionStudioModule33 = (() => {
+const __actionStudioModule34 = (() => {
 const { LEGACY_NON_HUMANOID_POSE_KEYS, POSE_KEYS } = __actionStudioModule10;
 const { createAnimationClip } = __actionStudioModule16;
 
@@ -7232,7 +7494,7 @@ return Object.freeze({ importLegacyPunchSnapshot });
 })();
 
 // tools/action-studio/studio-project.js
-const __actionStudioModule34 = (() => {
+const __actionStudioModule35 = (() => {
 const { createAnimationClip } = __actionStudioModule16;
 const { ACTION_WINDOW_TYPES, createActionDefinition } = __actionStudioModule23;
 
@@ -7334,9 +7596,9 @@ return Object.freeze({ ACTION_STUDIO_PROJECT_FORMAT, cloneSerializable, createSt
 })();
 
 // tools/action-studio/studio-project-io-controller.js
-const __actionStudioModule32 = (() => {
-const { importLegacyPunchSnapshot } = __actionStudioModule33;
-const { createStudioAutosave, readStoredJson, serializeStudioProject, studioProjectFilename, writeStoredJson } = __actionStudioModule34;
+const __actionStudioModule33 = (() => {
+const { importLegacyPunchSnapshot } = __actionStudioModule34;
+const { createStudioAutosave, readStoredJson, serializeStudioProject, studioProjectFilename, writeStoredJson } = __actionStudioModule35;
 
 const ACTION_STUDIO_AUTOSAVE_KEY = 'ACTION_STUDIO_AUTOSAVE_V1';
 
@@ -7465,7 +7727,7 @@ return Object.freeze({ ACTION_STUDIO_AUTOSAVE_KEY, createStudioProjectIoControll
 })();
 
 // src/animation/quaternius-animation-retarget.js
-const __actionStudioModule37 = (() => {
+const __actionStudioModule38 = (() => {
 const { sanitizeAnimationTargetName } = __actionStudioModule6;
 
 const QUATERNIUS_BONE_RETARGETS = Object.freeze([
@@ -7679,8 +7941,8 @@ return Object.freeze({ QUATERNIUS_BONE_RETARGETS, retargetQuaterniusClip, loadQu
 })();
 
 // src/animation/ual1-animation-library.js
-const __actionStudioModule36 = (() => {
-const { QUATERNIUS_BONE_RETARGETS, loadQuaterniusAnimationLibrary, retargetQuaterniusClip } = __actionStudioModule37;
+const __actionStudioModule37 = (() => {
+const { QUATERNIUS_BONE_RETARGETS, loadQuaterniusAnimationLibrary, retargetQuaterniusClip } = __actionStudioModule38;
 
 const UAL1_ANIMATION_FILES = Object.freeze([
   Object.freeze({ id: 'Sword_Attack', file: 'Sword_Attack.glb' }),
@@ -7710,7 +7972,7 @@ return Object.freeze({ UAL1_ANIMATION_FILES, UAL1_BONE_RETARGETS, retargetUal1Cl
 })();
 
 // src/animation/ual2-animation-library.js
-const __actionStudioModule38 = (() => {
+const __actionStudioModule39 = (() => {
 const { sanitizeAnimationTargetName } = __actionStudioModule6;
 
 const UAL2_ANIMATION_FILES = Object.freeze([
@@ -7926,8 +8188,529 @@ const loadUal2AnimationLibrary = async (loader, options = {}) => {
 return Object.freeze({ UAL2_ANIMATION_FILES, UAL2_BONE_RETARGETS, retargetUal2Clip, loadUal2AnimationLibrary });
 })();
 
+// src/animation/skyrim-animation-retarget.js
+const __actionStudioModule41 = (() => {
+const { sanitizeAnimationTargetName } = __actionStudioModule6;
+
+function aliases(...names) {
+  return Object.freeze(names.filter(Boolean));
+}
+
+const SKYRIM_BONE_RETARGETS = Object.freeze([
+  Object.freeze({
+    id: 'root',
+    sourceAliases: aliases('NPC Root [Root]', 'NPC Root', 'Root', 'root'),
+    target: 'root',
+    position: true,
+  }),
+  Object.freeze({
+    id: 'pelvis',
+    sourceAliases: aliases('NPC Pelvis [Pelv]', 'NPC Pelvis', 'Pelvis', 'pelvis'),
+    target: 'hips',
+    position: true,
+  }),
+  Object.freeze({
+    id: 'spine',
+    sourceAliases: aliases('NPC Spine [Spn0]', 'NPC Spine', 'Spine', 'spine'),
+    target: 'spine',
+  }),
+  Object.freeze({
+    id: 'chest',
+    sourceAliases: aliases('NPC Spine2 [Spn2]', 'NPC Spine2', 'Spine2', 'spine2', 'Chest', 'chest'),
+    target: 'chest',
+  }),
+  Object.freeze({
+    id: 'head',
+    sourceAliases: aliases('NPC Head [Head]', 'NPC Head', 'Head', 'head'),
+    target: 'head',
+  }),
+  Object.freeze({
+    id: 'upperarm.l',
+    sourceAliases: aliases('NPC L UpperArm [LUar]', 'NPC L UpperArm', 'L UpperArm', 'UpperArm.L'),
+    target: 'upperarm.l',
+  }),
+  Object.freeze({
+    id: 'lowerarm.l',
+    sourceAliases: aliases('NPC L Forearm [LLar]', 'NPC L Forearm', 'L Forearm', 'Forearm.L'),
+    target: 'lowerarm.l',
+  }),
+  Object.freeze({
+    id: 'wrist.l',
+    sourceAliases: aliases('NPC L Hand [LHnd]', 'NPC L Hand', 'L Hand', 'Hand.L'),
+    target: 'wrist.l',
+  }),
+  Object.freeze({
+    id: 'upperarm.r',
+    sourceAliases: aliases('NPC R UpperArm [RUar]', 'NPC R UpperArm', 'R UpperArm', 'UpperArm.R'),
+    target: 'upperarm.r',
+  }),
+  Object.freeze({
+    id: 'lowerarm.r',
+    sourceAliases: aliases('NPC R Forearm [RLar]', 'NPC R Forearm', 'R Forearm', 'Forearm.R'),
+    target: 'lowerarm.r',
+  }),
+  Object.freeze({
+    id: 'wrist.r',
+    sourceAliases: aliases('NPC R Hand [RHnd]', 'NPC R Hand', 'R Hand', 'Hand.R'),
+    target: 'wrist.r',
+  }),
+  Object.freeze({
+    id: 'upperleg.l',
+    sourceAliases: aliases('NPC L Thigh [LThg]', 'NPC L Thigh', 'L Thigh', 'Thigh.L'),
+    target: 'upperleg.l',
+  }),
+  Object.freeze({
+    id: 'lowerleg.l',
+    sourceAliases: aliases('NPC L Calf [LClf]', 'NPC L Calf', 'L Calf', 'Calf.L'),
+    target: 'lowerleg.l',
+  }),
+  Object.freeze({
+    id: 'foot.l',
+    sourceAliases: aliases('NPC L Foot [Lft ]', 'NPC L Foot [Lft]', 'NPC L Foot', 'L Foot', 'Foot.L'),
+    target: 'foot.l',
+  }),
+  Object.freeze({
+    id: 'toes.l',
+    sourceAliases: aliases('NPC L Toe0 [LToe]', 'NPC L Toe0', 'L Toe0', 'Toe.L'),
+    target: 'toes.l',
+  }),
+  Object.freeze({
+    id: 'upperleg.r',
+    sourceAliases: aliases('NPC R Thigh [RThg]', 'NPC R Thigh', 'R Thigh', 'Thigh.R'),
+    target: 'upperleg.r',
+  }),
+  Object.freeze({
+    id: 'lowerleg.r',
+    sourceAliases: aliases('NPC R Calf [RClf]', 'NPC R Calf', 'R Calf', 'Calf.R'),
+    target: 'lowerleg.r',
+  }),
+  Object.freeze({
+    id: 'foot.r',
+    sourceAliases: aliases('NPC R Foot [Rft ]', 'NPC R Foot [Rft]', 'NPC R Foot', 'R Foot', 'Foot.R'),
+    target: 'foot.r',
+  }),
+  Object.freeze({
+    id: 'toes.r',
+    sourceAliases: aliases('NPC R Toe0 [RToe]', 'NPC R Toe0', 'R Toe0', 'Toe.R'),
+    target: 'toes.r',
+  }),
+]);
+
+function normalizedNodeName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function compactNodeName(value) {
+  return normalizedNodeName(value).replace(/[^a-z0-9]/g, '');
+}
+
+function nodeNameKeys(value) {
+  const normalized = normalizedNodeName(value);
+  const compact = compactNodeName(value);
+  return [...new Set([normalized, compact].filter(Boolean))];
+}
+
+function collectNamedNodes(root) {
+  const nodes = new Map();
+  root?.traverse?.((node) => {
+    for (const key of nodeNameKeys(node?.name)) {
+      if (!nodes.has(key)) nodes.set(key, node);
+    }
+  });
+  return nodes;
+}
+
+function findNode(root, namedNodes, sourceAliases) {
+  for (const alias of sourceAliases) {
+    const exact = root?.getObjectByName?.(alias);
+    if (exact) return exact;
+    for (const key of nodeNameKeys(alias)) {
+      const normalized = namedNodes.get(key);
+      if (normalized) return normalized;
+    }
+  }
+  return null;
+}
+
+function resolveSkyrimSourceNodes(root, retargets = SKYRIM_BONE_RETARGETS) {
+  if (!root) throw new Error('Skyrim retarget source is missing its hierarchy root');
+  const namedNodes = collectNamedNodes(root);
+  const nodes = {};
+  const missing = [];
+  for (const mapping of retargets) {
+    const node = findNode(root, namedNodes, mapping.sourceAliases || []);
+    if (node) nodes[mapping.id] = node;
+    else missing.push(mapping.id);
+  }
+  return { nodes, missing, valid: missing.length === 0 };
+}
+
+function validateSkyrimTargetRig(rig, retargets = SKYRIM_BONE_RETARGETS) {
+  const targetBones = new Set(Object.keys(rig?.bones || {}));
+  const missing = retargets.map(({ target }) => target).filter((target) => !targetBones.has(target));
+  return { valid: missing.length === 0, missing };
+}
+
+function createTargetProxy(THREE, rig) {
+  const root = new THREE.Object3D();
+  const bones = {};
+  for (const definition of rig.definition.bones) {
+    const bone = new THREE.Object3D();
+    const rest = rig.restTransforms[definition.id];
+    bone.name = sanitizeAnimationTargetName(definition.id);
+    bone.position.fromArray(rest.position);
+    bone.quaternion.fromArray(rest.quaternion);
+    bone.scale.fromArray(rest.scale);
+    (definition.parent ? bones[definition.parent] : root).add(bone);
+    bones[definition.id] = bone;
+  }
+  root.updateMatrixWorld(true);
+  return { root, bones };
+}
+
+function restoreTargetProxy(proxy, rig) {
+  for (const [boneId, rest] of Object.entries(rig.restTransforms)) {
+    const bone = proxy.bones[boneId];
+    bone.position.fromArray(rest.position);
+    bone.quaternion.fromArray(rest.quaternion);
+    bone.scale.fromArray(rest.scale);
+  }
+  proxy.root.updateMatrixWorld(true);
+}
+
+function worldSnapshot(THREE, object3d) {
+  return {
+    position: object3d.getWorldPosition(new THREE.Vector3()),
+    quaternion: object3d.getWorldQuaternion(new THREE.Quaternion()),
+  };
+}
+
+function sampleTimes(duration, fps) {
+  const step = 1 / Math.max(1, Number(fps) || 30);
+  const times = [];
+  for (let time = 0; time < duration - step * 0.25; time += step) times.push(time);
+  if (!times.length || Math.abs(times.at(-1) - duration) > 1e-5) times.push(duration);
+  return times;
+}
+
+function motionScale(sourceRest, targetRest) {
+  const sourceHeight = sourceRest.head.position.distanceTo(sourceRest.root.position);
+  const targetHeight = targetRest.head.position.distanceTo(targetRest.root.position);
+  if (sourceHeight < 0.001 || targetHeight < 0.001) return 1;
+  return Math.max(0.5, Math.min(1.5, targetHeight / sourceHeight));
+}
+
+function decodedSource(input) {
+  const root = input?.root || input?.scene || null;
+  const clip = input?.clip || input?.animations?.[0] || null;
+  return { root, clip };
+}
+
+function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
+  if (!THREE?.AnimationMixer || !THREE?.AnimationClip) {
+    throw new Error('Skyrim retargeting requires the Three.js animation runtime');
+  }
+  if (!rig?.definition || !rig?.restTransforms || !rig?.bones) {
+    throw new Error('Skyrim retargeting requires the Action Studio procedural target rig');
+  }
+
+  const { root: sourceRoot, clip: sourceClip } = decodedSource(decoded);
+  if (!sourceRoot || !sourceClip) {
+    throw new Error('Decoded Skyrim animation must provide a hierarchy root and an animation clip');
+  }
+
+  const retargets = options.boneRetargets || SKYRIM_BONE_RETARGETS;
+  const targetReport = validateSkyrimTargetRig(rig, retargets);
+  if (!targetReport.valid) {
+    throw new Error(`Action Studio rig is missing Skyrim retarget targets: ${targetReport.missing.join(', ')}`);
+  }
+
+  sourceRoot.updateMatrixWorld(true);
+  const sourceReport = resolveSkyrimSourceNodes(sourceRoot, retargets);
+  if (!sourceReport.valid) {
+    throw new Error(`Decoded Skyrim hierarchy is missing required bones: ${sourceReport.missing.join(', ')}`);
+  }
+
+  const targetProxy = createTargetProxy(THREE, rig);
+  const sourceRest = {};
+  const targetRest = {};
+  retargets.forEach(({ id, target }) => {
+    sourceRest[id] = worldSnapshot(THREE, sourceReport.nodes[id]);
+    targetRest[target] = worldSnapshot(THREE, targetProxy.bones[target]);
+  });
+
+  const translationScale = motionScale(sourceRest, targetRest);
+  const fps = Math.max(1, Number(options.fps) || 30);
+  const times = sampleTimes(sourceClip.duration, fps);
+  const samples = new Map(retargets.map(({ target, position }) => [target, {
+    quaternion: [],
+    position: position ? [] : null,
+  }]));
+
+  const mixer = new THREE.AnimationMixer(sourceRoot);
+  const action = mixer.clipAction(sourceClip).reset();
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+
+  const sourceWorldQuaternion = new THREE.Quaternion();
+  const sourceWorldPosition = new THREE.Vector3();
+  const rotationDelta = new THREE.Quaternion();
+  const desiredWorldQuaternion = new THREE.Quaternion();
+  const parentWorldQuaternion = new THREE.Quaternion();
+  const desiredWorldPosition = new THREE.Vector3();
+
+  times.forEach((time) => {
+    mixer.setTime(time);
+    sourceRoot.updateMatrixWorld(true);
+    restoreTargetProxy(targetProxy, rig);
+
+    retargets.forEach(({ id, target, position }) => {
+      const sourceBone = sourceReport.nodes[id];
+      const targetBone = targetProxy.bones[target];
+      sourceBone.getWorldQuaternion(sourceWorldQuaternion);
+      rotationDelta.copy(sourceWorldQuaternion).multiply(sourceRest[id].quaternion.clone().invert());
+      desiredWorldQuaternion.copy(rotationDelta).multiply(targetRest[target].quaternion);
+      targetBone.parent.getWorldQuaternion(parentWorldQuaternion);
+      targetBone.quaternion.copy(parentWorldQuaternion.invert().multiply(desiredWorldQuaternion)).normalize();
+
+      if (position) {
+        sourceBone.getWorldPosition(sourceWorldPosition);
+        desiredWorldPosition.copy(sourceWorldPosition)
+          .sub(sourceRest[id].position)
+          .multiplyScalar(translationScale)
+          .add(targetRest[target].position);
+        targetBone.position.copy(targetBone.parent.worldToLocal(desiredWorldPosition));
+      }
+
+      targetBone.updateMatrixWorld(true);
+      samples.get(target).quaternion.push(...targetBone.quaternion.toArray());
+      if (position) samples.get(target).position.push(...targetBone.position.toArray());
+    });
+  });
+  action.stop();
+
+  const clipId = String(options.clipId || sourceClip.name || 'SKYRIM_GUARD/Action');
+  const tracks = [];
+  retargets.forEach(({ target, position }) => {
+    const targetName = sanitizeAnimationTargetName(target);
+    tracks.push(new THREE.QuaternionKeyframeTrack(
+      `${targetName}.quaternion`, times, samples.get(target).quaternion,
+    ));
+    if (position) {
+      tracks.push(new THREE.VectorKeyframeTrack(
+        `${targetName}.position`, times, samples.get(target).position,
+      ));
+    }
+  });
+
+  const clip = new THREE.AnimationClip(clipId, sourceClip.duration, tracks);
+  clip.userData = {
+    source: 'skyrim',
+    sourceClip: sourceClip.name,
+    retargetFps: fps,
+    translationScale,
+    targetRigId: rig.definition.id,
+  };
+  return clip;
+}
+
+function createSkyrimRetargetLibrary(THREE, decodedEntries, rig, options = {}) {
+  const entries = Array.from(decodedEntries || []);
+  if (!entries.length) throw new Error('Skyrim retarget library requires at least one decoded animation');
+  const clips = new Map();
+  for (const entry of entries) {
+    const clip = retargetSkyrimClip(THREE, entry.decoded || entry, rig, {
+      ...options,
+      clipId: entry.clipId || options.clipId,
+    });
+    if (clips.has(clip.name)) throw new Error(`Duplicate Skyrim retarget clip id: ${clip.name}`);
+    clips.set(clip.name, clip);
+  }
+  return {
+    clips,
+    source: 'skyrim',
+    retargetFps: Math.max(1, Number(options.fps) || 30),
+    duplicates: [],
+  };
+}
+return Object.freeze({ SKYRIM_BONE_RETARGETS, resolveSkyrimSourceNodes, validateSkyrimTargetRig, retargetSkyrimClip, createSkyrimRetargetLibrary });
+})();
+
+// src/animation/skyrim-converted-animation-library.js
+const __actionStudioModule40 = (() => {
+const { retargetSkyrimClip } = __actionStudioModule41;
+
+const SKYRIM_GUARD_CONVERTED_FILES = Object.freeze([
+  Object.freeze({
+    id: 'shd_blockidle',
+    file: 'shd_blockidle.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockidle',
+    role: 'Guard Hold',
+  }),
+]);
+
+const DEFAULT_BASE_URL = '../../assets/skyrim/guard/converted/';
+
+function normalizedBaseUrl(value) {
+  return String(value || DEFAULT_BASE_URL).replace(/\/?$/, '/');
+}
+
+function loadGlb(loader, url) {
+  return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+}
+
+function parseGlb(loader, arrayBuffer) {
+  return new Promise((resolve, reject) => loader.parse(arrayBuffer, '', resolve, reject));
+}
+
+function disposeSourceScene(scene) {
+  scene?.traverse?.((object3d) => {
+    if (!object3d?.isMesh) return;
+    object3d.geometry?.dispose?.();
+    const materials = Array.isArray(object3d.material) ? object3d.material : [object3d.material];
+    materials.forEach((material) => material?.dispose?.());
+  });
+}
+
+function validateBridgeInput(THREE, rig, entry) {
+  if (!THREE) throw new Error('Skyrim converted-source bridge requires THREE');
+  if (!rig?.definition || !rig?.restTransforms || !rig?.bones) {
+    throw new Error('Skyrim converted-source bridge requires the Action Studio procedural target rig');
+  }
+  if (!entry?.clipId) throw new Error('Skyrim converted-source bridge requires a canonical clipId');
+}
+
+function retargetConvertedSkyrimGltf(THREE, gltf, rig, entry = SKYRIM_GUARD_CONVERTED_FILES[0], options = {}) {
+  validateBridgeInput(THREE, rig, entry);
+  const retarget = options.retargetClip || retargetSkyrimClip;
+  const scene = gltf?.scene || gltf?.root || null;
+  const clip = gltf?.animations?.[0] || gltf?.clip || null;
+  if (!scene || !clip) {
+    throw new Error('Converted Skyrim GLB must contain a named source hierarchy and at least one animation');
+  }
+  return retarget(THREE, { scene, animations: [clip] }, rig, {
+    fps: options.fps || 30,
+    clipId: entry.clipId,
+    boneRetargets: options.boneRetargets,
+  });
+}
+
+function createSkyrimConvertedAnimationLibrary(clip, options = {}) {
+  if (!clip?.name) throw new Error('Skyrim converted animation library requires a named retargeted clip');
+  return {
+    clips: new Map([[clip.name, clip]]),
+    files: options.files || SKYRIM_GUARD_CONVERTED_FILES,
+    source: 'skyrim',
+    retargetFps: Math.max(1, Number(options.fps) || 30),
+    duplicates: [],
+    bridge: 'converted-glb',
+  };
+}
+
+const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) => {
+  if (!loader?.load) throw new Error('loadSkyrimConvertedAnimationLibrary requires a GLTFLoader instance');
+  const THREE = options.THREE;
+  const rig = options.rig;
+  const files = options.files || SKYRIM_GUARD_CONVERTED_FILES;
+  if (!files.length) throw new Error('Skyrim converted animation library requires at least one source file');
+  const baseUrl = normalizedBaseUrl(options.baseUrl);
+  const clips = [];
+
+  for (const entry of files) {
+    let gltf;
+    try {
+      gltf = await loadGlb(loader, `${baseUrl}${entry.file}`);
+    } catch (error) {
+      const detail = error?.message ? `: ${error.message}` : '';
+      throw new Error(`Converted Skyrim source not found: ${entry.file}${detail}`);
+    }
+    try {
+      clips.push(retargetConvertedSkyrimGltf(THREE, gltf, rig, entry, options));
+    } finally {
+      disposeSourceScene(gltf?.scene);
+    }
+  }
+
+  return {
+    clips: new Map(clips.map((clip) => [clip.name, clip])),
+    files,
+    source: 'skyrim',
+    retargetFps: Math.max(1, Number(options.fps) || 30),
+    duplicates: [],
+    bridge: 'converted-glb',
+  };
+};
+
+const importSkyrimConvertedAnimationFile = async (loader, file, options = {}) => {
+  if (!loader?.parse) throw new Error('importSkyrimConvertedAnimationFile requires a GLTFLoader instance');
+  if (!file?.arrayBuffer) throw new Error('Select a converted Skyrim .glb file first');
+  const filename = String(file.name || '').toLowerCase();
+  if (filename && !filename.endsWith('.glb')) {
+    throw new Error('Local Skyrim bridge currently accepts self-contained .glb files only');
+  }
+
+  const entry = options.entry || SKYRIM_GUARD_CONVERTED_FILES[0];
+  const bytes = await file.arrayBuffer();
+  const gltf = await parseGlb(loader, bytes);
+  try {
+    const clip = retargetConvertedSkyrimGltf(options.THREE, gltf, options.rig, entry, options);
+    return createSkyrimConvertedAnimationLibrary(clip, {
+      files: [Object.freeze({ ...entry, localFile: file.name || entry.file })],
+      fps: options.fps || 30,
+    });
+  } finally {
+    disposeSourceScene(gltf?.scene);
+  }
+};
+return Object.freeze({ SKYRIM_GUARD_CONVERTED_FILES, retargetConvertedSkyrimGltf, createSkyrimConvertedAnimationLibrary, loadSkyrimConvertedAnimationLibrary, importSkyrimConvertedAnimationFile });
+})();
+
+// src/combat/longsword-directional-metadata.js
+const __actionStudioModule42 = (() => {
+const LONGSWORD_ATTACK_DIRECTIONS = Object.freeze(['top', 'right', 'left']);
+
+const LONGSWORD_DIRECTIONAL_ATTACKS = Object.freeze({
+  top: Object.freeze({
+    weapon: 'longsword',
+    direction: 'top',
+    clipId: 'UAL1/Sword_Attack',
+    contactSeconds: 0.43,
+  }),
+  right: Object.freeze({
+    weapon: 'longsword',
+    direction: 'right',
+    clipId: 'UAL2/Sword_Regular_A',
+    contactSeconds: 0.23,
+  }),
+  left: Object.freeze({
+    weapon: 'longsword',
+    direction: 'left',
+    clipId: 'UAL2/Sword_Regular_B',
+    contactSeconds: 0.30,
+  }),
+});
+
+const LONGSWORD_MOTION_METADATA = Object.freeze(Object.fromEntries(
+  Object.values(LONGSWORD_DIRECTIONAL_ATTACKS).map((entry) => [entry.clipId, entry]),
+));
+
+function getLongswordMotionMetadata(clipId) {
+  return LONGSWORD_MOTION_METADATA[String(clipId || '')] || null;
+}
+
+function getCanonicalMotionContactSeconds(clipId) {
+  const metadata = getLongswordMotionMetadata(clipId);
+  return metadata ? metadata.contactSeconds : null;
+}
+return Object.freeze({ LONGSWORD_ATTACK_DIRECTIONS, LONGSWORD_DIRECTIONAL_ATTACKS, LONGSWORD_MOTION_METADATA, getLongswordMotionMetadata, getCanonicalMotionContactSeconds });
+})();
+
 // tools/action-studio/studio-editor-view.js
-const __actionStudioModule39 = (() => {
+const __actionStudioModule43 = (() => {
 const { POSE_KEYS } = __actionStudioModule10;
 const { normalizeAnimationBinding } = __actionStudioModule19;
 const { clipMarkerSummary } = __actionStudioModule16;
@@ -8152,25 +8935,94 @@ function readAnimationBindingView(source = 'kaykit') {
 return Object.freeze({ renderTimelineView, updateTimelineReadoutView, renderKeyEditorView, renderPoseControlsView, renderWindowEditorView, renderMountEditorView, renderLibraryView, renderComboQueueView, renderAnimationBindingView, readAnimationBindingView });
 })();
 
+// tools/action-studio/studio-skyrim-bridge-controls.js
+const __actionStudioModule44 = (() => {
+function installStudioSkyrimBridgeControls() {
+  const sourceSelect = document.getElementById('animationPackSource');
+  if (sourceSelect && typeof sourceSelect.querySelector === 'function'
+      && !sourceSelect.querySelector('option[value="skyrim"]')) {
+    const option = document.createElement('option');
+    option.value = 'skyrim';
+    option.textContent = 'Skyrim Guard Probe';
+    sourceSelect.appendChild(option);
+  }
+
+  if (document.getElementById('importSkyrimConverted')) return;
+  const loadButton = document.getElementById('loadKayKitAnimations');
+  const parent = loadButton?.parentElement;
+  if (!loadButton || !parent || typeof parent.insertBefore !== 'function') return;
+
+  const importButton = document.createElement('button');
+  importButton.id = 'importSkyrimConverted';
+  importButton.type = 'button';
+  importButton.textContent = 'Import converted Skyrim GLB';
+  importButton.title = 'G2.2: load a local self-contained Skyrim source GLB, retarget it to the Action Studio Blockman rig, and keep the experimental asset out of Git.';
+
+  const fileInput = document.createElement('input');
+  fileInput.id = 'skyrimConvertedFile';
+  fileInput.type = 'file';
+  fileInput.accept = '.glb,model/gltf-binary';
+  fileInput.hidden = true;
+
+  parent.insertBefore(importButton, loadButton.nextSibling);
+  parent.insertBefore(fileInput, importButton.nextSibling);
+}
+return Object.freeze({ installStudioSkyrimBridgeControls });
+})();
+
 // tools/action-studio/studio-external-animation-controller.js
-const __actionStudioModule35 = (() => {
+const __actionStudioModule36 = (() => {
 const { createFittedAnimationBinding } = __actionStudioModule19;
 const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioModule11;
-const { UAL1_ANIMATION_FILES, loadUal1AnimationLibrary } = __actionStudioModule36;
-const { UAL2_ANIMATION_FILES, loadUal2AnimationLibrary } = __actionStudioModule38;
-const { readAnimationBindingView } = __actionStudioModule39;
+const { UAL1_ANIMATION_FILES, loadUal1AnimationLibrary } = __actionStudioModule37;
+const { UAL2_ANIMATION_FILES, loadUal2AnimationLibrary } = __actionStudioModule39;
+const { SKYRIM_GUARD_CONVERTED_FILES, importSkyrimConvertedAnimationFile, loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
+const { getCanonicalMotionContactSeconds, getLongswordMotionMetadata } = __actionStudioModule42;
+const { readAnimationBindingView } = __actionStudioModule43;
+const { installStudioSkyrimBridgeControls } = __actionStudioModule44;
 
 const SOURCE_INFO = Object.freeze({
   ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
   ual1: Object.freeze({ label: 'UAL1 Sword Basics', count: UAL1_ANIMATION_FILES.length, defaultClip: 'UAL1/Sword_Attack' }),
+  skyrim: Object.freeze({ label: 'Skyrim Guard Probe', count: SKYRIM_GUARD_CONVERTED_FILES.length, defaultClip: 'SKYRIM_GUARD/shd_blockidle' }),
   kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length, defaultClip: 'Idle_A' }),
 });
 
+const MOTION_CONTACT_STORAGE_KEY = 'ACTION_STUDIO_MOTION_CONTACTS_V1';
+
 function shouldLoopClip(name) {
-  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/.test(name);
+  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(name);
+}
+
+function displayClipName(name) {
+  return String(name || '').replace(/^(?:UAL[12]|SKYRIM_GUARD)\//, '');
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function readStoredContacts() {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const value = JSON.parse(localStorage.getItem(MOTION_CONTACT_STORAGE_KEY) || '{}');
+    return value && typeof value === 'object' ? value : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeStoredContacts(value) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(MOTION_CONTACT_STORAGE_KEY, JSON.stringify(value));
+  } catch (_error) {
+    // Preview metadata should never break animation playback when storage is unavailable.
+  }
 }
 
 function createStudioExternalAnimationController(options) {
+  installStudioSkyrimBridgeControls();
   const {
     THREE,
     character,
@@ -8188,6 +9040,11 @@ function createStudioExternalAnimationController(options) {
   const sourceSelect = document.getElementById('animationPackSource');
   const clipSelect = document.getElementById('kaykitClip');
   const status = document.getElementById('kaykitStatus');
+  const storedContacts = readStoredContacts();
+  let contactTimer = null;
+  let hitstopReleaseTimer = null;
+  let naturalPreviewAction = null;
+  let naturalPreviewToken = 0;
 
   function setStatus(message, isError = false) {
     status.textContent = message;
@@ -8198,6 +9055,75 @@ function createStudioExternalAnimationController(options) {
     return sourceSelect.value in SOURCE_INFO ? sourceSelect.value : 'ual2';
   }
 
+  function selectedLibraryClip() {
+    return libraries.get(selectedSource())?.clips.get(clipSelect.value) || null;
+  }
+
+  function contactSecondsFor(name, durationSeconds) {
+    const duration = Math.max(0, Number(durationSeconds) || 0);
+    if (Number.isFinite(Number(storedContacts[name]))) {
+      return clamp(storedContacts[name], 0, duration || Number(storedContacts[name]));
+    }
+    const canonicalContact = getCanonicalMotionContactSeconds(name);
+    if (Number.isFinite(canonicalContact)) {
+      return clamp(canonicalContact, 0, duration || canonicalContact);
+    }
+    return duration > 0 ? duration * 0.35 : 0;
+  }
+
+  function installContactControls() {
+    if (document.getElementById('externalImpactContact')) return;
+    const sourcePreviewButton = document.getElementById('playKayKitAnimation');
+    if (!sourcePreviewButton || typeof sourcePreviewButton.insertAdjacentHTML !== 'function') return;
+    sourcePreviewButton.insertAdjacentHTML('afterend', `
+      <button id="previewKayKitWithImpact" class="primary" title="Play the selected source at natural speed and trigger the active Combat Feel profile at this motion's own contact marker.">▶ Preview + Impact</button>
+      <label class="external-impact-contact">Impact contact
+        <output id="externalImpactContactValue">—</output>
+        <input id="externalImpactContact" type="range" min="0" max="1" step="0.01" value="0.35">
+      </label>
+      <span id="externalImpactContactStatus" class="status-line">Natural 1.00× · load a clip to edit contact timing</span>
+    `);
+  }
+
+  function refreshContactControls() {
+    const input = document.getElementById('externalImpactContact');
+    const output = document.getElementById('externalImpactContactValue');
+    const contactStatus = document.getElementById('externalImpactContactStatus');
+    if (!input || !output || !contactStatus) return;
+    const sourceClip = selectedLibraryClip();
+    const name = clipSelect.value;
+    if (!sourceClip || !name) {
+      input.disabled = true;
+      output.textContent = '—';
+      contactStatus.textContent = 'Natural 1.00× · load a clip to edit contact timing';
+      return;
+    }
+    const duration = Math.max(0.01, Number(sourceClip.duration) || 0.01);
+    const contact = contactSecondsFor(name, duration);
+    input.disabled = false;
+    input.min = '0';
+    input.max = String(duration);
+    input.step = '0.01';
+    input.value = String(contact);
+    output.textContent = `${contact.toFixed(2)}s`;
+    const canonicalMetadata = getLongswordMotionMetadata(name);
+    let source = 'estimated marker';
+    if (storedContacts[name] !== undefined) source = 'local override';
+    else if (canonicalMetadata) source = `canonical ${canonicalMetadata.weapon} ${canonicalMetadata.direction.toUpperCase()} marker`;
+    contactStatus.textContent = `Natural 1.00× · duration ${duration.toFixed(3)}s · ${source}`;
+  }
+
+  function saveCurrentContact(rawValue) {
+    const sourceClip = selectedLibraryClip();
+    const name = clipSelect.value;
+    if (!sourceClip || !name) return 0;
+    const contact = clamp(rawValue, 0, Number(sourceClip.duration) || 0);
+    storedContacts[name] = contact;
+    writeStoredContacts(storedContacts);
+    refreshContactControls();
+    return contact;
+  }
+
   function populate(source, preferredClipId = '') {
     clipSelect.innerHTML = '';
     const library = libraries.get(source);
@@ -8206,21 +9132,41 @@ function createStudioExternalAnimationController(options) {
       option.value = '';
       option.textContent = `Load ${SOURCE_INFO[source].label} first`;
       clipSelect.appendChild(option);
+      refreshContactControls();
       return;
     }
     [...library.clips.keys()].forEach((name) => {
       const option = document.createElement('option');
       option.value = name;
-      option.textContent = name.replace(/^UAL[12]\//, '');
+      option.textContent = displayClipName(name);
       clipSelect.appendChild(option);
     });
     clipSelect.value = library.clips.has(preferredClipId)
       ? preferredClipId
       : SOURCE_INFO[source].defaultClip;
+    refreshContactControls();
+  }
+
+  function registerLibrary(source, library, preferredClipId = '') {
+    character.registerAnimations(library);
+    libraries.set(source, library);
+    populate(source, preferredClipId || getAction()?.animationBinding?.clipId);
+    const info = SOURCE_INFO[source];
+    const detail = source === 'kaykit'
+      ? `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`
+      : source === 'skyrim'
+        ? `${library.clips.size} converted Guard clip${library.clips.size === 1 ? '' : 's'} retargeted at ${library.retargetFps} fps`
+        : `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`;
+    setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
+    renderBinding();
+    return library;
   }
 
   async function load(source = selectedSource()) {
-    if (libraries.has(source)) return libraries.get(source);
+    if (libraries.has(source)) {
+      populate(source, clipSelect.value || getAction()?.animationBinding?.clipId);
+      return libraries.get(source);
+    }
     if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
     if (location.protocol === 'file:') throw new Error('External GLB animations require the local HTTP server');
     const info = SOURCE_INFO[source];
@@ -8241,18 +9187,31 @@ function createStudioExternalAnimationController(options) {
         baseUrl: '../../assets/UAL2_Sword_Combat_Package/Animation_Only/No_Root_Motion/',
         fps: 30,
       });
+    } else if (source === 'skyrim') {
+      library = await loadSkyrimConvertedAnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/skyrim/guard/converted/',
+        fps: 30,
+      });
     } else {
       library = await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
     }
-    character.registerAnimations(library);
-    libraries.set(source, library);
-    populate(source, getAction()?.animationBinding?.clipId);
-    const detail = source === 'kaykit'
-      ? `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`
-      : `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`;
-    setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
-    renderBinding();
-    return library;
+    return registerLibrary(source, library);
+  }
+
+  async function importConvertedSkyrimFile(file) {
+    if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
+    setStatus(`Importing local Skyrim Guard bridge · ${file?.name || 'select a .glb'}…`);
+    const loader = new THREE.GLTFLoader();
+    const library = await importSkyrimConvertedAnimationFile(loader, file, {
+      THREE,
+      rig: character.rig,
+      fps: 30,
+      entry: SKYRIM_GUARD_CONVERTED_FILES[0],
+    });
+    sourceSelect.value = 'skyrim';
+    return registerLibrary('skyrim', library, SOURCE_INFO.skyrim.defaultClip);
   }
 
   async function ensureBinding(binding) {
@@ -8275,13 +9234,25 @@ function createStudioExternalAnimationController(options) {
     const controlBinding = readAnimationBindingView(source);
     const sourceClip = library.clips.get(controlBinding.clipId);
     if (!sourceClip) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
-    setBinding(fitToAction ? createFittedAnimationBinding({
+    const binding = fitToAction ? createFittedAnimationBinding({
       ...controlBinding,
       source,
       animationDurationSeconds: sourceClip.duration,
       durationFrames: getClip().durationFrames,
       fps: getClip().fps,
-    }) : controlBinding);
+    }) : controlBinding;
+    setBinding(binding);
+    return binding;
+  }
+
+  function clearNaturalPreviewTimers() {
+    naturalPreviewToken += 1;
+    if (contactTimer !== null) clearTimeout(contactTimer);
+    if (hitstopReleaseTimer !== null) clearTimeout(hitstopReleaseTimer);
+    contactTimer = null;
+    hitstopReleaseTimer = null;
+    if (naturalPreviewAction) naturalPreviewAction.paused = false;
+    naturalPreviewAction = null;
   }
 
   async function playSelected() {
@@ -8289,30 +9260,106 @@ function createStudioExternalAnimationController(options) {
     await load(source);
     const name = clipSelect.value;
     if (!name) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+    clearNaturalPreviewTimers();
     pausePlayer();
     clearWeaponTrail();
     setAnimationSource(`${source}-preview`);
     character.playAnimation(name, { loop: shouldLoopClip(name), inPlace: true });
-    document.getElementById('clipNow').textContent = name.replace(/^UAL[12]\//, '').toUpperCase();
+    document.getElementById('clipNow').textContent = displayClipName(name).toUpperCase();
     document.getElementById('phaseNow').textContent = source === 'kaykit'
       ? 'KAYKIT RUNTIME'
       : `${source.toUpperCase()} RETARGET PREVIEW`;
     updatePlaybackButtons();
   }
 
+  function emitExternalImpact() {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+    const EventCtor = globalThis.CustomEvent || window.CustomEvent;
+    if (!EventCtor) return;
+    window.dispatchEvent(new EventCtor('action-studio-external-impact'));
+  }
+
+  function activeFeelProfile() {
+    if (typeof window === 'undefined') return 'active profile';
+    return window.__actionStudio?.combatFeelProfile || 'active profile';
+  }
+
+  async function playSelectedWithImpact() {
+    const source = selectedSource();
+    const library = await load(source);
+    const name = clipSelect.value;
+    const sourceClip = library.clips.get(name);
+    if (!sourceClip) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+
+    clearNaturalPreviewTimers();
+    pausePlayer();
+    clearWeaponTrail();
+    const duration = Math.max(0, Number(sourceClip.duration) || 0);
+    const contactInput = document.getElementById('externalImpactContact');
+    const contactSeconds = clamp(contactInput?.value ?? contactSecondsFor(name, duration), 0, duration);
+    const inPlace = document.getElementById('animationBindingInPlace')?.checked !== false;
+    const token = naturalPreviewToken;
+
+    setAnimationSource(`${source}-impact-preview`);
+    naturalPreviewAction = character.playAnimation(name, {
+      loop: false,
+      inPlace,
+      speed: 1,
+      fadeSeconds: 0.04,
+    });
+    document.getElementById('clipNow').textContent = displayClipName(name).toUpperCase();
+    document.getElementById('phaseNow').textContent = `${source.toUpperCase()} NATURAL IMPACT PREVIEW`;
+    updatePlaybackButtons();
+
+    contactTimer = setTimeout(() => {
+      if (token !== naturalPreviewToken) return;
+      if (naturalPreviewAction) naturalPreviewAction.paused = true;
+      emitExternalImpact();
+      const hitstopSeconds = Math.max(0, Number(document.getElementById('hitstop')?.value) || 0);
+      hitstopReleaseTimer = setTimeout(() => {
+        if (token !== naturalPreviewToken) return;
+        if (naturalPreviewAction) naturalPreviewAction.paused = false;
+      }, hitstopSeconds * 1000);
+    }, contactSeconds * 1000);
+
+    const clipName = displayClipName(name);
+    setStatus(`impact preview · ${clipName} · Natural 1.00× · contact ${contactSeconds.toFixed(2)}s · ${activeFeelProfile()}`);
+    return {
+      source,
+      clipId: name,
+      speed: 1,
+      durationSeconds: duration,
+      contactSeconds,
+    };
+  }
+
+  installContactControls();
+  const impactButton = document.getElementById('previewKayKitWithImpact');
+  impactButton?.addEventListener('click', () => {
+    playSelectedWithImpact().catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('externalImpactContact')?.addEventListener('input', (event) => {
+    saveCurrentContact(event.target.value);
+  });
+
   sourceSelect.addEventListener('change', () => {
+    clearNaturalPreviewTimers();
     const source = selectedSource();
     populate(source, getAction()?.animationBinding?.source === source ? getAction().animationBinding.clipId : '');
     const state = libraries.has(source) ? 'ready' : 'not loaded';
     setStatus(`${SOURCE_INFO[source].label} · ${state}`);
   });
+  clipSelect.addEventListener('change', refreshContactControls);
   document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
     load().catch((error) => setStatus(error.message, true));
   });
   document.getElementById('playKayKitAnimation').addEventListener('click', () => {
     playSelected().catch((error) => setStatus(error.message, true));
   });
-  document.getElementById('stopKayKitAnimation').addEventListener('click', applyCurrentEvaluation);
+  document.getElementById('stopKayKitAnimation').addEventListener('click', () => {
+    clearNaturalPreviewTimers();
+    applyCurrentEvaluation();
+  });
   document.getElementById('bindKayKitAnimation').addEventListener('click', () => {
     bindSelected(false).catch((error) => setStatus(error.message, true));
   });
@@ -8322,6 +9369,16 @@ function createStudioExternalAnimationController(options) {
   document.getElementById('clearAnimationBinding').addEventListener('click', () => {
     setBinding({ source: 'authored', clipId: getClip().id });
   });
+
+  const skyrimFileInput = document.getElementById('skyrimConvertedFile');
+  document.getElementById('importSkyrimConverted')?.addEventListener('click', () => skyrimFileInput?.click());
+  skyrimFileInput?.addEventListener('change', () => {
+    const file = skyrimFileInput.files?.[0];
+    if (!file) return;
+    importConvertedSkyrimFile(file).catch((error) => setStatus(error.message, true));
+    skyrimFileInput.value = '';
+  });
+
   populate(selectedSource());
 
   return {
@@ -8330,10 +9387,16 @@ function createStudioExternalAnimationController(options) {
     isAvailable,
     ensureBinding,
     load,
+    importConvertedSkyrimFile,
+    bindSelected,
     playSelected,
+    playSelectedWithImpact,
+    refreshContactControls,
+    saveCurrentContact,
     setStatus,
     playClip(source, name, playOptions = {}) {
       if (!libraries.has(source)) throw new Error(`${SOURCE_INFO[source]?.label || source} is not loaded`);
+      clearNaturalPreviewTimers();
       setAnimationSource(`${source}-preview`);
       return character.playAnimation(name, playOptions);
     },
@@ -8355,15 +9418,16 @@ const { ActionMotionPlayer } = __actionStudioModule17;
 const { ACTION_TEMPLATE_FACTORIES } = __actionStudioModule20;
 const { createActionDefinition, isFrameInWindow } = __actionStudioModule23;
 const { createStudioPreviewRuntime } = __actionStudioModule24;
-const { createWholeBodyMotionGuideOverlay } = __actionStudioModule25;
-const { createStudioMotionGuideEditor } = __actionStudioModule26;
-const { bakeStudioMotionConstraints } = __actionStudioModule27;
-const { createStudioPoseDragController } = __actionStudioModule28;
-const { captureNextBlockingKey, createStudioBlockingWorkflow } = __actionStudioModule31;
-const { createStudioProjectIoController } = __actionStudioModule32;
-const { createStudioExternalAnimationController } = __actionStudioModule35;
-const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule39;
-const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule34;
+const { createStudioCombatFeelController } = __actionStudioModule25;
+const { createWholeBodyMotionGuideOverlay } = __actionStudioModule26;
+const { createStudioMotionGuideEditor } = __actionStudioModule27;
+const { bakeStudioMotionConstraints } = __actionStudioModule28;
+const { createStudioPoseDragController } = __actionStudioModule29;
+const { captureNextBlockingKey, createStudioBlockingWorkflow } = __actionStudioModule32;
+const { createStudioProjectIoController } = __actionStudioModule33;
+const { createStudioExternalAnimationController } = __actionStudioModule36;
+const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule43;
+const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule35;
 
 const THREE = window.THREE;
 if (!THREE) throw new Error('Action Studio requires Three.js r128');
@@ -8384,6 +9448,7 @@ const preview = createStudioPreviewRuntime(THREE, {
   impactFlash: document.getElementById('impactFlash'),
   isDummyEnabled: () => document.getElementById('dummyToggle').checked,
 });
+const combatFeelController = createStudioCombatFeelController(preview);
 
 const player = new ActionMotionPlayer({
   adapter: {
@@ -8857,7 +9922,7 @@ document.getElementById('resetMount').addEventListener('click', () => {
   document.getElementById('socketStatus').textContent = 'attached · reset';
 });
 
-[['hitstop', 'hitstopValue', 'hitstop', (value) => `${value.toFixed(2)}s`],
+[['hitstop', 'hitstopValue', 'hitstop', (value) => `${value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}s`],
  ['shake', 'shakeValue', 'shake', (value) => value.toFixed(2)],
  ['knockback', 'knockbackValue', 'knockback', (value) => value.toFixed(2)]].forEach(([id, outputId, key, format]) => {
   document.getElementById(id).addEventListener('input', (event) => {
@@ -8935,6 +10000,8 @@ window.__actionStudio = {
     return { start: start.toArray(), end: end.toArray() };
   },
   get animationSource() { return animationSource; },
+  get combatFeelProfile() { return preview.activeFeelProfile; },
+  applyCombatFeelProfile: (slot) => combatFeelController.applyProfile(slot),
   get motionGuide() { return motionGuideEditor.guide; },
   get motionGuideDirty() { return motionGuideEditor.dirty; },
   get motionGuideDiagnostics() { return motionGuideOverlay.diagnostics; },

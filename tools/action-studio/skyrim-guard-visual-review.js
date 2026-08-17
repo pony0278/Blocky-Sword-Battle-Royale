@@ -62,6 +62,7 @@ function formatSeconds(value) {
 function setView(view) {
   if (view === 'front') { yaw = 0; pitch = 0; }
   else if (view === 'side') { yaw = Math.PI / 2; pitch = 0; }
+  else if (view === 'back') { yaw = Math.PI; pitch = 0; }
   else { yaw = Math.PI / 4; pitch = 0.04; }
   updateCamera();
 }

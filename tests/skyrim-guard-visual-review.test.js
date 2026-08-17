@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   SKYRIM_GUARD_VISUAL_REVIEW_ITEMS,
   classifySkyrimGuardLoopSeam,
   decideSkyrimGuardVisualReview,
 } from '../src/combat/skyrim-guard-visual-review.js';
+
+test('G2.3 review exposes deterministic front, three-quarter, side, and back views', async () => {
+  const html = await readFile(new URL('../tools/action-studio/skyrim-guard-visual-review.html', import.meta.url), 'utf8');
+  const script = await readFile(new URL('../tools/action-studio/skyrim-guard-visual-review.js', import.meta.url), 'utf8');
+  assert.match(html, /data-view="front"/);
+  assert.match(html, /data-view="three"/);
+  assert.match(html, /data-view="side"/);
+  assert.match(html, /data-view="back"/);
+  assert.match(script, /view === 'back'/);
+  assert.match(script, /yaw = Math.PI/);
+});
 
 test('G2.3 review keeps the five agreed visual gates explicit', () => {
   assert.deepEqual(SKYRIM_GUARD_VISUAL_REVIEW_ITEMS.map((item) => item.id), [

@@ -16,7 +16,7 @@ The entry file is a composition root. Its extracted responsibilities live in:
 - `studio-project-io-controller.js` — JSON copy/download/file import plus recoverable local autosaves.
 - `studio-motion-constraint-baker.js` — editor-only sword-hand windup fitting and off-hand fitting against the procedural sword's secondary grip.
 - `studio-external-animation-controller.js` — KayKit loading plus UAL1/UAL2/Skyrim sword-clip retarget, preview, fit and JSON binding.
-- `skyrim-guard-visual-review.html` — G2.3 dedicated first-real-bake review for `SKYRIM_GUARD/shd_blockidle`, including local source-GLB import, Front/Side/3/4 views, loop-seam metrics, and ADOPT decision gates.
+- `skyrim-guard-visual-review.html` — G2.3 dedicated first-real-bake review for `SKYRIM_GUARD/shd_blockidle`, including local source-GLB import, Front/3-quarter/Side/Back views, loop-seam metrics, and ADOPT decision gates.
 
 Action motion is driven by `src/animation/action-motion-player.js`. Every action owns a normalized `animationBinding`: `authored` uses Action Studio pose keys, while `kaykit`, `ual1`, `ual2`, and `skyrim` reference a clip by name and deterministically map the action frame to animation time. The JSON never embeds a Three.js `AnimationClip` or GLB data.
 

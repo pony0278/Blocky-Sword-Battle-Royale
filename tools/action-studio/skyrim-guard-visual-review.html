@@ -22,7 +22,7 @@
     button,input { background:#0b1017; color:#eff5ff; border:1px solid #3a475d; border-radius:8px; padding:9px; }
     button { cursor:pointer; font-weight:700; } button.primary { background:#243758; border-color:#5272aa; }
     button.on { outline:1px solid #8db3ff; background:#263c62; }
-    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:7px; }.grid.three { grid-template-columns:repeat(3,1fr); }
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:7px; }.grid.three { grid-template-columns:repeat(3,1fr); }.grid.four { grid-template-columns:repeat(4,1fr); }
     .status { margin-top:9px; padding:9px; border-radius:8px; background:#0b1017; color:#b8c5d8; font-size:12px; line-height:1.5; }.status.error { color:#ff9d9d; }
     .row { display:grid; grid-template-columns:145px 1fr; gap:8px; padding:6px 0; border-bottom:1px solid #252d39; font-size:12px; }.row span:first-child { color:#8f9caf; }
     .rating { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; padding:9px 0; border-bottom:1px solid #252d39; }
@@ -61,7 +61,7 @@
 
     <section class="panel">
       <h2>Camera</h2>
-      <div class="grid three"><button data-view="front">Front</button><button data-view="side">Side</button><button data-view="three">3/4</button></div>
+      <div class="grid four"><button data-view="front">Front</button><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="back">Back</button></div>
       <p class="hint">Drag the stage to orbit. Review silhouette with the actual procedural longsword mounted on HAND_R.</p>
     </section>
 
