@@ -17,7 +17,7 @@ export function installStudioSkyrimBridgeControls() {
   importButton.id = 'importSkyrimConverted';
   importButton.type = 'button';
   importButton.textContent = 'Import converted Skyrim GLB';
-  importButton.title = 'G2.2: import a local self-contained Skyrim source GLB, retarget it to the Action Studio Blockman rig, and keep the experimental asset out of Git.';
+  importButton.title = 'G2.2: load a local self-contained Skyrim source GLB, retarget it to the Action Studio Blockman rig, and keep the experimental asset out of Git.';
 
   const fileInput = document.createElement('input');
   fileInput.id = 'skyrimConvertedFile';
