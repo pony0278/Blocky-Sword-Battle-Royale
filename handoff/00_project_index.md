@@ -100,6 +100,21 @@
 - 避免 Loot 數值膨脹
 - 可用的 Utility / Consumable 類道具
 
+### 07 — Directional Guard V1：Triangle Forward Guard
+`07_directional_triangle_guard_spec.md`
+
+內容：
+- KayKit `Melee_Block` / `Melee_Blocking` 作為 authored Guard base 的使用邊界
+- 劍尖、持劍手、空手形成前向 Triangle Guard
+- TOP / RIGHT / LEFT 三向 Guard silhouette 規格
+- 手肘內收、縮小胸腹空隙與前向威脅感
+- Directional additive bone layer 與 blend 規則
+- Action Studio Directional Guard Lab V1 UI / debug visuals
+- Guard Enter / Hold / Block Hit / Counter presentation chain
+- Canonical guard metadata 建議格式
+- G1～G5 實作階段與視覺驗收條件
+- Authoring presentation 與 authoritative combat 判定邊界
+
 ---
 
 ## 建議開發階段
