@@ -12,21 +12,32 @@ import {
   loadUal2AnimationLibrary,
 } from '../../src/animation/ual2-animation-library.js';
 import {
+  SKYRIM_GUARD_CONVERTED_FILES,
+  importSkyrimConvertedAnimationFile,
+  loadSkyrimConvertedAnimationLibrary,
+} from '../../src/animation/skyrim-converted-animation-library.js';
+import {
   getCanonicalMotionContactSeconds,
   getLongswordMotionMetadata,
 } from '../../src/combat/longsword-directional-metadata.js';
 import { readAnimationBindingView } from './studio-editor-view.js';
+import { installStudioSkyrimBridgeControls } from './studio-skyrim-bridge-controls.js';
 
 const SOURCE_INFO = Object.freeze({
   ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
   ual1: Object.freeze({ label: 'UAL1 Sword Basics', count: UAL1_ANIMATION_FILES.length, defaultClip: 'UAL1/Sword_Attack' }),
+  skyrim: Object.freeze({ label: 'Skyrim Guard Probe', count: SKYRIM_GUARD_CONVERTED_FILES.length, defaultClip: 'SKYRIM_GUARD/shd_blockidle' }),
   kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length, defaultClip: 'Idle_A' }),
 });
 
 const MOTION_CONTACT_STORAGE_KEY = 'ACTION_STUDIO_MOTION_CONTACTS_V1';
 
 function shouldLoopClip(name) {
-  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/.test(name);
+  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(name);
+}
+
+function displayClipName(name) {
+  return String(name || '').replace(/^(?:UAL[12]|SKYRIM_GUARD)\//, '');
 }
 
 function clamp(value, min, max) {
@@ -53,6 +64,7 @@ function writeStoredContacts(value) {
 }
 
 export function createStudioExternalAnimationController(options) {
+  installStudioSkyrimBridgeControls();
   const {
     THREE,
     character,
@@ -168,13 +180,28 @@ export function createStudioExternalAnimationController(options) {
     [...library.clips.keys()].forEach((name) => {
       const option = document.createElement('option');
       option.value = name;
-      option.textContent = name.replace(/^UAL[12]\//, '');
+      option.textContent = displayClipName(name);
       clipSelect.appendChild(option);
     });
     clipSelect.value = library.clips.has(preferredClipId)
       ? preferredClipId
       : SOURCE_INFO[source].defaultClip;
     refreshContactControls();
+  }
+
+  function registerLibrary(source, library, preferredClipId = '') {
+    character.registerAnimations(library);
+    libraries.set(source, library);
+    populate(source, preferredClipId || getAction()?.animationBinding?.clipId);
+    const info = SOURCE_INFO[source];
+    const detail = source === 'kaykit'
+      ? `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`
+      : source === 'skyrim'
+        ? `${library.clips.size} converted Guard clip${library.clips.size === 1 ? '' : 's'} retargeted at ${library.retargetFps} fps`
+        : `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`;
+    setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
+    renderBinding();
+    return library;
   }
 
   async function load(source = selectedSource()) {
@@ -202,18 +229,31 @@ export function createStudioExternalAnimationController(options) {
         baseUrl: '../../assets/UAL2_Sword_Combat_Package/Animation_Only/No_Root_Motion/',
         fps: 30,
       });
+    } else if (source === 'skyrim') {
+      library = await loadSkyrimConvertedAnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/skyrim/guard/converted/',
+        fps: 30,
+      });
     } else {
       library = await loadKayKitAnimationLibrary(loader, { baseUrl: '../../assets/kaykit/animations/' });
     }
-    character.registerAnimations(library);
-    libraries.set(source, library);
-    populate(source, getAction()?.animationBinding?.clipId);
-    const detail = source === 'kaykit'
-      ? `${library.clips.size} unique clips · ${library.duplicates.length} duplicates ignored`
-      : `${library.clips.size} sword clips retargeted at ${library.retargetFps} fps`;
-    setStatus(`ready · ${info.label} · ${detail} · ${Object.keys(character.rig.bones).length} target bones`);
-    renderBinding();
-    return library;
+    return registerLibrary(source, library);
+  }
+
+  async function importConvertedSkyrimFile(file) {
+    if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
+    setStatus(`Importing local Skyrim Guard bridge · ${file?.name || 'select a .glb'}…`);
+    const loader = new THREE.GLTFLoader();
+    const library = await importSkyrimConvertedAnimationFile(loader, file, {
+      THREE,
+      rig: character.rig,
+      fps: 30,
+      entry: SKYRIM_GUARD_CONVERTED_FILES[0],
+    });
+    sourceSelect.value = 'skyrim';
+    return registerLibrary('skyrim', library, SOURCE_INFO.skyrim.defaultClip);
   }
 
   async function ensureBinding(binding) {
@@ -267,7 +307,7 @@ export function createStudioExternalAnimationController(options) {
     clearWeaponTrail();
     setAnimationSource(`${source}-preview`);
     character.playAnimation(name, { loop: shouldLoopClip(name), inPlace: true });
-    document.getElementById('clipNow').textContent = name.replace(/^UAL[12]\//, '').toUpperCase();
+    document.getElementById('clipNow').textContent = displayClipName(name).toUpperCase();
     document.getElementById('phaseNow').textContent = source === 'kaykit'
       ? 'KAYKIT RUNTIME'
       : `${source.toUpperCase()} RETARGET PREVIEW`;
@@ -309,7 +349,7 @@ export function createStudioExternalAnimationController(options) {
       speed: 1,
       fadeSeconds: 0.04,
     });
-    document.getElementById('clipNow').textContent = name.replace(/^UAL[12]\//, '').toUpperCase();
+    document.getElementById('clipNow').textContent = displayClipName(name).toUpperCase();
     document.getElementById('phaseNow').textContent = `${source.toUpperCase()} NATURAL IMPACT PREVIEW`;
     updatePlaybackButtons();
 
@@ -324,7 +364,7 @@ export function createStudioExternalAnimationController(options) {
       }, hitstopSeconds * 1000);
     }, contactSeconds * 1000);
 
-    const clipName = name.replace(/^UAL[12]\//, '');
+    const clipName = displayClipName(name);
     setStatus(`impact preview · ${clipName} · Natural 1.00× · contact ${contactSeconds.toFixed(2)}s · ${activeFeelProfile()}`);
     return {
       source,
@@ -371,6 +411,16 @@ export function createStudioExternalAnimationController(options) {
   document.getElementById('clearAnimationBinding').addEventListener('click', () => {
     setBinding({ source: 'authored', clipId: getClip().id });
   });
+
+  const skyrimFileInput = document.getElementById('skyrimConvertedFile');
+  document.getElementById('importSkyrimConverted')?.addEventListener('click', () => skyrimFileInput?.click());
+  skyrimFileInput?.addEventListener('change', () => {
+    const file = skyrimFileInput.files?.[0];
+    if (!file) return;
+    importConvertedSkyrimFile(file).catch((error) => setStatus(error.message, true));
+    skyrimFileInput.value = '';
+  });
+
   populate(selectedSource());
 
   return {
@@ -379,6 +429,7 @@ export function createStudioExternalAnimationController(options) {
     isAvailable,
     ensureBinding,
     load,
+    importConvertedSkyrimFile,
     bindSelected,
     playSelected,
     playSelectedWithImpact,

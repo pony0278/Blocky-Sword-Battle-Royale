@@ -1,4 +1,4 @@
-export const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2', 'ual1']);
+export const ACTION_MOTION_SOURCES = Object.freeze(['authored', 'kaykit', 'ual2', 'ual1', 'skyrim']);
 
 function finiteNumber(value, fallback) {
   const number = Number(value);

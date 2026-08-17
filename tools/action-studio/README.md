@@ -15,9 +15,10 @@ The entry file is a composition root. Its extracted responsibilities live in:
 - `studio-blocking-workflow.js` — one-click next-key capture, adjacent-key onion skins, and sampled palm / sword-tip trajectories.
 - `studio-project-io-controller.js` — JSON copy/download/file import plus recoverable local autosaves.
 - `studio-motion-constraint-baker.js` — editor-only sword-hand windup fitting and off-hand fitting against the procedural sword's secondary grip.
-- `studio-external-animation-controller.js` — KayKit loading plus UAL1/UAL2 sword-clip retarget, preview, fit and JSON binding.
+- `studio-external-animation-controller.js` — KayKit loading plus UAL1/UAL2/Skyrim sword-clip retarget, preview, fit and JSON binding.
+- `skyrim-guard-visual-review.html` — G2.3 dedicated first-real-bake review for `SKYRIM_GUARD/shd_blockidle`, including local source-GLB import, Front/Side/3/4 views, loop-seam metrics, and ADOPT decision gates.
 
-Action motion is driven by `src/animation/action-motion-player.js`. Every action owns a normalized `animationBinding`: `authored` uses Action Studio pose keys, while `kaykit`, `ual1`, and `ual2` reference a clip by name and deterministically map the action frame to animation time. The JSON never embeds a Three.js `AnimationClip` or GLB data.
+Action motion is driven by `src/animation/action-motion-player.js`. Every action owns a normalized `animationBinding`: `authored` uses Action Studio pose keys, while `kaykit`, `ual1`, `ual2`, and `skyrim` reference a clip by name and deterministically map the action frame to animation time. The JSON never embeds a Three.js `AnimationClip` or GLB data.
 
 The first Whole-Body Motion preset is `advancing_vertical_chop`. Its compact guide data is stored in `clip.metadata.motionGuide`; the editor bakes it into seven ordinary Pose Keys, so runtime playback does not depend on the editor or solver.
 
@@ -39,5 +40,7 @@ The UAL2 library loads the eight `Animation_Only/No_Root_Motion` sword clips. It
 
 The UAL1 split package manifest and Action Studio integration expose the two GLBs that are actually present in this checkout: `Sword_Attack` and `Sword_Idle`. They use the same Quaternius 65-node source skeleton and rest-aware 30 fps retarget path, producing clips named `UAL1/<source name>`. The source package is CC0 1.0.
 
-The generated `index.html` deliberately loads a classic script so the pose editor can open directly through `file://` without browser ES-module CORS errors. Loading any external animation library requires serving the repository through local HTTP.
+The Skyrim G2 bridge keeps the Action Studio Blockman rig as the canonical target. A converted source GLB retains the Skyrim source hierarchy and is retargeted to `SKYRIM_GUARD/shd_blockidle` by the repository adapter. During the probe, converted GLBs stay local and are ignored by Git.
+
+The generated `index.html` deliberately loads a classic script so the pose editor can open directly through `file://` without browser ES-module CORS errors. Loading any external animation library or the G2.3 source-GLB review requires serving the repository through local HTTP.
 

@@ -115,6 +115,78 @@
 - G1～G5 實作階段與視覺驗收條件
 - Authoring presentation 與 authoritative combat 判定邊界
 
+### 08 — G2 Skyrim Guard Visual Retarget Probe
+`08_skyrim_guard_visual_retarget_probe.md`
+
+內容：
+- `shd_blockidle.hkx` 單一 Guard Hold 母姿勢驗證
+- HKX + matching Skyrim skeleton 的 offline conversion boundary
+- Skyrim humanoid → procedural Blockman semantic bone mapping
+- rest-pose delta / axis correction retarget strategy
+- 30 fps in-place GLB bake 規格
+- shield-oriented 左臂的 correction-cost 判定
+- Action Studio G2 review mode
+- ADOPT / ADOPT WITH CORRECTIONS / REJECT 驗收條件
+- G2.1～G2.5 decode、mapping、bake、visual review、decision record
+- 通過後才進 G3 Guard Family 與 G4 三向 Triangle Guard additive authoring
+
+### 09 — G2.1 Skyrim → Action Studio Retarget Adapter
+`09_skyrim_action_studio_retarget_adapter.md`
+
+內容：
+- Action Studio Blockman rig 作為 canonical target skeleton
+- 19 個 Skyrim humanoid semantic bone mappings
+- bracketed Skyrim bone names 與 exporter alias resolution
+- decoder-independent `{ root, clip }` / `{ scene, animations }` contract
+- world-space rest-pose delta → target-local quaternion bake
+- root / pelvis translation scale policy
+- 30 fps `THREE.AnimationClip` runtime output
+- G2.2 decoder bridge 與 `shd_blockidle` first bake 接口
+
+### 10 — G2.2 Skyrim HKX Decoder Bridge
+`10_skyrim_hkx_decoder_bridge.md`
+
+內容：
+- `shd_blockidle.hkx` 真實檔案 marker / SHA-256 probe record
+- `npm run probe:skyrim-hkx -- <file.hkx>` raw source gate
+- Havok decoder 與遊戲 runtime 的 dependency boundary
+- self-contained Skyrim source GLB contract
+- `assets/skyrim/guard/converted/shd_blockidle.source.glb` canonical bridge slot
+- Action Studio `Skyrim Guard Probe` external source
+- 本機 `Import converted Skyrim GLB` 實驗入口
+- GLB sanitized Skyrim bone aliases
+- G2.2 engineering completion checklist 與 G2.3 first visual bake gate
+
+### 11 — G2.3 First Real Bake + Visual Guard Review
+`11_skyrim_guard_first_real_bake_review.md`
+
+內容：
+- PyNifly / Blender Skyrim LE source-bake contract
+- `skeleton.hkx` 作為 source-side bone-order / rest-pose dependency
+- `shd_blockidle.source.glb` 真實 source bridge 輸出規格
+- `skyrim-guard-visual-review.html` 專用 review lab
+- Front / Side / 3/4、Once / Loop / scrub 視覺檢查
+- start/end major-bone rotation 與 root/pelvis translation seam metric
+- pelvis/foot、torso、weapon arm、off-hand、loop 五項 visual gates
+- ADOPT / ADOPT WITH CORRECTIONS / REJECT 決策規則
+- `.gitignore` Skyrim raw/experimental asset 邊界
+
+### 12 — G2.3.1 Real HKX Decode / First Source Bake
+`12_skyrim_real_hkx_decode_first_source_bake.md`
+
+內容：
+- 真實 `skeleton.hkx` + `shd_blockidle.hkx` pair validation
+- 兩支實際輸入的 SHA-256 / size / Havok generation manifest
+- 19/19 Skyrim source semantic bone gate
+- `npm run validate:skyrim-bake-pair -- <skeleton> <animation>`
+- Blender + PyNifly first real source-bake workflow
+- hkxcmd KF fallback boundary
+- self-contained `shd_blockidle.source.glb` output contract
+- `npm run validate:skyrim-source-glb -- <source.glb>`
+- 禁止在 Blender 預先 retarget 到 Blockman；G2.1 為唯一 canonical retarget stage
+- current execution container 無 Havok decoder 時的 truthful boundary
+- G2.3.2 First Real Visual Decision 完成條件
+
 ---
 
 ## 建議開發階段
