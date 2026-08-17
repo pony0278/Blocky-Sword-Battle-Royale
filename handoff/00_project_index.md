@@ -143,6 +143,20 @@
 - 30 fps `THREE.AnimationClip` runtime output
 - G2.2 decoder bridge 與 `shd_blockidle` first bake 接口
 
+### 10 — G2.2 Skyrim HKX Decoder Bridge
+`10_skyrim_hkx_decoder_bridge.md`
+
+內容：
+- `shd_blockidle.hkx` 真實檔案 marker / SHA-256 probe record
+- `npm run probe:skyrim-hkx -- <file.hkx>` raw source gate
+- Havok decoder 與遊戲 runtime 的 dependency boundary
+- self-contained Skyrim source GLB contract
+- `assets/skyrim/guard/converted/shd_blockidle.source.glb` canonical bridge slot
+- Action Studio `Skyrim Guard Probe` external source
+- 本機 `Import converted Skyrim GLB` 實驗入口
+- GLB sanitized Skyrim bone aliases
+- G2.2 engineering completion checklist 與 G2.3 first visual bake gate
+
 ---
 
 ## 建議開發階段
