@@ -115,6 +115,21 @@
 - G1～G5 實作階段與視覺驗收條件
 - Authoring presentation 與 authoritative combat 判定邊界
 
+### 08 — G2 Skyrim Guard Visual Retarget Probe
+`08_skyrim_guard_visual_retarget_probe.md`
+
+內容：
+- `shd_blockidle.hkx` 單一 Guard Hold 母姿勢驗證
+- HKX + matching Skyrim skeleton 的 offline conversion boundary
+- Skyrim humanoid → procedural Blockman semantic bone mapping
+- rest-pose delta / axis correction retarget strategy
+- 30 fps in-place GLB bake 規格
+- shield-oriented 左臂的 correction-cost 判定
+- Action Studio G2 review mode
+- ADOPT / ADOPT WITH CORRECTIONS / REJECT 驗收條件
+- G2.1～G2.5 decode、mapping、bake、visual review、decision record
+- 通過後才進 G3 Guard Family 與 G4 三向 Triangle Guard additive authoring
+
 ---
 
 ## 建議開發階段
