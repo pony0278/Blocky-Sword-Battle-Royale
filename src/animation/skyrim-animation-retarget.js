@@ -111,11 +111,22 @@ function normalizedNodeName(value) {
     .toLowerCase();
 }
 
+function compactNodeName(value) {
+  return normalizedNodeName(value).replace(/[^a-z0-9]/g, '');
+}
+
+function nodeNameKeys(value) {
+  const normalized = normalizedNodeName(value);
+  const compact = compactNodeName(value);
+  return [...new Set([normalized, compact].filter(Boolean))];
+}
+
 function collectNamedNodes(root) {
   const nodes = new Map();
   root?.traverse?.((node) => {
-    const key = normalizedNodeName(node?.name);
-    if (key && !nodes.has(key)) nodes.set(key, node);
+    for (const key of nodeNameKeys(node?.name)) {
+      if (!nodes.has(key)) nodes.set(key, node);
+    }
   });
   return nodes;
 }
@@ -124,8 +135,10 @@ function findNode(root, namedNodes, sourceAliases) {
   for (const alias of sourceAliases) {
     const exact = root?.getObjectByName?.(alias);
     if (exact) return exact;
-    const normalized = namedNodes.get(normalizedNodeName(alias));
-    if (normalized) return normalized;
+    for (const key of nodeNameKeys(alias)) {
+      const normalized = namedNodes.get(key);
+      if (normalized) return normalized;
+    }
   }
   return null;
 }
