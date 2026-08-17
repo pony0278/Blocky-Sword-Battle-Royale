@@ -21,6 +21,7 @@ import {
   getLongswordMotionMetadata,
 } from '../../src/combat/longsword-directional-metadata.js';
 import { readAnimationBindingView } from './studio-editor-view.js';
+import { installStudioSkyrimBridgeControls } from './studio-skyrim-bridge-controls.js';
 
 const SOURCE_INFO = Object.freeze({
   ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
@@ -63,6 +64,7 @@ function writeStoredContacts(value) {
 }
 
 export function createStudioExternalAnimationController(options) {
+  installStudioSkyrimBridgeControls();
   const {
     THREE,
     character,
