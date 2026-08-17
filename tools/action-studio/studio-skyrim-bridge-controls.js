@@ -1,6 +1,7 @@
 export function installStudioSkyrimBridgeControls() {
   const sourceSelect = document.getElementById('animationPackSource');
-  if (sourceSelect && !sourceSelect.querySelector('option[value="skyrim"]')) {
+  if (sourceSelect && typeof sourceSelect.querySelector === 'function'
+      && !sourceSelect.querySelector('option[value="skyrim"]')) {
     const option = document.createElement('option');
     option.value = 'skyrim';
     option.textContent = 'Skyrim Guard Probe';
@@ -10,7 +11,7 @@ export function installStudioSkyrimBridgeControls() {
   if (document.getElementById('importSkyrimConverted')) return;
   const loadButton = document.getElementById('loadKayKitAnimations');
   const parent = loadButton?.parentElement;
-  if (!loadButton || !parent) return;
+  if (!loadButton || !parent || typeof parent.insertBefore !== 'function') return;
 
   const importButton = document.createElement('button');
   importButton.id = 'importSkyrimConverted';
