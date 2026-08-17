@@ -106,7 +106,7 @@ export const importSkyrimConvertedAnimationFile = async (loader, file, options =
   if (!file?.arrayBuffer) throw new Error('Select a converted Skyrim .glb file first');
   const filename = String(file.name || '').toLowerCase();
   if (filename && !filename.endsWith('.glb')) {
-    throw new Error('Local Skyrim bridge import currently accepts self-contained .glb files only');
+    throw new Error('Local Skyrim bridge currently accepts self-contained .glb files only');
   }
 
   const entry = options.entry || SKYRIM_GUARD_CONVERTED_FILES[0];
