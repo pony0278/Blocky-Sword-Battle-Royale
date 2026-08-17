@@ -40,7 +40,7 @@ The UAL2 library loads the eight `Animation_Only/No_Root_Motion` sword clips. It
 
 The UAL1 split package manifest and Action Studio integration expose the two GLBs that are actually present in this checkout: `Sword_Attack` and `Sword_Idle`. They use the same Quaternius 65-node source skeleton and rest-aware 30 fps retarget path, producing clips named `UAL1/<source name>`. The source package is CC0 1.0.
 
-The Skyrim G2 bridge keeps the Action Studio Blockman rig as the canonical target. A converted source GLB retains the Skyrim source hierarchy and is retargeted to `SKYRIM_GUARD/shd_blockidle` by the repository adapter. During the probe, converted GLBs stay local and are ignored by Git.
+The Skyrim G2 bridge keeps the Action Studio Blockman rig as the canonical target. A converted source GLB retains the Skyrim source hierarchy and is retargeted to `SKYRIM_GUARD/shd_blockidle` by the repository adapter. The validated `shd_blockidle.source.glb` is the single tracked exception; other converted probe GLBs remain ignored.
 
 The generated `index.html` deliberately loads a classic script so the pose editor can open directly through `file://` without browser ES-module CORS errors. Loading any external animation library or the G2.3 source-GLB review requires serving the repository through local HTTP.
 

@@ -91,7 +91,7 @@ shd_blockidle.source.glb
 9. Preserve source bone names whenever possible. Blender/glTF punctuation sanitization is acceptable because G2.1 handles normalized aliases.
 10. Do not bake the Action Studio Blockman rig inside Blender.
 
-The experimental GLB should stay local during the probe; `.gitignore` excludes `assets/skyrim/guard/converted/*.glb`.
+Unreviewed GLBs should stay local during the probe. The validated `shd_blockidle.source.glb` is the single tracked exception to `assets/skyrim/guard/converted/*.glb`.
 
 ---
 
@@ -171,7 +171,7 @@ REJECT
 
 G2.3.1 is complete. HavokToolset `hk_to_gltf` decoded the real local `skeleton.hkx` + `shd_blockidle.hkx` pair at 30 fps into a self-contained `shd_blockidle.source.glb`; the repository validator accepted it and a Three.js runtime probe retargeted it through G2.1 to `SKYRIM_GUARD/shd_blockidle` on the canonical Blockman rig.
 
-No keyframes were synthesized and no skeleton-only placeholder GLB was used. The local output remains ignored by Git under the existing asset/licensing boundary.
+No keyframes were synthesized and no skeleton-only placeholder GLB was used. The validated output is committed as the explicit canonical exception; raw HKX inputs and other converted probes remain excluded.
 
 
 The remaining boundary is G2.3.2 visual judgment, not decode or adapter engineering. See `13_skyrim_guard_g2_3_2_execution_record.md`.
@@ -182,7 +182,7 @@ The remaining boundary is G2.3.2 visual judgment, not decode or adapter engineer
 
 - Do not commit raw `skeleton.hkx`.
 - Do not commit raw `shd_blockidle.hkx`.
-- Keep the experimental source GLB local during the technical probe.
+- Commit only the validator-approved canonical `shd_blockidle.source.glb`; keep other converted probes local.
 - Keep creator attribution in the release checklist.
 - Commercial redistribution remains a separate final license review before shipping the converted motion in a CrazyGames build.
 

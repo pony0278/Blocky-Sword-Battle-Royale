@@ -41,7 +41,7 @@ Use a current Blender + PyNifly workflow capable of importing Skyrim LE 32-bit H
 5. Do not retarget to Action Studio in Blender. The Blender result is only a **source hierarchy + source action** bridge.
 6. Export one self-contained GLB containing the source armature and the `shd_blockidle` action.
 7. Name it `shd_blockidle.source.glb`.
-8. Keep the experimental GLB local during the probe. `.gitignore` excludes `assets/skyrim/guard/converted/*.glb`.
+8. Keep unreviewed GLBs local during the probe. The validated `shd_blockidle.source.glb` is the single tracked exception to `assets/skyrim/guard/converted/*.glb`.
 9. Open `tools/action-studio/skyrim-guard-visual-review.html` over local HTTP and choose **Import shd_blockidle.source.glb**.
 
 ## Source GLB contract

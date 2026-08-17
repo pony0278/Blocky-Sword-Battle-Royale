@@ -30,7 +30,7 @@ size: 389352 bytes
 sha256: 115a56ce9233bce3ae695e2ded21e0f31441f54eb46235402e23724c7309a0c8
 ```
 
-The output is a real animated source hierarchy. It is not a skeleton-only GLB, placeholder animation, or synthesized keyframe stream. The GLB stays local and ignored by Git under the existing source-asset/licensing policy.
+The output is a real animated source hierarchy. It is not a skeleton-only GLB, placeholder animation, or synthesized keyframe stream. By explicit project-owner instruction, this validator-approved file is committed as the canonical source asset; raw HKX inputs and other converted probes remain ignored.
 
 ## Repository source-GLB validator
 
