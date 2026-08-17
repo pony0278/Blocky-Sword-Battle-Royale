@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createStudioExternalAnimationController } from '../tools/action-studio/studio-external-animation-controller.js';
+import {
+  LONGSWORD_DIRECTIONAL_ATTACKS,
+  getCanonicalMotionContactSeconds,
+} from '../src/combat/longsword-directional-metadata.js';
 
 class FakeElement {
   constructor(value = '') {
@@ -55,6 +59,31 @@ const COMMON_IDS = [
   'animationBindingSpeed', 'animationBindingOffset', 'animationBindingInPlace', 'animationBindingLoop',
   'clipNow', 'phaseNow', 'hitstop',
 ];
+
+test('canonical longsword directional attacks keep the verified clip and contact mapping', () => {
+  assert.deepEqual(LONGSWORD_DIRECTIONAL_ATTACKS.top, {
+    weapon: 'longsword',
+    direction: 'top',
+    clipId: 'UAL1/Sword_Attack',
+    contactSeconds: 0.43,
+  });
+  assert.deepEqual(LONGSWORD_DIRECTIONAL_ATTACKS.right, {
+    weapon: 'longsword',
+    direction: 'right',
+    clipId: 'UAL2/Sword_Regular_A',
+    contactSeconds: 0.23,
+  });
+  assert.deepEqual(LONGSWORD_DIRECTIONAL_ATTACKS.left, {
+    weapon: 'longsword',
+    direction: 'left',
+    clipId: 'UAL2/Sword_Regular_B',
+    contactSeconds: 0.30,
+  });
+  assert.equal(getCanonicalMotionContactSeconds('UAL1/Sword_Attack'), 0.43);
+  assert.equal(getCanonicalMotionContactSeconds('UAL2/Sword_Regular_A'), 0.23);
+  assert.equal(getCanonicalMotionContactSeconds('UAL2/Sword_Regular_B'), 0.30);
+  assert.equal(getCanonicalMotionContactSeconds('UAL2/Sword_Regular_C'), null);
+});
 
 test('cached UAL2 playback preserves the clip selected by the author', async () => {
   const { elements, restore } = installFakeDocument(COMMON_IDS);
