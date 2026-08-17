@@ -389,3 +389,26 @@ Battle Royale 最大風險：
 Combat Lab 完成標準：
 
 > 即使只有一個 Dummy，玩家仍然願意反覆做 Attack、Guard、Parry、Dodge。
+
+---
+
+## 23. Directional Combat V1 — Longsword Canonical Light Attacks
+
+三方向以**攻擊者自己的視角**命名，作為 Longsword 第一版共同戰鬥語言：
+
+| Direction | External Motion | Natural Duration | Verified Contact |
+|---|---|---:|---:|
+| TOP | `UAL1/Sword_Attack` | 1.533s | **0.43s** |
+| RIGHT | `UAL2/Sword_Regular_A` | 0.433s | **0.23s** |
+| LEFT | `UAL2/Sword_Regular_B` | 0.533s | **0.30s** |
+
+這三筆為 source-controlled canonical motion metadata，程式來源：
+
+`src/combat/longsword-directional-metadata.js`
+
+設計邊界：
+
+- Direction / clip / contact timing 綁定於 motion metadata。
+- Light / Heavy / Block / Parry 的 Combat Feel Profile **不綁動畫名稱**。
+- Action Studio 可在本機用 slider 覆寫 contact timing 做實驗，但不會改掉 repository 中的 canonical 預設。
+- `Fit + bind` 仍是明確的 authoring 操作；Natural Preview + Impact 使用 source 原速與 canonical contact。
