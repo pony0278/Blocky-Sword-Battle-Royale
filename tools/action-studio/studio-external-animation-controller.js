@@ -11,6 +11,10 @@ import {
   UAL2_ANIMATION_FILES,
   loadUal2AnimationLibrary,
 } from '../../src/animation/ual2-animation-library.js';
+import {
+  getCanonicalMotionContactSeconds,
+  getLongswordMotionMetadata,
+} from '../../src/combat/longsword-directional-metadata.js';
 import { readAnimationBindingView } from './studio-editor-view.js';
 
 const SOURCE_INFO = Object.freeze({
@@ -20,9 +24,6 @@ const SOURCE_INFO = Object.freeze({
 });
 
 const MOTION_CONTACT_STORAGE_KEY = 'ACTION_STUDIO_MOTION_CONTACTS_V1';
-const DEFAULT_MOTION_CONTACT_SECONDS = Object.freeze({
-  'UAL1/Sword_Attack': 0.43,
-});
 
 function shouldLoopClip(name) {
   return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/.test(name);
@@ -93,8 +94,9 @@ export function createStudioExternalAnimationController(options) {
     if (Number.isFinite(Number(storedContacts[name]))) {
       return clamp(storedContacts[name], 0, duration || Number(storedContacts[name]));
     }
-    if (Number.isFinite(DEFAULT_MOTION_CONTACT_SECONDS[name])) {
-      return clamp(DEFAULT_MOTION_CONTACT_SECONDS[name], 0, duration || DEFAULT_MOTION_CONTACT_SECONDS[name]);
+    const canonicalContact = getCanonicalMotionContactSeconds(name);
+    if (Number.isFinite(canonicalContact)) {
+      return clamp(canonicalContact, 0, duration || canonicalContact);
     }
     return duration > 0 ? duration * 0.35 : 0;
   }
@@ -134,9 +136,10 @@ export function createStudioExternalAnimationController(options) {
     input.step = '0.01';
     input.value = String(contact);
     output.textContent = `${contact.toFixed(2)}s`;
-    const source = DEFAULT_MOTION_CONTACT_SECONDS[name] !== undefined || storedContacts[name] !== undefined
-      ? 'saved marker'
-      : 'estimated marker';
+    const canonicalMetadata = getLongswordMotionMetadata(name);
+    let source = 'estimated marker';
+    if (storedContacts[name] !== undefined) source = 'local override';
+    else if (canonicalMetadata) source = `canonical ${canonicalMetadata.weapon} ${canonicalMetadata.direction.toUpperCase()} marker`;
     contactStatus.textContent = `Natural 1.00× · duration ${duration.toFixed(3)}s · ${source}`;
   }
 
