@@ -43,6 +43,17 @@ function fullSkyrimHierarchy(useFallbackAliases = false) {
   return root;
 }
 
+function sanitizedGlbHierarchy() {
+  const root = new FakeNode('SOURCE');
+  for (const mapping of SKYRIM_BONE_RETARGETS) {
+    const sanitized = mapping.sourceAliases[0]
+      .replace(/[^A-Za-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    root.add(new FakeNode(sanitized));
+  }
+  return root;
+}
+
 test('Skyrim retarget map targets the canonical Action Studio humanoid rig', () => {
   const targets = SKYRIM_BONE_RETARGETS.map((entry) => entry.target);
   assert.equal(SKYRIM_BONE_RETARGETS.length, 19);
@@ -74,6 +85,13 @@ test('Skyrim source resolver accepts common exporter aliases after HKX conversio
   const report = resolveSkyrimSourceNodes(fullSkyrimHierarchy(true));
   assert.equal(report.valid, true);
   assert.deepEqual(report.missing, []);
+});
+
+test('Skyrim source resolver accepts GLB-sanitized names with spaces and bracket tags rewritten', () => {
+  const report = resolveSkyrimSourceNodes(sanitizedGlbHierarchy());
+  assert.equal(report.valid, true);
+  assert.deepEqual(report.missing, []);
+  assert.equal(report.nodes['upperarm.l'].name, 'NPC_L_UpperArm_LUar');
 });
 
 test('Skyrim source resolver reports semantic bones instead of decoder-specific names', () => {
