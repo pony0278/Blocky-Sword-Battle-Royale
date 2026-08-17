@@ -157,6 +157,20 @@
 - GLB sanitized Skyrim bone aliases
 - G2.2 engineering completion checklist 與 G2.3 first visual bake gate
 
+### 11 — G2.3 First Real Bake + Visual Guard Review
+`11_skyrim_guard_first_real_bake_review.md`
+
+內容：
+- PyNifly / Blender Skyrim LE source-bake contract
+- `skeleton.hkx` 作為 source-side bone-order / rest-pose dependency
+- `shd_blockidle.source.glb` 真實 source bridge 輸出規格
+- `skyrim-guard-visual-review.html` 專用 review lab
+- Front / Side / 3/4、Once / Loop / scrub 視覺檢查
+- start/end major-bone rotation 與 root/pelvis translation seam metric
+- pelvis/foot、torso、weapon arm、off-hand、loop 五項 visual gates
+- ADOPT / ADOPT WITH CORRECTIONS / REJECT 決策規則
+- `.gitignore` Skyrim raw/experimental asset 邊界
+
 ---
 
 ## 建議開發階段
