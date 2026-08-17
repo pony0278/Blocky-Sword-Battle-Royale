@@ -1,0 +1,3 @@
+# G2 Skyrim Guard probe: keep proprietary/raw authoring inputs and experimental converted GLBs local.
+tools/skyrim-hkx-bridge/work/
+assets/skyrim/guard/converted/*.glb
