@@ -36,6 +36,7 @@ export function createStudioExternalAnimationController(options) {
     updatePlaybackButtons,
     setAnimationSource,
     renderBinding,
+    restartActionPlayback,
   } = options;
   const libraries = new Map();
   const sourceSelect = document.getElementById('animationPackSource');
@@ -128,13 +129,15 @@ export function createStudioExternalAnimationController(options) {
     const controlBinding = readAnimationBindingView(source);
     const sourceClip = library.clips.get(controlBinding.clipId);
     if (!sourceClip) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
-    setBinding(fitToAction ? createFittedAnimationBinding({
+    const binding = fitToAction ? createFittedAnimationBinding({
       ...controlBinding,
       source,
       animationDurationSeconds: sourceClip.duration,
       durationFrames: getClip().durationFrames,
       fps: getClip().fps,
-    }) : controlBinding);
+    }) : controlBinding;
+    setBinding(binding);
+    return binding;
   }
 
   async function playSelected() {
@@ -151,6 +154,59 @@ export function createStudioExternalAnimationController(options) {
       ? 'KAYKIT RUNTIME'
       : `${source.toUpperCase()} RETARGET PREVIEW`;
     updatePlaybackButtons();
+  }
+
+  function impactFrames() {
+    return (getClip()?.timeline || [])
+      .filter((key) => key.impact)
+      .map((key) => key.frame);
+  }
+
+  function activeFeelProfile() {
+    if (typeof window === 'undefined') return 'active profile';
+    return window.__actionStudio?.combatFeelProfile || 'active profile';
+  }
+
+  function restartBoundAction() {
+    if (typeof restartActionPlayback === 'function') {
+      restartActionPlayback();
+      return;
+    }
+    const scrub = document.getElementById('timelineScrub');
+    const play = document.getElementById('playToggle');
+    if (!scrub || !play) throw new Error('Action playback controls are unavailable');
+    scrub.value = '0';
+    const EventCtor = globalThis.Event || window.Event;
+    scrub.dispatchEvent(new EventCtor('input', { bubbles: true }));
+    play.click();
+  }
+
+  async function playSelectedWithImpact() {
+    const frames = impactFrames();
+    if (!frames.length) {
+      throw new Error('Preview + Impact requires an Impact marker in the current Action timeline');
+    }
+    const binding = await bindSelected(true);
+    restartBoundAction();
+    const clipName = binding.clipId.replace(/^UAL[12]\//, '');
+    setStatus(`impact preview · ${clipName} · ${activeFeelProfile()} · Impact ${frames.join(', ')}f`);
+    return binding;
+  }
+
+  function installImpactPreviewButton() {
+    const sourcePreviewButton = document.getElementById('playKayKitAnimation');
+    if (!sourcePreviewButton || typeof sourcePreviewButton.insertAdjacentElement !== 'function') return null;
+    if (document.getElementById('previewKayKitWithImpact')) return document.getElementById('previewKayKitWithImpact');
+    const button = document.createElement('button');
+    button.id = 'previewKayKitWithImpact';
+    button.className = 'primary';
+    button.textContent = '▶ Preview + Impact';
+    button.title = 'Fit + bind the selected motion, restart the current Action, and use its Impact marker + active Combat Feel profile.';
+    sourcePreviewButton.insertAdjacentElement('afterend', button);
+    button.addEventListener('click', () => {
+      playSelectedWithImpact().catch((error) => setStatus(error.message, true));
+    });
+    return button;
   }
 
   sourceSelect.addEventListener('change', () => {
@@ -175,6 +231,7 @@ export function createStudioExternalAnimationController(options) {
   document.getElementById('clearAnimationBinding').addEventListener('click', () => {
     setBinding({ source: 'authored', clipId: getClip().id });
   });
+  installImpactPreviewButton();
   populate(selectedSource());
 
   return {
@@ -183,7 +240,9 @@ export function createStudioExternalAnimationController(options) {
     isAvailable,
     ensureBinding,
     load,
+    bindSelected,
     playSelected,
+    playSelectedWithImpact,
     setStatus,
     playClip(source, name, playOptions = {}) {
       if (!libraries.has(source)) throw new Error(`${SOURCE_INFO[source]?.label || source} is not loaded`);
