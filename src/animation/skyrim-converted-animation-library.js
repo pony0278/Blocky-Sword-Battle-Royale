@@ -67,7 +67,7 @@ export function createSkyrimConvertedAnimationLibrary(clip, options = {}) {
   };
 }
 
-export async function loadSkyrimConvertedAnimationLibrary(loader, options = {}) {
+export const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) => {
   if (!loader?.load) throw new Error('loadSkyrimConvertedAnimationLibrary requires a GLTFLoader instance');
   const THREE = options.THREE;
   const rig = options.rig;
@@ -99,9 +99,9 @@ export async function loadSkyrimConvertedAnimationLibrary(loader, options = {}) 
     duplicates: [],
     bridge: 'converted-glb',
   };
-}
+};
 
-export async function importSkyrimConvertedAnimationFile(loader, file, options = {}) {
+export const importSkyrimConvertedAnimationFile = async (loader, file, options = {}) => {
   if (!loader?.parse) throw new Error('importSkyrimConvertedAnimationFile requires a GLTFLoader instance');
   if (!file?.arrayBuffer) throw new Error('Select a converted Skyrim .glb file first');
   const filename = String(file.name || '').toLowerCase();
@@ -121,4 +121,4 @@ export async function importSkyrimConvertedAnimationFile(loader, file, options =
   } finally {
     disposeSourceScene(gltf?.scene);
   }
-}
+};
