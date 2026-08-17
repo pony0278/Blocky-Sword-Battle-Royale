@@ -19,8 +19,36 @@ const SOURCE_INFO = Object.freeze({
   kaykit: Object.freeze({ label: 'KayKit Base', count: KAYKIT_ANIMATION_PACKS.length, defaultClip: 'Idle_A' }),
 });
 
+const MOTION_CONTACT_STORAGE_KEY = 'ACTION_STUDIO_MOTION_CONTACTS_V1';
+const DEFAULT_MOTION_CONTACT_SECONDS = Object.freeze({
+  'UAL1/Sword_Attack': 0.43,
+});
+
 function shouldLoopClip(name) {
   return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/.test(name);
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function readStoredContacts() {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const value = JSON.parse(localStorage.getItem(MOTION_CONTACT_STORAGE_KEY) || '{}');
+    return value && typeof value === 'object' ? value : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeStoredContacts(value) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(MOTION_CONTACT_STORAGE_KEY, JSON.stringify(value));
+  } catch (_error) {
+    // Preview metadata should never break animation playback when storage is unavailable.
+  }
 }
 
 export function createStudioExternalAnimationController(options) {
@@ -36,12 +64,16 @@ export function createStudioExternalAnimationController(options) {
     updatePlaybackButtons,
     setAnimationSource,
     renderBinding,
-    restartActionPlayback,
   } = options;
   const libraries = new Map();
   const sourceSelect = document.getElementById('animationPackSource');
   const clipSelect = document.getElementById('kaykitClip');
   const status = document.getElementById('kaykitStatus');
+  const storedContacts = readStoredContacts();
+  let contactTimer = null;
+  let hitstopReleaseTimer = null;
+  let naturalPreviewAction = null;
+  let naturalPreviewToken = 0;
 
   function setStatus(message, isError = false) {
     status.textContent = message;
@@ -52,6 +84,73 @@ export function createStudioExternalAnimationController(options) {
     return sourceSelect.value in SOURCE_INFO ? sourceSelect.value : 'ual2';
   }
 
+  function selectedLibraryClip() {
+    return libraries.get(selectedSource())?.clips.get(clipSelect.value) || null;
+  }
+
+  function contactSecondsFor(name, durationSeconds) {
+    const duration = Math.max(0, Number(durationSeconds) || 0);
+    if (Number.isFinite(Number(storedContacts[name]))) {
+      return clamp(storedContacts[name], 0, duration || Number(storedContacts[name]));
+    }
+    if (Number.isFinite(DEFAULT_MOTION_CONTACT_SECONDS[name])) {
+      return clamp(DEFAULT_MOTION_CONTACT_SECONDS[name], 0, duration || DEFAULT_MOTION_CONTACT_SECONDS[name]);
+    }
+    return duration > 0 ? duration * 0.35 : 0;
+  }
+
+  function installContactControls() {
+    if (document.getElementById('externalImpactContact')) return;
+    const sourcePreviewButton = document.getElementById('playKayKitAnimation');
+    if (!sourcePreviewButton || typeof sourcePreviewButton.insertAdjacentHTML !== 'function') return;
+    sourcePreviewButton.insertAdjacentHTML('afterend', `
+      <button id="previewKayKitWithImpact" class="primary" title="Play the selected source at natural speed and trigger the active Combat Feel profile at this motion's own contact marker.">▶ Preview + Impact</button>
+      <label class="external-impact-contact">Impact contact
+        <output id="externalImpactContactValue">—</output>
+        <input id="externalImpactContact" type="range" min="0" max="1" step="0.01" value="0.35">
+      </label>
+      <span id="externalImpactContactStatus" class="status-line">Natural 1.00× · load a clip to edit contact timing</span>
+    `);
+  }
+
+  function refreshContactControls() {
+    const input = document.getElementById('externalImpactContact');
+    const output = document.getElementById('externalImpactContactValue');
+    const contactStatus = document.getElementById('externalImpactContactStatus');
+    if (!input || !output || !contactStatus) return;
+    const sourceClip = selectedLibraryClip();
+    const name = clipSelect.value;
+    if (!sourceClip || !name) {
+      input.disabled = true;
+      output.textContent = '—';
+      contactStatus.textContent = 'Natural 1.00× · load a clip to edit contact timing';
+      return;
+    }
+    const duration = Math.max(0.01, Number(sourceClip.duration) || 0.01);
+    const contact = contactSecondsFor(name, duration);
+    input.disabled = false;
+    input.min = '0';
+    input.max = String(duration);
+    input.step = '0.01';
+    input.value = String(contact);
+    output.textContent = `${contact.toFixed(2)}s`;
+    const source = DEFAULT_MOTION_CONTACT_SECONDS[name] !== undefined || storedContacts[name] !== undefined
+      ? 'saved marker'
+      : 'estimated marker';
+    contactStatus.textContent = `Natural 1.00× · duration ${duration.toFixed(3)}s · ${source}`;
+  }
+
+  function saveCurrentContact(rawValue) {
+    const sourceClip = selectedLibraryClip();
+    const name = clipSelect.value;
+    if (!sourceClip || !name) return 0;
+    const contact = clamp(rawValue, 0, Number(sourceClip.duration) || 0);
+    storedContacts[name] = contact;
+    writeStoredContacts(storedContacts);
+    refreshContactControls();
+    return contact;
+  }
+
   function populate(source, preferredClipId = '') {
     clipSelect.innerHTML = '';
     const library = libraries.get(source);
@@ -60,6 +159,7 @@ export function createStudioExternalAnimationController(options) {
       option.value = '';
       option.textContent = `Load ${SOURCE_INFO[source].label} first`;
       clipSelect.appendChild(option);
+      refreshContactControls();
       return;
     }
     [...library.clips.keys()].forEach((name) => {
@@ -71,10 +171,14 @@ export function createStudioExternalAnimationController(options) {
     clipSelect.value = library.clips.has(preferredClipId)
       ? preferredClipId
       : SOURCE_INFO[source].defaultClip;
+    refreshContactControls();
   }
 
   async function load(source = selectedSource()) {
-    if (libraries.has(source)) return libraries.get(source);
+    if (libraries.has(source)) {
+      populate(source, clipSelect.value || getAction()?.animationBinding?.clipId);
+      return libraries.get(source);
+    }
     if (!THREE.GLTFLoader) throw new Error('Three.js GLTFLoader is unavailable');
     if (location.protocol === 'file:') throw new Error('External GLB animations require the local HTTP server');
     const info = SOURCE_INFO[source];
@@ -140,11 +244,22 @@ export function createStudioExternalAnimationController(options) {
     return binding;
   }
 
+  function clearNaturalPreviewTimers() {
+    naturalPreviewToken += 1;
+    if (contactTimer !== null) clearTimeout(contactTimer);
+    if (hitstopReleaseTimer !== null) clearTimeout(hitstopReleaseTimer);
+    contactTimer = null;
+    hitstopReleaseTimer = null;
+    if (naturalPreviewAction) naturalPreviewAction.paused = false;
+    naturalPreviewAction = null;
+  }
+
   async function playSelected() {
     const source = selectedSource();
     await load(source);
     const name = clipSelect.value;
     if (!name) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+    clearNaturalPreviewTimers();
     pausePlayer();
     clearWeaponTrail();
     setAnimationSource(`${source}-preview`);
@@ -156,10 +271,11 @@ export function createStudioExternalAnimationController(options) {
     updatePlaybackButtons();
   }
 
-  function impactFrames() {
-    return (getClip()?.timeline || [])
-      .filter((key) => key.impact)
-      .map((key) => key.frame);
+  function emitExternalImpact() {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+    const EventCtor = globalThis.CustomEvent || window.CustomEvent;
+    if (!EventCtor) return;
+    window.dispatchEvent(new EventCtor('action-studio-external-impact'));
   }
 
   function activeFeelProfile() {
@@ -167,61 +283,82 @@ export function createStudioExternalAnimationController(options) {
     return window.__actionStudio?.combatFeelProfile || 'active profile';
   }
 
-  function restartBoundAction() {
-    if (typeof restartActionPlayback === 'function') {
-      restartActionPlayback();
-      return;
-    }
-    const scrub = document.getElementById('timelineScrub');
-    const play = document.getElementById('playToggle');
-    if (!scrub || !play) throw new Error('Action playback controls are unavailable');
-    scrub.value = '0';
-    const EventCtor = globalThis.Event || window.Event;
-    scrub.dispatchEvent(new EventCtor('input', { bubbles: true }));
-    play.click();
-  }
-
   async function playSelectedWithImpact() {
-    const frames = impactFrames();
-    if (!frames.length) {
-      throw new Error('Preview + Impact requires an Impact marker in the current Action timeline');
-    }
-    const binding = await bindSelected(true);
-    restartBoundAction();
-    const clipName = binding.clipId.replace(/^UAL[12]\//, '');
-    setStatus(`impact preview · ${clipName} · ${activeFeelProfile()} · Impact ${frames.join(', ')}f`);
-    return binding;
+    const source = selectedSource();
+    const library = await load(source);
+    const name = clipSelect.value;
+    const sourceClip = library.clips.get(name);
+    if (!sourceClip) throw new Error(`Select a ${SOURCE_INFO[source].label} clip first`);
+
+    clearNaturalPreviewTimers();
+    pausePlayer();
+    clearWeaponTrail();
+    const duration = Math.max(0, Number(sourceClip.duration) || 0);
+    const contactInput = document.getElementById('externalImpactContact');
+    const contactSeconds = clamp(contactInput?.value ?? contactSecondsFor(name, duration), 0, duration);
+    const inPlace = document.getElementById('animationBindingInPlace')?.checked !== false;
+    const token = naturalPreviewToken;
+
+    setAnimationSource(`${source}-impact-preview`);
+    naturalPreviewAction = character.playAnimation(name, {
+      loop: false,
+      inPlace,
+      speed: 1,
+      fadeSeconds: 0.04,
+    });
+    document.getElementById('clipNow').textContent = name.replace(/^UAL[12]\//, '').toUpperCase();
+    document.getElementById('phaseNow').textContent = `${source.toUpperCase()} NATURAL IMPACT PREVIEW`;
+    updatePlaybackButtons();
+
+    contactTimer = setTimeout(() => {
+      if (token !== naturalPreviewToken) return;
+      if (naturalPreviewAction) naturalPreviewAction.paused = true;
+      emitExternalImpact();
+      const hitstopSeconds = Math.max(0, Number(document.getElementById('hitstop')?.value) || 0);
+      hitstopReleaseTimer = setTimeout(() => {
+        if (token !== naturalPreviewToken) return;
+        if (naturalPreviewAction) naturalPreviewAction.paused = false;
+      }, hitstopSeconds * 1000);
+    }, contactSeconds * 1000);
+
+    const clipName = name.replace(/^UAL[12]\//, '');
+    setStatus(`impact preview · ${clipName} · Natural 1.00× · contact ${contactSeconds.toFixed(2)}s · ${activeFeelProfile()}`);
+    return {
+      source,
+      clipId: name,
+      speed: 1,
+      durationSeconds: duration,
+      contactSeconds,
+    };
   }
 
-  function installImpactPreviewButton() {
-    const sourcePreviewButton = document.getElementById('playKayKitAnimation');
-    if (!sourcePreviewButton || typeof sourcePreviewButton.insertAdjacentElement !== 'function') return null;
-    if (document.getElementById('previewKayKitWithImpact')) return document.getElementById('previewKayKitWithImpact');
-    const button = document.createElement('button');
-    button.id = 'previewKayKitWithImpact';
-    button.className = 'primary';
-    button.textContent = '▶ Preview + Impact';
-    button.title = 'Fit + bind the selected motion, restart the current Action, and use its Impact marker + active Combat Feel profile.';
-    sourcePreviewButton.insertAdjacentElement('afterend', button);
-    button.addEventListener('click', () => {
-      playSelectedWithImpact().catch((error) => setStatus(error.message, true));
-    });
-    return button;
-  }
+  installContactControls();
+  const impactButton = document.getElementById('previewKayKitWithImpact');
+  impactButton?.addEventListener('click', () => {
+    playSelectedWithImpact().catch((error) => setStatus(error.message, true));
+  });
+  document.getElementById('externalImpactContact')?.addEventListener('input', (event) => {
+    saveCurrentContact(event.target.value);
+  });
 
   sourceSelect.addEventListener('change', () => {
+    clearNaturalPreviewTimers();
     const source = selectedSource();
     populate(source, getAction()?.animationBinding?.source === source ? getAction().animationBinding.clipId : '');
     const state = libraries.has(source) ? 'ready' : 'not loaded';
     setStatus(`${SOURCE_INFO[source].label} · ${state}`);
   });
+  clipSelect.addEventListener('change', refreshContactControls);
   document.getElementById('loadKayKitAnimations').addEventListener('click', () => {
     load().catch((error) => setStatus(error.message, true));
   });
   document.getElementById('playKayKitAnimation').addEventListener('click', () => {
     playSelected().catch((error) => setStatus(error.message, true));
   });
-  document.getElementById('stopKayKitAnimation').addEventListener('click', applyCurrentEvaluation);
+  document.getElementById('stopKayKitAnimation').addEventListener('click', () => {
+    clearNaturalPreviewTimers();
+    applyCurrentEvaluation();
+  });
   document.getElementById('bindKayKitAnimation').addEventListener('click', () => {
     bindSelected(false).catch((error) => setStatus(error.message, true));
   });
@@ -231,7 +368,6 @@ export function createStudioExternalAnimationController(options) {
   document.getElementById('clearAnimationBinding').addEventListener('click', () => {
     setBinding({ source: 'authored', clipId: getClip().id });
   });
-  installImpactPreviewButton();
   populate(selectedSource());
 
   return {
@@ -243,9 +379,12 @@ export function createStudioExternalAnimationController(options) {
     bindSelected,
     playSelected,
     playSelectedWithImpact,
+    refreshContactControls,
+    saveCurrentContact,
     setStatus,
     playClip(source, name, playOptions = {}) {
       if (!libraries.has(source)) throw new Error(`${SOURCE_INFO[source]?.label || source} is not loaded`);
+      clearNaturalPreviewTimers();
       setAnimationSource(`${source}-preview`);
       return character.playAnimation(name, playOptions);
     },

@@ -10,6 +10,7 @@ class FakeElement {
     this.children = [];
     this.listeners = new Map();
     this.checked = false;
+    this.disabled = false;
     this.classList = { toggle() {} };
   }
 
@@ -47,14 +48,16 @@ function installFakeDocument(ids) {
   };
 }
 
+const COMMON_IDS = [
+  'animationPackSource', 'kaykitClip', 'kaykitStatus',
+  'loadKayKitAnimations', 'playKayKitAnimation', 'stopKayKitAnimation',
+  'bindKayKitAnimation', 'fitKayKitAnimation', 'clearAnimationBinding',
+  'animationBindingSpeed', 'animationBindingOffset', 'animationBindingInPlace', 'animationBindingLoop',
+  'clipNow', 'phaseNow', 'hitstop',
+];
+
 test('cached UAL2 playback preserves the clip selected by the author', async () => {
-  const ids = [
-    'animationPackSource', 'kaykitClip', 'kaykitStatus',
-    'loadKayKitAnimations', 'playKayKitAnimation', 'stopKayKitAnimation',
-    'bindKayKitAnimation', 'fitKayKitAnimation', 'clearAnimationBinding',
-    'clipNow', 'phaseNow',
-  ];
-  const { elements, restore } = installFakeDocument(ids);
+  const { elements, restore } = installFakeDocument(COMMON_IDS);
   elements.animationPackSource.value = 'ual2';
   const played = [];
 
@@ -101,38 +104,86 @@ test('cached UAL2 playback preserves the clip selected by the author', async () 
   }
 });
 
-test('Preview + Impact fits the selected external motion and restarts Action playback through its impact marker', async () => {
-  const ids = [
-    'animationPackSource', 'kaykitClip', 'kaykitStatus',
-    'loadKayKitAnimations', 'playKayKitAnimation', 'stopKayKitAnimation',
-    'bindKayKitAnimation', 'fitKayKitAnimation', 'clearAnimationBinding',
-    'animationBindingSpeed', 'animationBindingOffset', 'animationBindingInPlace', 'animationBindingLoop',
-    'clipNow', 'phaseNow',
-  ];
-  const { elements, restore } = installFakeDocument(ids);
-  elements.animationPackSource.value = 'ual2';
+test('Preview + Impact keeps UAL1 Sword_Attack at natural speed and uses its motion contact marker', async () => {
+  const { elements, restore } = installFakeDocument(COMMON_IDS);
+  elements.animationPackSource.value = 'ual1';
+  elements.animationBindingInPlace.checked = true;
+  elements.hitstop.value = '0.03';
+  const played = [];
+  const bindings = [];
+  let pauseCount = 0;
+
+  try {
+    const controller = createStudioExternalAnimationController({
+      THREE: {},
+      character: {
+        rig: { bones: {} },
+        playAnimation: (name, options) => {
+          const action = { paused: false };
+          played.push({ name, options, action });
+          return action;
+        },
+      },
+      getAction: () => ({ animationBinding: { source: 'authored' } }),
+      getClip: () => ({
+        id: 'slash_test',
+        fps: 30,
+        durationFrames: 26,
+        timeline: [{ name: 'legacy-impact', frame: 14, impact: true }],
+      }),
+      setBinding: (binding) => bindings.push(binding),
+      pausePlayer: () => { pauseCount += 1; },
+      applyCurrentEvaluation() {},
+      clearWeaponTrail() {},
+      updatePlaybackButtons() {},
+      setAnimationSource() {},
+      renderBinding() {},
+    });
+    controller.libraries.set('ual1', {
+      clips: new Map([
+        ['UAL1/Sword_Attack', { duration: 1.533 }],
+        ['UAL1/Sword_Idle', { duration: 1.667 }],
+      ]),
+    });
+    elements.kaykitClip.value = 'UAL1/Sword_Attack';
+
+    const result = await controller.playSelectedWithImpact();
+
+    assert.equal(result.source, 'ual1');
+    assert.equal(result.clipId, 'UAL1/Sword_Attack');
+    assert.equal(result.speed, 1);
+    assert.equal(result.durationSeconds, 1.533);
+    assert.equal(result.contactSeconds, 0.43);
+    assert.equal(bindings.length, 0, 'impact preview must not fit or replace the current Action binding');
+    assert.equal(pauseCount, 1);
+    assert.equal(played.length, 1);
+    assert.equal(played[0].name, 'UAL1/Sword_Attack');
+    assert.equal(played[0].options.speed, 1);
+    assert.equal(played[0].options.loop, false);
+    assert.match(elements.kaykitStatus.textContent, /Natural 1\.00×/);
+    assert.match(elements.kaykitStatus.textContent, /contact 0\.43s/);
+
+    await controller.playSelected(); // clears the pending contact timer before the test exits
+  } finally {
+    restore();
+  }
+});
+
+test('Fit + bind remains available as an explicit authoring operation', async () => {
+  const { elements, restore } = installFakeDocument(COMMON_IDS);
+  elements.animationPackSource.value = 'ual1';
   elements.animationBindingSpeed.value = '1';
   elements.animationBindingOffset.value = '0';
   elements.animationBindingInPlace.checked = true;
   elements.animationBindingLoop.checked = false;
   const bindings = [];
-  let restartCount = 0;
 
   try {
     const controller = createStudioExternalAnimationController({
       THREE: {},
       character: { rig: { bones: {} } },
       getAction: () => ({ animationBinding: { source: 'authored' } }),
-      getClip: () => ({
-        id: 'slash_test',
-        fps: 30,
-        durationFrames: 30,
-        timeline: [
-          { name: 'windup', frame: 0 },
-          { name: 'contact', frame: 14, impact: true },
-          { name: 'recover', frame: 30 },
-        ],
-      }),
+      getClip: () => ({ id: 'slash_test', fps: 30, durationFrames: 26 }),
       setBinding: (binding) => bindings.push(binding),
       pausePlayer() {},
       applyCurrentEvaluation() {},
@@ -140,25 +191,17 @@ test('Preview + Impact fits the selected external motion and restarts Action pla
       updatePlaybackButtons() {},
       setAnimationSource() {},
       renderBinding() {},
-      restartActionPlayback: () => { restartCount += 1; },
     });
-    controller.libraries.set('ual2', {
-      clips: new Map([
-        ['UAL2/Sword_Regular_A', { duration: 0.433 }],
-        ['UAL2/Sword_Regular_B', { duration: 0.533 }],
-      ]),
+    controller.libraries.set('ual1', {
+      clips: new Map([['UAL1/Sword_Attack', { duration: 1.533 }]]),
     });
-    elements.kaykitClip.value = 'UAL2/Sword_Regular_B';
+    elements.kaykitClip.value = 'UAL1/Sword_Attack';
 
-    const binding = await controller.playSelectedWithImpact();
+    const binding = await controller.bindSelected(true);
 
-    assert.equal(binding.source, 'ual2');
-    assert.equal(binding.clipId, 'UAL2/Sword_Regular_B');
+    assert.equal(binding.clipId, 'UAL1/Sword_Attack');
+    assert.ok(binding.speed > 1.7 && binding.speed < 1.8, 'explicit Fit + bind still compresses the clip to the Action duration');
     assert.equal(bindings.length, 1);
-    assert.equal(bindings[0].clipId, 'UAL2/Sword_Regular_B');
-    assert.equal(restartCount, 1);
-    assert.match(elements.kaykitStatus.textContent, /impact preview · Sword_Regular_B/);
-    assert.match(elements.kaykitStatus.textContent, /Impact 14f/);
   } finally {
     restore();
   }
