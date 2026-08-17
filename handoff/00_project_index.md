@@ -171,6 +171,22 @@
 - ADOPT / ADOPT WITH CORRECTIONS / REJECT 決策規則
 - `.gitignore` Skyrim raw/experimental asset 邊界
 
+### 12 — G2.3.1 Real HKX Decode / First Source Bake
+`12_skyrim_real_hkx_decode_first_source_bake.md`
+
+內容：
+- 真實 `skeleton.hkx` + `shd_blockidle.hkx` pair validation
+- 兩支實際輸入的 SHA-256 / size / Havok generation manifest
+- 19/19 Skyrim source semantic bone gate
+- `npm run validate:skyrim-bake-pair -- <skeleton> <animation>`
+- Blender + PyNifly first real source-bake workflow
+- hkxcmd KF fallback boundary
+- self-contained `shd_blockidle.source.glb` output contract
+- `npm run validate:skyrim-source-glb -- <source.glb>`
+- 禁止在 Blender 預先 retarget 到 Blockman；G2.1 為唯一 canonical retarget stage
+- current execution container 無 Havok decoder 時的 truthful boundary
+- G2.3.2 First Real Visual Decision 完成條件
+
 ---
 
 ## 建議開發階段
