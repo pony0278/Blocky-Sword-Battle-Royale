@@ -14,6 +14,7 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
   const animation = createKayKitAnimationController(THREE, rig.root);
   let mode = 'pose';
   let externalAnimationClock = false;
+  let playbackSignature = null;
 
   function resetForAnimation() {
     restoreProceduralKayKitRestPose(rig);
@@ -24,16 +25,31 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
     rig.updateAppearance();
   }
 
-  return {
+  function signatureFor(name, playOptions = {}) {
+    return `${String(name || '')}|${playOptions.inPlace !== false ? 'in-place' : 'root-motion'}`;
+  }
+
+  function prepareAnimation(name, playOptions = {}) {
+    const nextSignature = signatureFor(name, playOptions);
+    if (mode !== 'kaykit' || playbackSignature !== nextSignature) {
+      animation.stop();
+      resetForAnimation();
+    }
+    playbackSignature = nextSignature;
+  }
+
+  const character = {
     object3d: rig.root,
     rig,
     sockets: rig.sockets,
     animation,
     get mode() { return mode; },
+    get playbackSignature() { return playbackSignature; },
     applyPose(pose) {
       if (mode !== 'pose') animation.stop();
       mode = 'pose';
       externalAnimationClock = false;
+      playbackSignature = null;
       const result = applyPoseToProceduralKayKitRig(rig, pose);
       rig.updateAppearance();
       return result;
@@ -56,7 +72,7 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
       return report;
     },
     playAnimation(name, playOptions = {}) {
-      if (mode !== 'kaykit') resetForAnimation();
+      prepareAnimation(name, playOptions);
       mode = 'kaykit';
       externalAnimationClock = false;
       return animation.play(name, playOptions);
@@ -68,7 +84,7 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
       return animation.getClipDuration(name);
     },
     sampleAnimation(name, timeSeconds, sampleOptions = {}) {
-      if (mode !== 'kaykit') resetForAnimation();
+      prepareAnimation(name, sampleOptions);
       mode = 'kaykit';
       externalAnimationClock = true;
       return animation.sample(name, timeSeconds, sampleOptions);
@@ -78,10 +94,22 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
       resetForAnimation();
       mode = 'pose';
       externalAnimationClock = false;
+      playbackSignature = null;
     },
     update(deltaSeconds, camera) {
       if (mode === 'kaykit' && !externalAnimationClock) animation.update(deltaSeconds);
       rig.updateAppearance(camera);
     },
   };
+
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams(window.location?.search || '');
+      if (params.get('g252') === '1') window.__ACTION_STUDIO_G252_CHARACTER = character;
+    } catch (_error) {
+      // Debug-only exposure must never affect the runtime character.
+    }
+  }
+
+  return character;
 }

@@ -242,13 +242,21 @@
   </main>
 
   <script>
+    window.__ACTION_STUDIO_RUNTIME_STAGE = 'G2.5.2';
     if (location.protocol === 'file:') {
+      window.__ACTION_STUDIO_ENTRY_MODE = 'bundle';
       document.getElementById('feelAbControls')?.setAttribute('hidden', '');
       const script = document.createElement('script');
       script.src = './action-studio.bundle.js';
       document.body.appendChild(script);
     } else {
-      import('./action-studio.js');
+      window.__ACTION_STUDIO_ENTRY_MODE = 'module';
+      import('./action-studio.js').then(() => {
+        if (new URLSearchParams(location.search).get('g252') === '1') {
+          return import('./action-studio-runtime-parity.js');
+        }
+        return null;
+      });
     }
   </script>
 </body>

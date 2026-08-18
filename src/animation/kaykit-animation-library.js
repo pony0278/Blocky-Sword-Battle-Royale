@@ -52,6 +52,17 @@ function clipTargetName(trackName) {
   return propertyIndex < 0 ? trackName : trackName.slice(0, propertyIndex);
 }
 
+function clipPropertyName(trackName) {
+  const propertyIndex = String(trackName || '').lastIndexOf('.');
+  return propertyIndex < 0 ? '' : String(trackName || '').slice(propertyIndex + 1);
+}
+
+function isRootPositionTrack(track) {
+  const name = String(track?.name || '');
+  return clipPropertyName(name) === 'position'
+    && sanitizeAnimationTargetName(clipTargetName(name)) === sanitizeAnimationTargetName('root');
+}
+
 export function validateKayKitClipBindings(clips, boneIds) {
   const known = new Set(boneIds.map((boneId) => sanitizeAnimationTargetName(boneId)));
   const missing = new Map();
@@ -71,6 +82,20 @@ export function createKayKitAnimationController(THREE, object3d) {
   let currentAction = null;
   let currentClipName = null;
 
+  function invalidatePreparedActions(name) {
+    for (const [key, action] of [...actions.entries()]) {
+      if (!key.startsWith(`${name}|`)) continue;
+      if (currentAction === action) {
+        currentAction = null;
+        currentClipName = null;
+      }
+      action.stop?.();
+      const prepared = action.getClip?.();
+      if (prepared && mixer.uncacheAction) mixer.uncacheAction(prepared, object3d);
+      actions.delete(key);
+    }
+  }
+
   function preparedClip(name, inPlace) {
     const source = clips.get(name);
     if (!source) return null;
@@ -79,7 +104,7 @@ export function createKayKitAnimationController(THREE, object3d) {
       const clip = source.clone();
       clip.name = key;
       if (inPlace) {
-        clip.tracks = clip.tracks.filter((track) => track.name !== 'root.position');
+        clip.tracks = clip.tracks.filter((track) => !isRootPositionTrack(track));
         clip.resetDuration();
       }
       actions.set(key, mixer.clipAction(clip, object3d));
@@ -103,7 +128,11 @@ export function createKayKitAnimationController(THREE, object3d) {
     get currentClipName() { return currentClipName; },
     register(source) {
       const iterable = source?.values ? source.values() : source;
-      for (const clip of iterable || []) if (!clips.has(clip.name)) clips.set(clip.name, clip);
+      for (const clip of iterable || []) {
+        if (!clip?.name) continue;
+        if (clips.has(clip.name)) invalidatePreparedActions(clip.name);
+        clips.set(clip.name, clip);
+      }
       return clips.size;
     },
     has(name) {
@@ -111,6 +140,19 @@ export function createKayKitAnimationController(THREE, object3d) {
     },
     getClipDuration(name) {
       return Math.max(0, Number(clips.get(name)?.duration) || 0);
+    },
+    getPreparedClipDiagnostics(name, inPlace = true) {
+      const source = clips.get(name);
+      const action = preparedClip(name, inPlace);
+      const prepared = action?.getClip?.() || null;
+      return {
+        name,
+        inPlace: Boolean(inPlace),
+        sourceTrackCount: source?.tracks?.length || 0,
+        sourceRootPositionTracks: source?.tracks?.filter(isRootPositionTrack).length || 0,
+        preparedTrackCount: prepared?.tracks?.length || 0,
+        preparedRootPositionTracks: prepared?.tracks?.filter(isRootPositionTrack).length || 0,
+      };
     },
     play(name, options = {}) {
       const action = preparedClip(name, options.inPlace !== false);
