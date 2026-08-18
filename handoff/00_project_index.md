@@ -198,6 +198,19 @@ Contents:
 - Front / 3-quarter / Side / Back review support
 - Windows browser sandbox blocker and truthful `PENDING` visual decision
 
+### 14 — G2.4 Skyrim Retarget Correctness & Root Motion Fix
+`14_skyrim_guard_g2_4_root_motion_fix.md`
+
+內容：
+- 修正 Skyrim / Action Studio 跨單位 translation scale，不再把約 `0.01` 的合理比例夾成 `0.5`
+- 將 root motion 與 pelvis root-relative body motion 分離，避免 world-space 位移重複套用
+- 保留 `inPlace` 下的 pelvis 重心微移，同時只移除真正 root locomotion
+- 新增整段 max excursion / max step translation diagnostics
+- 新增「中途飛走但首尾相同」regression test
+- PR #13 CI engineering validation result
+- 明確保留 99 animated nodes → 19 semantic bones 的 fidelity follow-up 邊界
+- G2.4.1 canonical GLB visual playback acceptance gate
+
 ---
 
 ## 建議開發階段
