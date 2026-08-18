@@ -40,32 +40,23 @@ function captureMountCalibration(object3d) {
   };
 }
 
-function installGuardPanel() {
-  if (document.getElementById('guardRuntimePanel')) return document.getElementById('guardRuntimePanel');
-  const quickActions = document.querySelector('.quick-actions');
-  if (!quickActions) return null;
+const REQUIRED_GUARD_RUNTIME_MODES = Object.freeze(['hold', 'block', 'parry', 'perfect', 'counter']);
 
-  const legacyGuardRow = quickActions.querySelector('.secondary-row');
-  legacyGuardRow?.remove();
-
-  quickActions.insertAdjacentHTML('afterend', `
-    <section id="guardRuntimePanel" class="panel guard-runtime-panel" data-stage="G3.4">
-      <div class="panel-title"><span>Guard Runtime · G3.4</span><small>Skyrim Guard ↔ KayKit Counter</small></div>
-      <p class="blocking-intro">真正 Guard FSM 預覽。Block / Parry 使用 Skyrim Guard family；Counter 只會在預覽送出 authoritative <b>COUNTER_CONFIRMED</b> 後進入 KayKit <b>Melee_Block_Attack</b>，完成後回到 Skyrim Recover / Hold。</p>
-      <div class="button-grid three">
-        <button data-guard-runtime="hold">Guard Hold</button>
-        <button data-guard-runtime="block">Block Hit</button>
-        <button data-guard-runtime="parry">Parry</button>
-      </div>
-      <div class="button-grid two secondary-row">
-        <button data-guard-runtime="perfect">Perfect Parry</button>
-        <button data-guard-runtime="counter" class="primary">▶ Counter</button>
-      </div>
-      <div id="guardRuntimeStatus" class="status-line">G3.4 · assets load on first preview</div>
-      <div id="guardRuntimeDetail" class="status-line">Counter = Melee_Block_Attack · presentation never self-confirms combat authority</div>
-    </section>
-  `);
-  return document.getElementById('guardRuntimePanel');
+function resolveGuardPanel() {
+  const panel = document.getElementById('guardRuntimePanel');
+  if (!panel) {
+    throw new Error('Action Studio Guard Runtime panel must be authored statically in index.template.html');
+  }
+  const buttons = [...panel.querySelectorAll('[data-guard-runtime]')];
+  const modes = buttons.map((button) => button.dataset.guardRuntime);
+  const missing = REQUIRED_GUARD_RUNTIME_MODES.filter((mode) => !modes.includes(mode));
+  if (buttons.length !== REQUIRED_GUARD_RUNTIME_MODES.length || missing.length) {
+    throw new Error(`Static Guard Runtime panel is incomplete: ${missing.join(', ') || `${buttons.length} buttons`}`);
+  }
+  panel.setAttribute('data-guard-runtime-static', 'true');
+  panel.setAttribute('data-controller-bound', 'true');
+  panel.setAttribute('data-guard-runtime-button-count', String(buttons.length));
+  return panel;
 }
 
 function createUnavailableGuardRuntime() {
@@ -93,7 +84,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     return createUnavailableGuardRuntime();
   }
 
-  const panel = installGuardPanel();
+  const panel = resolveGuardPanel();
   const status = document.getElementById('guardRuntimeStatus');
   const detail = document.getElementById('guardRuntimeDetail');
   const weaponObject3d = character.sockets?.HAND_R?.children?.[0] || null;
