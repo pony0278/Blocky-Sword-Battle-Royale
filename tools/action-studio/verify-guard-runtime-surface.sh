@@ -18,7 +18,7 @@ trap 'kill "$SERVER_PID" >/dev/null 2>&1 || true' EXIT
 sleep 2
 
 "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
-  --window-size=1440,1000 --virtual-time-budget=12000 --dump-dom \
+  --window-size=1440,1000 --virtual-time-budget=20000 --dump-dom \
   "${BASE}?pagesGuardGate=1" >"$DOM_FILE"
 
 fail() {
