@@ -1,0 +1,89 @@
+name: Skyrim Guard Visual Verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/animation/skyrim-animation-retarget.js'
+      - 'src/animation/skyrim-converted-animation-library.js'
+      - 'src/animation/kaykit-animation-library.js'
+      - 'src/character/**'
+      - 'tools/action-studio/skyrim-guard-visual-review.html'
+      - 'tools/action-studio/skyrim-guard-visual-review.js'
+      - 'assets/skyrim/guard/converted/shd_blockidle.source.glb'
+      - '.github/workflows/skyrim-guard-visual.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-playback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Action Studio
+        run: npm run build:action-studio
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$BROWSER" ]; then
+            echo 'No Chrome/Chromium executable is available on this runner.' >&2
+            exit 1
+          fi
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Capture canonical playback frames
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g2-4-1
+          python3 -m http.server 4173 > /tmp/g2-4-1-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+
+          BASE='http://127.0.0.1:4173/tools/action-studio/skyrim-guard-visual-review.html?canonical=1'
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            --window-size=1600,1100 --virtual-time-budget=15000 \
+            --dump-dom "${BASE}&view=three&sample=0.5" \
+            > artifacts/g2-4-1/probe-dom.html
+
+          if ! grep -q 'data-g241="pass"' artifacts/g2-4-1/probe-dom.html; then
+            echo 'G2.4.1 runtime stability/loop verification did not pass.' >&2
+            grep -o 'data-g241[^ >]*' artifacts/g2-4-1/probe-dom.html || true
+            exit 1
+          fi
+
+          for sample in 0 0.25 0.5 0.75 0.998; do
+            label="$(printf '%s' "$sample" | tr '.' '_')"
+            for view in front three side back; do
+              "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+                --window-size=1600,1100 --virtual-time-budget=15000 \
+                --screenshot="artifacts/g2-4-1/${view}-${label}.png" \
+                "${BASE}&view=${view}&sample=${sample}"
+            done
+          done
+
+      - name: Upload G2.4.1 visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g2-4-1-skyrim-guard-visual
+          path: artifacts/g2-4-1
+          if-no-files-found: warn
