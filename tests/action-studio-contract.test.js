@@ -99,6 +99,24 @@ test('G1 KayKit Guard Source Review exposes the four source clips and hold compa
   assert.doesNotMatch(`${html}\n${app}`, /attackDirection|incomingDirection|guardDirection/);
 });
 
+test('Action Studio exposes the real G3.4 Guard FSM and Counter in its Guard runtime panel', async () => {
+  const externalController = await readFile(new URL('../tools/action-studio/studio-external-animation-controller.js', import.meta.url), 'utf8');
+  const guardController = await readFile(new URL('../tools/action-studio/studio-guard-runtime-controller.js', import.meta.url), 'utf8');
+  assert.match(externalController, /createStudioGuardRuntimeController/);
+  assert.match(guardController, /Guard Runtime · G3\.4/);
+  assert.match(guardController, /data-guard-runtime="hold"/);
+  assert.match(guardController, /data-guard-runtime="block"/);
+  assert.match(guardController, /data-guard-runtime="parry"/);
+  assert.match(guardController, /data-guard-runtime="perfect"/);
+  assert.match(guardController, /data-guard-runtime="counter"/);
+  assert.match(guardController, /Melee_Block_Attack/);
+  assert.match(guardController, /GUARD_EVENTS\.COUNTER_CONFIRMED/);
+  assert.match(guardController, /GUARD_WEAPON_MOUNT_PROFILE_IDS\.KAYKIT_DEFAULT/);
+  assert.match(guardController, /GUARD_WEAPON_MOUNT_PROFILE_IDS\.SKYRIM_GUARD/);
+  assert.match(guardController, /presentation never self-confirms combat authority/);
+  assert.doesNotMatch(guardController, /machine\.send\(GUARD_EVENTS\.COUNTER_COMPLETE/);
+});
+
 test('Three-dependent character modules are importable without gameplay globals', () => {
   assert.equal(typeof createBlockCharacter, 'function');
   assert.equal(typeof createBlockRig, 'function');
