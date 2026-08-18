@@ -1,0 +1,65 @@
+name: G3.3.2 Temporary Test + Bundle Sync
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Fix one-shot Skyrim reaction preview semantics
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/action-studio/studio-external-animation-controller.js')
+          text = path.read_text(encoding='utf-8')
+          old = """function shouldLoopClip(name) {\n  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(name);\n}\n"""
+          new = """function shouldLoopClip(name) {\n  const clipId = String(name || '');\n  if (clipId === 'SKYRIM_GUARD/shd_blockidle') return true;\n  if (/^SKYRIM_GUARD\\/shd_block(?:hit|bash|bashpower)$/i.test(clipId)) return false;\n  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(clipId);\n}\n"""
+          if old not in text:
+              raise SystemExit('expected shouldLoopClip source contract not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Build Action Studio
+        run: npm run build:action-studio
+
+      - name: Run complete test suite against rebuilt runtime
+        run: npm test
+
+      - name: Publish verified source + standalone runtime to G3.3.2 branch
+        shell: bash
+        run: |
+          mkdir -p /tmp/g332-sync/tools/action-studio
+          cp tools/action-studio/studio-external-animation-controller.js /tmp/g332-sync/tools/action-studio/
+          cp tools/action-studio/action-studio.bundle.js /tmp/g332-sync/tools/action-studio/
+          cp tools/action-studio/index.html /tmp/g332-sync/tools/action-studio/
+
+          git fetch origin agent/g3-3-2-guard-reaction-runtime
+          git switch -C agent/g3-3-2-guard-reaction-runtime origin/agent/g3-3-2-guard-reaction-runtime
+          cp /tmp/g332-sync/tools/action-studio/studio-external-animation-controller.js tools/action-studio/
+          cp /tmp/g332-sync/tools/action-studio/action-studio.bundle.js tools/action-studio/
+          cp /tmp/g332-sync/tools/action-studio/index.html tools/action-studio/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/action-studio/studio-external-animation-controller.js tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+          if git diff --cached --quiet; then
+            echo 'G3.3.2 standalone runtime already current.'
+          else
+            git commit -m "build: sync G3.3.2 guard reaction runtime"
+            git push origin HEAD:agent/g3-3-2-guard-reaction-runtime
+          fi
