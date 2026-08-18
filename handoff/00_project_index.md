@@ -211,6 +211,20 @@ Contents:
 - 明確保留 99 animated nodes → 19 semantic bones 的 fidelity follow-up 邊界
 - G2.4.1 canonical GLB visual playback acceptance gate
 
+### 15 — G2.4.1 Canonical GLB Visual Playback Verification
+`15_skyrim_guard_g2_4_1_canonical_visual_verification.md`
+
+內容：
+- GitHub Actions headless Chrome 直接載入 canonical `shd_blockidle.source.glb`
+- 1201-frame target-rig in-place runtime probe
+- root max excursion `0.0000`、hips max excursion `0.0145`，確認飛走問題已修復
+- loop seam engineering result GOOD
+- 0 / 25 / 50 / 75 / 99.8% timeline screenshots
+- Front / 3-quarter / Side / Back visual evidence
+- G2.4.1 overall visual acceptance = **FAIL**
+- 確認 global Skyrim → Action Studio coordinate-basis mismatch 仍未修正
+- 下一階段：G2.4.2 Skyrim Coordinate Basis Calibration
+
 ---
 
 ## 建議開發階段
