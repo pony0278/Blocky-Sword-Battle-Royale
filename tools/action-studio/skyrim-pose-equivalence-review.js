@@ -21,9 +21,30 @@ const FRACTIONS = Object.freeze([0, 0.25, 0.5, 0.75, 0.998]);
 const TARGET_OFFSET_X = 1.45;
 const SOURCE_OFFSET_X = -1.45;
 
-const SEGMENTS = Object.freeze([
-  Object.freeze({ id:'torso.pelvis-spine', source:['pelvis','spine'], target:['hips','spine'], core:true }),
-  Object.freeze({ id:'torso.spine-chest', source:['spine','chest'], target:['spine','chest'], core:true }),
+// Detailed source display preserves the actual visible semantic skeleton.
+const DISPLAY_SEGMENTS = Object.freeze([
+  Object.freeze({ source:['pelvis','spine'] }),
+  Object.freeze({ source:['spine','chest'] }),
+  Object.freeze({ source:['chest','head'] }),
+  Object.freeze({ source:['upperarm.l','lowerarm.l'] }),
+  Object.freeze({ source:['lowerarm.l','wrist.l'] }),
+  Object.freeze({ source:['wrist.l','handslot.l'] }),
+  Object.freeze({ source:['upperarm.r','lowerarm.r'] }),
+  Object.freeze({ source:['lowerarm.r','wrist.r'] }),
+  Object.freeze({ source:['wrist.r','handslot.r'] }),
+  Object.freeze({ source:['upperleg.l','lowerleg.l'] }),
+  Object.freeze({ source:['lowerleg.l','foot.l'] }),
+  Object.freeze({ source:['foot.l','toes.l'] }),
+  Object.freeze({ source:['upperleg.r','lowerleg.r'] }),
+  Object.freeze({ source:['lowerleg.r','foot.r'] }),
+  Object.freeze({ source:['foot.r','toes.r'] }),
+]);
+
+// Technical equivalence compares semantically equivalent chains. Skyrim has Spine0/1/2 while
+// the target has only spine/chest, so the lower torso must be compared as aggregate vectors.
+const EQUIVALENCE_SEGMENTS = Object.freeze([
+  Object.freeze({ id:'torso.pelvis-chest', source:['pelvis','chest'], target:['hips','chest'], core:true }),
+  Object.freeze({ id:'torso.pelvis-head', source:['pelvis','head'], target:['hips','head'], core:true }),
   Object.freeze({ id:'torso.chest-head', source:['chest','head'], target:['chest','head'], core:true }),
   Object.freeze({ id:'arm.l.upper', source:['upperarm.l','lowerarm.l'], target:['upperarm.l','lowerarm.l'], core:true }),
   Object.freeze({ id:'arm.l.lower', source:['lowerarm.l','wrist.l'], target:['lowerarm.l','wrist.l'], core:true }),
@@ -39,7 +60,7 @@ const SEGMENTS = Object.freeze([
   Object.freeze({ id:'leg.r.foot', source:['foot.r','toes.r'], target:['foot.r','toes.r'], core:true }),
 ]);
 
-const SOURCE_POINT_IDS = Object.freeze([...new Set(SEGMENTS.flatMap((segment) => segment.source))]);
+const SOURCE_POINT_IDS = Object.freeze([...new Set(DISPLAY_SEGMENTS.flatMap((segment) => segment.source))]);
 const reportNode = document.getElementById('report');
 const decisionLabel = document.getElementById('decisionLabel');
 const equivalenceLabel = document.getElementById('equivalenceLabel');
@@ -58,8 +79,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x253049, 1.25));
 const key = new THREE.DirectionalLight(0xffffff, 0.9);
 key.position.set(3, 5, 4);
 scene.add(key);
-const grid = new THREE.GridHelper(8, 16, 0x31405b, 0x202a3b);
-scene.add(grid);
+scene.add(new THREE.GridHelper(8, 16, 0x31405b, 0x202a3b));
 
 const character = createDefaultCharacter(THREE);
 character.object3d.position.x = TARGET_OFFSET_X;
@@ -68,7 +88,7 @@ mountDebugSword(character, sword, DEFAULT_KAYKIT_SWORD_MOUNT);
 scene.add(character.object3d);
 
 const sourceGeometry = new THREE.BufferGeometry();
-sourceGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SEGMENTS.length * 2 * 3), 3));
+sourceGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DISPLAY_SEGMENTS.length * 2 * 3), 3));
 const sourceLine = new THREE.LineSegments(
   sourceGeometry,
   new THREE.LineBasicMaterial({ color:0xffbf69, transparent:true, opacity:0.98 }),
@@ -121,25 +141,30 @@ function setView(view) {
   camera.updateMatrixWorld(true);
 }
 
-function sourceDisplayPoint(sourceNodes, basisQuaternion, translationScale, id, sourcePelvis, targetY, target = new THREE.Vector3()) {
+function sourceDisplayPoint(sourceNodes, basisQuaternion, displayScale, id, sourcePelvis, targetY, target = new THREE.Vector3()) {
   sourceNodes[id].getWorldPosition(target);
   return target
     .sub(sourcePelvis)
     .applyQuaternion(basisQuaternion)
-    .multiplyScalar(translationScale)
+    .multiplyScalar(displayScale)
     .add(new THREE.Vector3(SOURCE_OFFSET_X, targetY, 0));
 }
 
-function updateSourceVisual(sourceNodes, basisQuaternion, translationScale) {
+function updateSourceVisual(sourceNodes, basisQuaternion) {
   const sourcePelvis = worldPosition(sourceNodes.pelvis, new THREE.Vector3());
+  const sourceHead = worldPosition(sourceNodes.head, new THREE.Vector3());
   const targetHips = targetBonePosition('hips', new THREE.Vector3());
+  const targetHead = targetBonePosition('head', new THREE.Vector3());
+  const sourceTorsoHeight = Math.max(1e-6, sourceHead.distanceTo(sourcePelvis));
+  const targetTorsoHeight = Math.max(1e-6, targetHead.distanceTo(targetHips));
+  const displayScale = targetTorsoHeight / sourceTorsoHeight;
   const pointCache = new Map();
   const getPoint = (id) => {
     if (!pointCache.has(id)) {
       pointCache.set(id, sourceDisplayPoint(
         sourceNodes,
         basisQuaternion,
-        translationScale,
+        displayScale,
         id,
         sourcePelvis,
         targetHips.y,
@@ -150,7 +175,7 @@ function updateSourceVisual(sourceNodes, basisQuaternion, translationScale) {
   };
 
   const attribute = sourceGeometry.attributes.position;
-  SEGMENTS.forEach((segment, index) => {
+  DISPLAY_SEGMENTS.forEach((segment, index) => {
     const a = getPoint(segment.source[0]);
     const b = getPoint(segment.source[1]);
     attribute.setXYZ(index * 2, a.x, a.y, a.z);
@@ -158,6 +183,7 @@ function updateSourceVisual(sourceNodes, basisQuaternion, translationScale) {
   });
   attribute.needsUpdate = true;
   Object.entries(sourceJoints).forEach(([id, mesh]) => mesh.position.copy(getPoint(id)));
+  return displayScale;
 }
 
 function sampleEquivalence(sourceNodes, basisQuaternion) {
@@ -165,7 +191,7 @@ function sampleEquivalence(sourceNodes, basisQuaternion) {
   const sourceEnd = new THREE.Vector3();
   const targetStart = new THREE.Vector3();
   const targetEnd = new THREE.Vector3();
-  return SEGMENTS.map((segment) => {
+  return EQUIVALENCE_SEGMENTS.map((segment) => {
     sourceNodes[segment.source[0]].getWorldPosition(sourceStart);
     sourceNodes[segment.source[1]].getWorldPosition(sourceEnd);
     character.rig.bones[segment.target[0]].getWorldPosition(targetStart);
@@ -256,7 +282,6 @@ async function run() {
   character.registerAnimations(library);
 
   const basisQuaternion = new THREE.Quaternion().fromArray(targetClip.userData.basisCalibration.quaternion).normalize();
-  const translationScale = Number(targetClip.userData.translationScale) || 1;
   const targetForward = {
     right: targetClip.userData.basisCalibration.target.right,
     forward: targetClip.userData.basisCalibration.target.forward,
@@ -303,11 +328,11 @@ async function run() {
   character.object3d.updateMatrixWorld(true);
   sword.object3d.updateMatrixWorld(true);
   sword.update();
-  updateSourceVisual(sourceReport.nodes, basisQuaternion, translationScale);
+  const displayScale = updateSourceVisual(sourceReport.nodes, basisQuaternion);
   character.update(0, camera);
   sword.update();
 
-  const perSegmentWorst = Object.fromEntries(SEGMENTS.map((segment) => [
+  const perSegmentWorst = Object.fromEntries(EQUIVALENCE_SEGMENTS.map((segment) => [
     segment.id,
     rounded(Math.max(...samples.map((sample) => sample.segments.find((item) => item.id === segment.id)?.angleDegrees || 0))),
   ]));
@@ -329,11 +354,15 @@ async function run() {
       suitability: sample.suitability,
     })),
     reviewPolicy: {
-      coreEquivalence: 'torso + upper/lower arms + legs/feet direction angles after G2.4.2 basis conversion',
+      coreEquivalence: 'aggregate torso + upper/lower arms + legs/feet direction angles after G2.4.2 basis conversion',
+      torsoSegmentation: 'Skyrim Spine0/1/2 is compared to KayKit spine/chest using pelvis→chest and pelvis→head aggregate vectors',
       helperEquivalence: 'Hand→Weapon / Hand→Shield is diagnostic-only because socket geometry differs between rigs',
+      displayScale: 'source pelvis→head normalized to target hips→head for side-by-side visual review',
       adoption: 'technical equivalence must be accepted before authored source-pose suitability can be judged',
       triangleGuardReference: 'handoff/07_directional_triangle_guard_spec.md',
     },
+    runtimeTranslationScale: rounded(Number(targetClip.userData.translationScale) || 1, 8),
+    visualDisplayScale: rounded(displayScale, 8),
     screenshot: { fraction:requestedFraction, time:rounded(requestedTime), view },
   };
 
