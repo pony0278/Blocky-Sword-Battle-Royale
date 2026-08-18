@@ -62,7 +62,7 @@ test('G2.5 corrected Triangle Forward candidate passes the authored target contr
     offHandCenterDistance: 0.55,
     swordTipHeight: 0.88,
     swordForwardDot: 0.82,
-    triangleArea: 0.075,
+    triangleArea: 0.35,
     torsoYawDegrees: 32,
   });
 
@@ -74,6 +74,7 @@ test('G2.5 target contract is intentionally tighter than the generic G2.4 suitab
   assert.equal(LONGSWORD_TRIANGLE_GUARD_TARGETS.weaponHandHeight.min, 0.50);
   assert.equal(LONGSWORD_TRIANGLE_GUARD_TARGETS.swordTipHeight.min, 0.70);
   assert.equal(LONGSWORD_TRIANGLE_GUARD_TARGETS.swordForwardDot.min, 0.65);
+  assert.deepEqual(LONGSWORD_TRIANGLE_GUARD_TARGETS.triangleArea, { min: 0.035 });
   assert.deepEqual(LONGSWORD_TRIANGLE_GUARD_TARGETS.torsoYawDegrees, { min: 20, max: 38 });
   assert.equal(LONGSWORD_GUARD_CORRECTION_ORDER.includes('apply-g2.4.5-weapon-bind-calibration'), true);
 });
