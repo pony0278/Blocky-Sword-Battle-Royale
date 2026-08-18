@@ -203,7 +203,7 @@
 
 內容：
 - 修正 Skyrim / Action Studio 跨單位 translation scale，不再把約 `0.01` 的合理比例夾成 `0.5`
-- 將 root motion 與 pelvis root-relative body motion 分離，避免 world-space 位移重複套用
+- 將 root motion 與 pelvis root-relative body motion分離，避免 world-space 位移重複套用
 - 保留 `inPlace` 下的 pelvis 重心微移，同時只移除真正 root locomotion
 - 新增整段 max excursion / max step translation diagnostics
 - 新增「中途飛走但首尾相同」regression test
@@ -247,6 +247,30 @@
 - 1201-frame 四段手臂方向誤差 gate，overall max 約 `0.00001093°`
 - G2.4.3 arm-chain / wrist CI gate PASS
 - 將剩餘低劍／shield-side silhouette 分離為 source-pose suitability 問題
+
+### 18 — G2.4.4 Canonical Source ↔ Target Pose Equivalence & Guard Adoption Review
+`18_skyrim_guard_g2_4_4_pose_equivalence_adoption.md`
+
+內容：
+- canonical source / target 同時間點公平姿勢比較
+- 以 aggregate torso semantics 避免 Skyrim Spine0/1/2 與 KayKit 簡化 spine segmentation 的假誤差
+- body equivalence `WARNING`：mean `6.51447°`、p95 `15.63755°`、max `15.64991°`
+- 上下手臂已近乎等價，剩餘 body 差異集中 torso / leg / foot rest-axis
+- G2.4.4 當時因 equipment frame 未校準而保持 `PENDING`
+- 該 equipment blocker 已由 G2.4.5 的 quaternion bind-frame calibration 解決
+
+### 19 — G2.4.5 Skyrim Weapon Helper ↔ KayKit Sword Socket Bind Calibration
+`19_skyrim_guard_g2_4_5_weapon_bind_calibration.md`
+
+內容：
+- 淘汰 G2.4.4 的 `Hand→Weapon` positional-vector proxy，不再把約 `77°` 當 bind-frame correction
+- 使用真實 Skyrim Weapon / KayKit handslot quaternion rest frames 推導固定 bind correction
+- 真實未校準 quaternion frame mismatch 約 `112.116211°`
+- derived correction quaternion `[0.18599574, -0.80092339, -0.11031984, 0.55835189]`
+- 校準後 canonical frame max error `0.004103°`，Weapon Socket = `GOOD`
+- 校準後 sword-tip / forward-threat 指標可信，五個 sample 皆為 Triangle Guard `WARNING`
+- 最終 Skyrim `shd_blockidle` 採用決策：**ADOPT WITH CORRECTIONS**
+- 下一步進 G2.5，將技術 retarget 結案並規劃 Triangle Guard authored correction layer
 
 ---
 
