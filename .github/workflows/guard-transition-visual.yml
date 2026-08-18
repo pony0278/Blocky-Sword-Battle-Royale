@@ -4,6 +4,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'src/animation/action-templates.js'
+      - 'src/animation/kaykit-pose-adapter.js'
       - 'src/combat/guard-transition-presentation.js'
       - 'src/combat/guard-state-machine.js'
       - 'src/combat/longsword-guard-correction.js'
@@ -68,12 +70,14 @@ jobs:
             sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-2/g32-dom.html || true
             exit 1
           fi
+          grep -q 'data-g32-neutral="action-studio-idle"' artifacts/g3-2/g32-dom.html
           grep -q 'data-g32-enter="180ms"' artifacts/g3-2/g32-dom.html
           grep -q 'data-g32-recover="140ms"' artifacts/g3-2/g32-dom.html
           grep -q 'data-g32-exit="160ms"' artifacts/g3-2/g32-dom.html
           grep -q 'data-g32-clip="SKYRIM_GUARD/shd_blockidle"' artifacts/g3-2/g32-dom.html
 
           for spec in \
+            'neutral|neutral|0|three' \
             'enter-start|guard_enter|0|three' \
             'enter-mid|guard_enter|0.5|three' \
             'enter-end|guard_enter|1|three' \
