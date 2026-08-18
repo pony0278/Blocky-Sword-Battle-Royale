@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test:
@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,3 +31,17 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Sync generated standalone Action Studio files
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          if git diff --quiet -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
+            echo 'Standalone Action Studio files are already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+          git commit -m 'build: sync G2.5.2 Action Studio standalone runtime'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
