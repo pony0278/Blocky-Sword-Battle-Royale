@@ -9,6 +9,7 @@ import {
   getGuardPresentation,
 } from '../src/combat/guard-state-machine.js';
 import { LONGSWORD_GUARD_BASE } from '../src/combat/longsword-guard-metadata.js';
+import { GUARD_TRANSITION_PROFILE_IDS } from '../src/combat/guard-transition-presentation.js';
 
 test('G3.1 enters and exits the canonical Skyrim guard hold', () => {
   const machine = createGuardStateMachine();
@@ -104,14 +105,29 @@ test('G3.1 re-press during exit re-enters guard without transient neutral', () =
   assert.equal(machine.guardHeld, true);
 });
 
-test('G3.1 exposes presentation-only authority boundaries and future authoring slots', () => {
+test('G3.2 authors enter/recover/exit while preserving future reaction and counter slots', () => {
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.GUARD_PRESS], 'local-intent');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.BLOCK_CONFIRMED], 'authoritative-combat');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.PARRY_CONFIRMED], 'authoritative-combat');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.COUNTER_CONFIRMED], 'authoritative-combat');
 
-  assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.ENTER].plannedStage, 'G3.2');
+  const enter = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.ENTER];
+  const recover = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.RECOVER];
+  const exit = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.EXIT];
+  for (const presentation of [enter, recover, exit]) {
+    assert.equal(presentation.authored, true);
+    assert.equal(presentation.authoredStage, 'G3.2');
+    assert.equal(presentation.clipId, LONGSWORD_GUARD_BASE.clipId);
+    assert.equal(presentation.correctionLayerId, LONGSWORD_GUARD_BASE.correctionLayerId);
+    assert.equal(presentation.inPlace, true);
+    assert.equal(presentation.loop, true);
+  }
+  assert.equal(enter.transitionProfileId, GUARD_TRANSITION_PROFILE_IDS.ENTER);
+  assert.equal(recover.transitionProfileId, GUARD_TRANSITION_PROFILE_IDS.RECOVER);
+  assert.equal(exit.transitionProfileId, GUARD_TRANSITION_PROFILE_IDS.EXIT);
+
   assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.BLOCK_HIT].plannedStage, 'G3.3');
+  assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.PARRY].plannedStage, 'G3.3');
   assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.COUNTER].plannedStage, 'G3.4');
 });
 
