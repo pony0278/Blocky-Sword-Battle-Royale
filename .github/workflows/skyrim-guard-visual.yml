@@ -52,15 +52,16 @@ jobs:
           BROWSER: ${{ steps.browser.outputs.browser }}
         run: |
           mkdir -p artifacts/g2-4-1
+          cp assets/skyrim/guard/converted/shd_blockidle.source.glb artifacts/g2-4-1/canonical-source.glb
           python3 -m http.server 4173 > /tmp/g2-4-1-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
 
           BASE='http://127.0.0.1:4173/tools/action-studio/skyrim-guard-visual-review.html?canonical=1'
-          CHROME_FLAGS='--headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1600,1100 --virtual-time-budget=7000'
 
-          "$BROWSER" $CHROME_FLAGS \
+          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            --window-size=1600,1100 --virtual-time-budget=10000 \
             --dump-dom "${BASE}&view=three&sample=0.5" \
             > artifacts/g2-4-1/probe-dom.html
 
@@ -72,13 +73,15 @@ jobs:
 
           for sample in 0 0.25 0.5 0.75 0.998; do
             label="$(printf '%s' "$sample" | tr '.' '_')"
-            "$BROWSER" $CHROME_FLAGS \
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+              --window-size=1600,1100 --virtual-time-budget=10000 \
               --screenshot="artifacts/g2-4-1/three-${label}.png" \
               "${BASE}&view=three&sample=${sample}"
           done
 
           for view in front side back; do
-            "$BROWSER" $CHROME_FLAGS \
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+              --window-size=1600,1100 --virtual-time-budget=10000 \
               --screenshot="artifacts/g2-4-1/${view}-0_5.png" \
               "${BASE}&view=${view}&sample=0.5"
           done
