@@ -67,6 +67,17 @@ function quatValues(values, frames) {
   return out;
 }
 
+function resolveCanonicalJoint(gltf, name) {
+  const sanitized = THREE.PropertyBinding?.sanitizeNodeName?.(name) || name;
+  const direct = gltf.scene.getObjectByName(name) || gltf.scene.getObjectByName(sanitized);
+  if (direct) return direct;
+  const compact = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const wanted = compact(name);
+  let found = null;
+  gltf.scene.traverse((node) => { if (!found && compact(node.name) === wanted) found = node; });
+  return found;
+}
+
 function sourceClipFromDecoded(gltf, data, id) {
   if (data.numTracks !== data.jointNames.length || data.numTracks !== data.tracks.length) {
     throw new Error(`${id}: decoded track/joint mismatch`);
@@ -76,7 +87,7 @@ function sourceClipFromDecoded(gltf, data, id) {
   const tracks = [];
   for (let index=0; index<data.numTracks; index++) {
     const name = data.jointNames[index];
-    const node = gltf.scene.getObjectByName(name);
+    const node = resolveCanonicalJoint(gltf, name);
     if (!node) throw new Error(`${id}: canonical source hierarchy missing joint ${index} ${name}`);
     const source = data.tracks[index];
     if (source.translations?.length) tracks.push(new THREE.VectorKeyframeTrack(`${node.uuid}.position`, times, vec3Values(source.translations,frameCount)));
