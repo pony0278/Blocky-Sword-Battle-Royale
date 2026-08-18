@@ -1,0 +1,96 @@
+name: Guard Transition Visual Verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/combat/guard-transition-presentation.js'
+      - 'src/combat/guard-state-machine.js'
+      - 'src/combat/longsword-guard-correction.js'
+      - 'src/combat/longsword-guard-metadata.js'
+      - 'tools/action-studio/guard-transition-authoring-lab.html'
+      - 'tools/action-studio/guard-transition-authoring-lab.js'
+      - 'tests/guard-transition-presentation.test.js'
+      - '.github/workflows/guard-transition-visual.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard-transition:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Action Studio
+        run: npm run build:action-studio
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$BROWSER" ]; then
+            echo 'No Chrome/Chromium executable is available on this runner.' >&2
+            exit 1
+          fi
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Verify real G3.2 Guard transition lab
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-2
+          python3 -m http.server 4173 > /tmp/g3-2-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+
+          BASE='http://127.0.0.1:4173/tools/action-studio/guard-transition-authoring-lab.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=16000 \
+            --dump-dom "${BASE}?view=three&state=guard_enter&progress=0.5" \
+            > artifacts/g3-2/g32-dom.html
+
+          if ! grep -q 'data-g32="pass"' artifacts/g3-2/g32-dom.html; then
+            echo 'G3.2 Guard transition verification failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-2/g32-dom.html || true
+            exit 1
+          fi
+          grep -q 'data-g32-enter="180ms"' artifacts/g3-2/g32-dom.html
+          grep -q 'data-g32-recover="140ms"' artifacts/g3-2/g32-dom.html
+          grep -q 'data-g32-exit="160ms"' artifacts/g3-2/g32-dom.html
+          grep -q 'data-g32-clip="SKYRIM_GUARD/shd_blockidle"' artifacts/g3-2/g32-dom.html
+
+          for spec in \
+            'enter-start|guard_enter|0|three' \
+            'enter-mid|guard_enter|0.5|three' \
+            'enter-end|guard_enter|1|three' \
+            'hold|guard_hold|1|three' \
+            'recover-mid|guard_recover|0.5|three' \
+            'exit-mid|guard_exit|0.5|three' \
+            'exit-end|guard_exit|1|three' \
+            'enter-side|guard_enter|0.5|side'; do
+            IFS='|' read -r name state progress view <<< "$spec"
+            "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+              --window-size=1500,1000 --virtual-time-budget=12000 \
+              --screenshot="artifacts/g3-2/${name}.png" \
+              "${BASE}?state=${state}&progress=${progress}&view=${view}"
+          done
+
+      - name: Upload G3.2 visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-2-guard-transition-visual
+          path: artifacts/g3-2
