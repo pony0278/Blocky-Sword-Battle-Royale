@@ -117,6 +117,14 @@ ENTER_COMPLETE / REACTION_COMPLETE / RECOVER_COMPLETE / EXIT_COMPLETE
 
 A visible counter window never advances the FSM to `guard_counter` by itself. Only authoritative `COUNTER_CONFIRMED` can do that.
 
+## Verification
+
+- committed product GLBs are checked by fixed SHA256 before browser verification,
+- the permanent G3.3.2 browser gate loads all four committed Skyrim Guard GLBs through the production retarget path and verifies Block / Parry / Perfect Parry completion into G3.2 Recover,
+- the complete `npm test` suite includes the dedicated G3.3.2 reaction-profile and presentation-runtime tests,
+- Action Studio standalone `action-studio.bundle.js` / `index.html` were rebuilt only after the full suite passed,
+- Action Studio manual Skyrim preview treats `shd_blockidle` as looped Hold and the three G3.3.2 reactions as one-shot clips.
+
 ## Next stage
 
 G3.4 should author/integrate the actual Guard Counter presentation while preserving the Counter authority boundary already established in G3.1.
