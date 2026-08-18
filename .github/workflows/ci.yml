@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -15,8 +15,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,40 +27,14 @@ jobs:
       - name: Build Action Studio
         run: npm run build:action-studio
 
-      - name: Run tests with captured log
+      - name: Verify standalone Action Studio files are current
         shell: bash
         run: |
-          set +e
-          npm test 2>&1 | tee g252-test.log
-          test_exit=${PIPESTATUS[0]}
-          echo "G252_TEST_EXIT=${test_exit}" >> "$GITHUB_ENV"
-          exit 0
-
-      - name: Upload G2.5.2 test log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: g252-ci-test-log
-          path: g252-test.log
-
-      - name: Fail on test errors
-        shell: bash
-        run: |
-          if [ "${G252_TEST_EXIT}" != "0" ]; then
-            echo "npm test failed with exit code ${G252_TEST_EXIT}; see g252-ci-test-log artifact."
-            exit "${G252_TEST_EXIT}"
+          if ! git diff --exit-code -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
+            echo 'Generated standalone Action Studio files are stale.' >&2
+            echo 'Run npm run build:action-studio and commit tools/action-studio/action-studio.bundle.js + index.html.' >&2
+            exit 1
           fi
 
-      - name: Sync generated standalone Action Studio files
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        shell: bash
-        run: |
-          if git diff --quiet -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
-            echo 'Standalone Action Studio files are already current.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
-          git commit -m 'build: sync G2.5.2 Action Studio standalone runtime'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - name: Run tests
+        run: npm test
