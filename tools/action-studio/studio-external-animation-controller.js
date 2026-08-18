@@ -22,6 +22,7 @@ import {
 } from '../../src/combat/longsword-directional-metadata.js';
 import { readAnimationBindingView } from './studio-editor-view.js';
 import { installStudioSkyrimBridgeControls } from './studio-skyrim-bridge-controls.js';
+import { createStudioGuardRuntimeController } from './studio-guard-runtime-controller.js';
 
 const SOURCE_INFO = Object.freeze({
   ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
@@ -90,6 +91,15 @@ export function createStudioExternalAnimationController(options) {
   let hitstopReleaseTimer = null;
   let naturalPreviewAction = null;
   let naturalPreviewToken = 0;
+
+  const guardRuntime = createStudioGuardRuntimeController(THREE, {
+    character,
+    pausePlayer,
+    clearWeaponTrail,
+    updatePlaybackButtons,
+    setAnimationSource,
+    applyCurrentEvaluation,
+  });
 
   function setStatus(message, isError = false) {
     status.textContent = message;
@@ -428,6 +438,7 @@ export function createStudioExternalAnimationController(options) {
 
   return {
     get libraries() { return libraries; },
+    get guardRuntime() { return guardRuntime; },
     hasLoaded: (source) => libraries.has(source),
     isAvailable,
     ensureBinding,
