@@ -4,6 +4,7 @@ import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-characte
 import {
   SKYRIM_GUARD_CONVERTED_FILES,
   importSkyrimConvertedAnimationFile,
+  loadSkyrimConvertedAnimationLibrary,
 } from '../../src/animation/skyrim-converted-animation-library.js';
 import {
   SKYRIM_GUARD_VISUAL_REVIEW_ITEMS,
@@ -12,7 +13,7 @@ import {
 } from '../../src/combat/skyrim-guard-visual-review.js';
 
 const THREE = window.THREE;
-if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G2.3 requires Three.js + GLTFLoader');
+if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G2.4.1 requires Three.js + GLTFLoader');
 
 const CLIP_ID = SKYRIM_GUARD_CONVERTED_FILES[0].clipId;
 const canvas = document.getElementById('reviewCanvas');
@@ -57,6 +58,10 @@ function sourceClip() {
 
 function formatSeconds(value) {
   return `${Math.max(0, Number(value) || 0).toFixed(3)}s`;
+}
+
+function formatDistance(value) {
+  return Math.max(0, Number(value) || 0).toFixed(4);
 }
 
 function setView(view) {
@@ -105,6 +110,18 @@ function renderReviewItems() {
   renderDecision();
 }
 
+function useLibrary(nextLibrary, sourceLabel) {
+  character.registerAnimations(nextLibrary);
+  library = nextLibrary;
+  const clip = sourceClip();
+  sampleTime.max = String(clip.duration);
+  sampleTime.value = '0';
+  character.sampleAnimation(CLIP_ID, 0, { loop:false, inPlace:true });
+  hudMode.textContent = `retargeted · ${formatSeconds(clip.duration)} · 30 fps review`;
+  setStatus(`G2.4.1 ready · ${sourceLabel} → ${CLIP_ID} · verify in-place stability + visual gates`);
+  return clip;
+}
+
 async function importSource(file) {
   if (!file) return;
   setStatus(`Retargeting ${file.name} to Action Studio Blockman rig…`);
@@ -115,24 +132,28 @@ async function importSource(file) {
     fps: 30,
     entry: SKYRIM_GUARD_CONVERTED_FILES[0],
   });
-  character.registerAnimations(nextLibrary);
-  library = nextLibrary;
-  const clip = sourceClip();
-  sampleTime.max = String(clip.duration);
-  sampleTime.value = '0';
-  character.sampleAnimation(CLIP_ID, 0, { loop:false, inPlace:true });
-  hudMode.textContent = `retargeted · ${formatSeconds(clip.duration)} · 30 fps review`;
-  setStatus(`G2.3 ready · ${file.name} → ${CLIP_ID} · inspect Once / Loop / seam / visual gates`);
+  return useLibrary(nextLibrary, file.name);
+}
+
+async function loadCanonicalSource() {
+  setStatus('Loading canonical assets/skyrim/guard/converted/shd_blockidle.source.glb…');
+  const loader = new THREE.GLTFLoader();
+  const nextLibrary = await loadSkyrimConvertedAnimationLibrary(loader, {
+    THREE,
+    rig: character.rig,
+    fps: 30,
+  });
+  return useLibrary(nextLibrary, SKYRIM_GUARD_CONVERTED_FILES[0].file);
 }
 
 async function ensureLoaded() {
-  if (!sourceClip()) throw new Error('Import the real converted shd_blockidle.source.glb first');
+  if (!sourceClip()) throw new Error('Load the canonical source GLB or import the real converted shd_blockidle.source.glb first');
 }
 
 async function preview(loop) {
   await ensureLoaded();
   character.playAnimation(CLIP_ID, { loop, inPlace:true, speed:1, fadeSeconds:0.05 });
-  hudMode.textContent = `${loop ? 'LOOP' : 'ONCE'} · natural 1.00×`;
+  hudMode.textContent = `${loop ? 'LOOP' : 'ONCE'} · natural 1.00× · in-place`;
 }
 
 async function freezeAt(value, label) {
@@ -141,7 +162,7 @@ async function freezeAt(value, label) {
   const time = Math.max(0, Math.min(Number(value) || 0, clip.duration));
   character.sampleAnimation(CLIP_ID, time, { loop:false, inPlace:true });
   sampleTime.value = String(time);
-  hudMode.textContent = `${label || 'FREEZE'} · ${formatSeconds(time)} / ${formatSeconds(clip.duration)}`;
+  hudMode.textContent = `${label || 'FREEZE'} · ${formatSeconds(time)} / ${formatSeconds(clip.duration)} · in-place`;
 }
 
 function snapshotBone(id) {
@@ -155,6 +176,64 @@ function snapshotBone(id) {
 function quaternionAngleDegrees(a, b) {
   const dot = Math.min(1, Math.max(-1, Math.abs(a.dot(b))));
   return THREE.MathUtils.radToDeg(2 * Math.acos(dot));
+}
+
+async function measureInPlaceStability() {
+  await ensureLoaded();
+  const clip = sourceClip();
+  const fps = Math.max(1, Number(library?.retargetFps) || 30);
+  const frameCount = Math.max(1, Math.ceil(clip.duration * fps));
+
+  character.sampleAnimation(CLIP_ID, 0, { loop:false, inPlace:true });
+  character.object3d.updateMatrixWorld(true);
+  const startRoot = snapshotBone('root').position;
+  const startHips = snapshotBone('hips').position;
+  const startHead = snapshotBone('head').position;
+  let previousHips = startHips.clone();
+  let rootMaxExcursion = 0;
+  let hipsMaxExcursion = 0;
+  let hipsMaxStep = 0;
+
+  for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
+    const time = Math.min(clip.duration, frameIndex / fps);
+    character.sampleAnimation(CLIP_ID, time, { loop:false, inPlace:true });
+    character.object3d.updateMatrixWorld(true);
+    const rootPosition = snapshotBone('root').position;
+    const hipsPosition = snapshotBone('hips').position;
+    rootMaxExcursion = Math.max(rootMaxExcursion, rootPosition.distanceTo(startRoot));
+    hipsMaxExcursion = Math.max(hipsMaxExcursion, hipsPosition.distanceTo(startHips));
+    hipsMaxStep = Math.max(hipsMaxStep, hipsPosition.distanceTo(previousHips));
+    previousHips = hipsPosition;
+  }
+
+  const characterHeight = Math.max(0.001, startHead.distanceTo(startRoot));
+  const rootLimit = Math.max(0.01, characterHeight * 0.02);
+  const hipsLimit = Math.max(0.20, characterHeight * 0.35);
+  const stepLimit = Math.max(0.04, characterHeight * 0.08);
+  const failed = rootMaxExcursion > rootLimit || hipsMaxExcursion > hipsLimit || hipsMaxStep > stepLimit;
+  const warning = !failed && (hipsMaxExcursion > hipsLimit * 0.7 || hipsMaxStep > stepLimit * 0.7);
+  const result = {
+    status: failed ? 'bad' : warning ? 'warning' : 'good',
+    frameCount,
+    characterHeight,
+    rootMaxExcursion,
+    hipsMaxExcursion,
+    hipsMaxStep,
+    rootLimit,
+    hipsLimit,
+    stepLimit,
+  };
+
+  document.getElementById('stabilityRootMetric').textContent = `${formatDistance(rootMaxExcursion)} / ${formatDistance(rootLimit)}`;
+  document.getElementById('stabilityHipsMetric').textContent = `${formatDistance(hipsMaxExcursion)} / ${formatDistance(hipsLimit)}`;
+  document.getElementById('stabilityStepMetric').textContent = `${formatDistance(hipsMaxStep)} / ${formatDistance(stepLimit)}`;
+  document.getElementById('stabilityFramesMetric').textContent = `${frameCount + 1} samples @ ${fps} fps`;
+  const metric = document.getElementById('stabilityMetricResult');
+  metric.textContent = result.status === 'good' ? 'PASS' : result.status === 'warning' ? 'WARNING' : 'FAIL';
+  metric.className = result.status;
+
+  await freezeAt(0, 'START AFTER STABILITY');
+  return result;
 }
 
 async function measureLoopSeam() {
@@ -186,8 +265,27 @@ async function measureLoopSeam() {
   loopRow?.querySelectorAll('button').forEach((button) => button.classList.toggle('on', button.dataset.rating === ratings.loop));
   renderDecision();
   await freezeAt(0, 'START AFTER MEASURE');
-  setStatus(`Loop seam measured · rotation ${result.maxRotationDegrees.toFixed(2)}° · root ${result.rootTranslation.toFixed(4)} · pelvis ${result.pelvisTranslation.toFixed(4)} · ${result.status}`);
   return result;
+}
+
+async function runCanonicalVerification() {
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get('view') || 'three';
+  const sampleFraction = Math.max(0, Math.min(1, Number(params.get('sample') ?? 0.5) || 0));
+  const clip = await loadCanonicalSource();
+  const stability = await measureInPlaceStability();
+  const seam = await measureLoopSeam();
+  setView(view);
+  await freezeAt(clip.duration * sampleFraction, `AUTO ${Math.round(sampleFraction * 100)}%`);
+
+  const pass = stability.status !== 'bad' && seam.status !== 'bad';
+  document.documentElement.dataset.g241 = pass ? 'pass' : 'fail';
+  document.documentElement.dataset.g241Stability = stability.status;
+  document.documentElement.dataset.g241Loop = seam.status;
+  const summary = `G2.4.1 ${pass ? 'PASS' : 'FAIL'} · canonical GLB · ${stability.frameCount + 1} in-place samples · root max ${formatDistance(stability.rootMaxExcursion)} · hips max ${formatDistance(stability.hipsMaxExcursion)} · step max ${formatDistance(stability.hipsMaxStep)} · view ${view} @ ${Math.round(sampleFraction * 100)}%`;
+  setStatus(summary, !pass);
+  window.__G241_RESULT__ = { pass, stability, seam, view, sampleFraction };
+  return window.__G241_RESULT__;
 }
 
 function resize() {
@@ -210,6 +308,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+document.getElementById('chooseCanonical').addEventListener('click', () => loadCanonicalSource().catch((error) => setStatus(error.message, true)));
 document.getElementById('chooseSource').addEventListener('click', () => sourceFile.click());
 sourceFile.addEventListener('change', () => {
   const file = sourceFile.files?.[0];
@@ -224,7 +323,12 @@ document.getElementById('freezeEnd').addEventListener('click', () => {
   freezeAt(clip ? Math.max(0, clip.duration - 1 / 120) : 0, 'END').catch((error) => setStatus(error.message, true));
 });
 sampleTime.addEventListener('input', () => freezeAt(sampleTime.value, 'SCRUB').catch((error) => setStatus(error.message, true)));
-document.getElementById('measureLoop').addEventListener('click', () => measureLoopSeam().catch((error) => setStatus(error.message, true)));
+document.getElementById('measureStability').addEventListener('click', () => measureInPlaceStability().then((result) => {
+  setStatus(`In-place stability ${result.status} · root ${formatDistance(result.rootMaxExcursion)} · hips ${formatDistance(result.hipsMaxExcursion)} · step ${formatDistance(result.hipsMaxStep)}`);
+}).catch((error) => setStatus(error.message, true)));
+document.getElementById('measureLoop').addEventListener('click', () => measureLoopSeam().then((result) => {
+  setStatus(`Loop seam measured · rotation ${result.maxRotationDegrees.toFixed(2)}° · root ${result.rootTranslation.toFixed(4)} · pelvis ${result.pelvisTranslation.toFixed(4)} · ${result.status}`);
+}).catch((error) => setStatus(error.message, true)));
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
 
 canvas.addEventListener('pointerdown', (event) => {
@@ -245,3 +349,12 @@ canvas.addEventListener('pointercancel', () => { dragging = false; lastPointer =
 renderReviewItems();
 setView('three');
 requestAnimationFrame(frame);
+
+const automationParams = new URLSearchParams(window.location.search);
+if (automationParams.get('canonical') === '1') {
+  runCanonicalVerification().catch((error) => {
+    document.documentElement.dataset.g241 = 'fail';
+    setStatus(`G2.4.1 FAIL · ${error.message}`, true);
+    window.__G241_RESULT__ = { pass:false, error:error.message };
+  });
+}
