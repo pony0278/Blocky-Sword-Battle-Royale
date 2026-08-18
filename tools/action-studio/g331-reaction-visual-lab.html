@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>G3.3.1 Skyrim Guard Reaction Visual Decision</title>
+<style>html,body{margin:0;height:100%;background:#090e16;color:#eef4ff;font:13px/1.45 system-ui,sans-serif}body{display:grid;grid-template-columns:minmax(0,1fr) 390px;overflow:hidden}main{position:relative}canvas{width:100%;height:100%;display:block}aside{overflow:auto;padding:16px;border-left:1px solid #29364b;background:#0e1521}h1{font-size:18px;margin:0 0 8px}button{margin:3px;padding:7px 9px;background:#182338;color:#dce9fb;border:1px solid #334969;border-radius:6px}.hud{position:absolute;top:14px;left:14px;padding:9px 11px;background:#07101acc;border:1px solid #26354d;border-radius:8px;font:12px ui-monospace,monospace}.good{color:#7ef0ad}.bad{color:#ff8c8c}.warn{color:#ffd27a}pre{white-space:pre-wrap;font-size:11px;background:#070b12;border:1px solid #26354d;border-radius:7px;padding:9px}</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head><body>
+<main><canvas id="canvas"></canvas><div class="hud"><b>G3.3.1 Reaction Visual</b><div id="hud">Loading…</div></div></main>
+<aside><h1>Skyrim Guard Reaction Family</h1><div id="status" class="warn">Loading canonical source + decoded reactions…</div>
+<div><button data-clip="shd_blockhit">Block Hit</button><button data-clip="shd_blockbashintro">Bash Intro</button><button data-clip="shd_blockbash">Bash</button><button data-clip="shd_blockbashpower">Bash Power</button></div>
+<div><button data-view="front">Front</button><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="back">Back</button></div>
+<label>Progress <input id="progress" type="range" min="0" max="1" value="0.5" step="0.01" style="width:100%"></label>
+<pre id="report">Not ready.</pre></aside>
+<script type="module" src="./g331-reaction-visual-lab.js"></script></body></html>
