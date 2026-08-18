@@ -1,0 +1,115 @@
+import {
+  LONGSWORD_GUARD_CORRECTION_SCOPE,
+  getLongswordGuardCorrectionBones,
+} from './longsword-guard-metadata.js';
+
+const DEG_TO_RAD = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
+const EPSILON = 1e-12;
+
+function finite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+export function normalizeQuaternionArray(input = [0, 0, 0, 1]) {
+  const values = Array.from(input || [0, 0, 0, 1], (value) => finite(value));
+  while (values.length < 4) values.push(values.length === 3 ? 1 : 0);
+  const length = Math.hypot(values[0], values[1], values[2], values[3]);
+  if (length <= EPSILON) return Object.freeze([0, 0, 0, 1]);
+  return Object.freeze(values.slice(0, 4).map((value) => value / length));
+}
+
+export function quaternionAngleDegrees(input = [0, 0, 0, 1]) {
+  const quaternion = normalizeQuaternionArray(input);
+  const w = Math.min(1, Math.max(-1, Math.abs(quaternion[3])));
+  return 2 * Math.acos(w) * RAD_TO_DEG;
+}
+
+export function quaternionFromEulerDegrees(input = {}) {
+  const x = finite(input.x) * DEG_TO_RAD * 0.5;
+  const y = finite(input.y) * DEG_TO_RAD * 0.5;
+  const z = finite(input.z) * DEG_TO_RAD * 0.5;
+  const c1 = Math.cos(x), c2 = Math.cos(y), c3 = Math.cos(z);
+  const s1 = Math.sin(x), s2 = Math.sin(y), s3 = Math.sin(z);
+  return normalizeQuaternionArray([
+    s1 * c2 * c3 + c1 * s2 * s3,
+    c1 * s2 * c3 - s1 * c2 * s3,
+    c1 * c2 * s3 + s1 * s2 * c3,
+    c1 * c2 * c3 - s1 * s2 * s3,
+  ]);
+}
+
+export function buildGuardQuaternionOffsets(eulerByBone = {}) {
+  const allowed = new Set(getLongswordGuardCorrectionBones());
+  return Object.freeze(Object.fromEntries(
+    Object.entries(eulerByBone)
+      .filter(([bone]) => allowed.has(bone))
+      .map(([bone, euler]) => [bone, quaternionFromEulerDegrees(euler)]),
+  ));
+}
+
+export function validateGuardQuaternionOffsets(offsets = {}) {
+  const allowed = new Set(getLongswordGuardCorrectionBones());
+  const limits = LONGSWORD_GUARD_CORRECTION_SCOPE.maxLocalCorrectionDegrees;
+  const entries = [];
+  const invalidBones = [];
+  const overBudget = [];
+
+  for (const [bone, rawQuaternion] of Object.entries(offsets || {})) {
+    if (!allowed.has(bone)) {
+      invalidBones.push(bone);
+      continue;
+    }
+    const quaternion = normalizeQuaternionArray(rawQuaternion);
+    const angleDegrees = quaternionAngleDegrees(quaternion);
+    const budgetDegrees = finite(limits[bone], 0);
+    const withinBudget = angleDegrees <= budgetDegrees + 1e-6;
+    if (!withinBudget) overBudget.push(bone);
+    entries.push(Object.freeze({ bone, quaternion, angleDegrees, budgetDegrees, withinBudget }));
+  }
+
+  return Object.freeze({
+    valid: invalidBones.length === 0 && overBudget.length === 0,
+    invalidBones: Object.freeze(invalidBones),
+    overBudget: Object.freeze(overBudget),
+    entries: Object.freeze(entries),
+  });
+}
+
+export function applyGuardQuaternionOffsets(THREE, rig, offsets = {}) {
+  if (!THREE?.Quaternion) throw new Error('Guard correction requires THREE.Quaternion');
+  if (!rig?.bones) throw new Error('Guard correction requires a rig with bones');
+  const validation = validateGuardQuaternionOffsets(offsets);
+  if (!validation.valid) {
+    const details = [
+      validation.invalidBones.length ? `invalid bones: ${validation.invalidBones.join(', ')}` : '',
+      validation.overBudget.length ? `over budget: ${validation.overBudget.join(', ')}` : '',
+    ].filter(Boolean).join(' · ');
+    throw new Error(`Invalid longsword Guard correction${details ? ` (${details})` : ''}`);
+  }
+
+  for (const entry of validation.entries) {
+    const bone = rig.bones[entry.bone];
+    if (!bone) throw new Error(`Target rig is missing Guard correction bone: ${entry.bone}`);
+    bone.quaternion.multiply(new THREE.Quaternion().fromArray(entry.quaternion)).normalize();
+  }
+  return validation;
+}
+
+export function createGuardAuthoringExport(eulerByBone = {}, diagnostics = {}) {
+  const offsets = buildGuardQuaternionOffsets(eulerByBone);
+  const validation = validateGuardQuaternionOffsets(offsets);
+  return Object.freeze({
+    authored: validation.valid,
+    baseSample: 0.5,
+    offsets,
+    eulerDegrees: Object.freeze(Object.fromEntries(
+      Object.entries(eulerByBone).map(([bone, value]) => [bone, Object.freeze({
+        x: finite(value?.x), y: finite(value?.y), z: finite(value?.z),
+      })]),
+    )),
+    validation,
+    diagnostics: Object.freeze({ ...diagnostics }),
+  });
+}
