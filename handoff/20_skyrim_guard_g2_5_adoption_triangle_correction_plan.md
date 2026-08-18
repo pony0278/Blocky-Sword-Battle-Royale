@@ -313,7 +313,19 @@ while the preserved off-hand / compactness / triangle / torso properties remain 
 
 ---
 
-## 12. G2.5 conclusion
+## 12. Validation
+
+The G2.5 contract is covered by the normal repository CI suite. The final recorded run must include:
+
+- Build Action Studio: PASS
+- `tests/longsword-guard-metadata.test.js`: PASS as part of `npm test`
+- all existing G2.4 regression tests: PASS
+
+G2.5 does not claim a corrected visual pose yet because `authored=false`; visual correction acceptance belongs to G2.5.1.
+
+---
+
+## 13. G2.5 conclusion
 
 The engineering question is now closed:
 
