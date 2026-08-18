@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  parse:
+  parse-and-visual:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
       - name: Extract verified temporary reaction inputs
         shell: bash
         run: |
-          mkdir -p .probe/reactions artifacts/g3-3-1/parsed
+          mkdir -p .probe/reactions .probe/pynifly tools/action-studio/.g331 artifacts/g3-3-1
           cat .probe/chunks/reactions.b64.* | base64 -d > /tmp/g3-3-1-reactions.tar.gz
           ARCHIVE_SHA="$(sha256sum /tmp/g3-3-1-reactions.tar.gz | cut -d' ' -f1)"
           echo "archive sha256=$ARCHIVE_SHA"
@@ -31,56 +31,105 @@ jobs:
 
       - name: Fetch pinned PyNifly native Skyrim HKX reader
         run: |
-          mkdir -p .probe/pynifly
           curl -fsSL https://raw.githubusercontent.com/BadDogSkyrim/PyNifly/2064a5cc6ec240f07a9df51ac5655541e756633c/io_scene_nifly/hkx/anim_fo4.py -o .probe/pynifly/anim_fo4.py
           curl -fsSL https://raw.githubusercontent.com/BadDogSkyrim/PyNifly/2064a5cc6ec240f07a9df51ac5655541e756633c/io_scene_nifly/hkx/anim_skyrim.py -o .probe/pynifly/anim_skyrim.py
 
-      - name: Parse all four reaction animations
+      - name: Decode reactions against canonical 99-joint Skyrim hierarchy
         shell: bash
         run: |
           python3 - <<'PY'
-          import json, pathlib, sys
+          import json, pathlib, struct, sys
           sys.path.insert(0, '.probe/pynifly')
           from anim_skyrim import _parse_animation_hkx
 
-          out_dir = pathlib.Path('artifacts/g3-3-1/parsed')
-          expected = ['shd_blockhit.hkx','shd_blockbashintro.hkx','shd_blockbash.hkx','shd_blockbashpower.hkx']
-          aggregate = {}
-          for filename in expected:
-              path = pathlib.Path('.probe/reactions') / filename
-              anim = _parse_animation_hkx(path.read_bytes())
-              if anim is None:
-                  raise SystemExit(f'Could not parse {filename}')
-              result = {
-                  'file': filename,
-                  'duration': anim.duration,
-                  'numFrames': anim.num_frames,
-                  'numTracks': anim.num_tracks,
-                  'numBlocks': anim.num_blocks,
-                  'frameDuration': anim.frame_duration,
-                  'fps': (1.0 / anim.frame_duration) if anim.frame_duration else 0,
-                  'blendHint': anim.blend_hint,
-                  'originalSkeletonName': anim.original_skeleton_name,
-                  'trackToBoneIndices': anim.track_to_bone_indices,
-                  'boneNames': anim.bone_names,
-                  'annotations': [{'time': a.time, 'text': a.text} for a in anim.annotations],
-                  'trackFrameCounts': [
-                      {'translation': len(t.translations), 'rotation': len(t.rotations), 'scale': len(t.scales)}
-                      for t in anim.tracks
-                  ],
+          def glb_json(path):
+              data = pathlib.Path(path).read_bytes()
+              magic, version, total = struct.unpack_from('<III', data, 0)
+              if magic != 0x46546c67: raise SystemExit('canonical source is not GLB')
+              length, kind = struct.unpack_from('<II', data, 12)
+              if kind != 0x4E4F534A: raise SystemExit('canonical GLB first chunk is not JSON')
+              return json.loads(data[20:20+length].decode('utf-8').rstrip('\x00 '))
+
+          doc = glb_json('assets/skyrim/guard/converted/shd_blockidle.source.glb')
+          skin = max(doc.get('skins', []), key=lambda s: len(s.get('joints', [])))
+          joint_names = [doc['nodes'][i].get('name','') for i in skin['joints']]
+          if len(joint_names) != 99: raise SystemExit(f'expected 99 canonical joints, got {len(joint_names)}')
+          if joint_names[0] != 'NPC Root [Root]': raise SystemExit(f'unexpected first joint: {joint_names[0]}')
+          print('canonical joints', len(joint_names), joint_names[:8])
+
+          ids = ['shd_blockhit','shd_blockbashintro','shd_blockbash','shd_blockbashpower']
+          summary = {}
+          def vecs(values, width): return [[float(x) for x in list(v)[:width]] for v in values]
+          for ident in ids:
+              anim = _parse_animation_hkx(pathlib.Path(f'.probe/reactions/{ident}.hkx').read_bytes())
+              if anim is None or anim.num_tracks != 99 or len(anim.tracks) != 99:
+                  raise SystemExit(f'{ident}: invalid 99-track decode')
+              # These files omit explicit trackToBoneIndices; with 99 tracks matching the 99-joint canonical skeleton,
+              # use the Havok animation track order as the skeleton joint order.
+              if anim.track_to_bone_indices and anim.track_to_bone_indices != list(range(99)):
+                  raise SystemExit(f'{ident}: non-identity binding needs explicit skeleton mapping')
+              payload = {
+                  'id':ident, 'duration':float(anim.duration), 'numFrames':int(anim.num_frames),
+                  'numTracks':int(anim.num_tracks), 'frameDuration':float(anim.frame_duration),
+                  'jointNames':joint_names,
+                  'annotations':[{'time':float(a.time),'text':str(a.text)} for a in anim.annotations if str(a.text)],
+                  'tracks':[{
+                      'translations':vecs(t.translations,3),
+                      'rotations':vecs(t.rotations,4),
+                      'scales':vecs(t.scales,3),
+                  } for t in anim.tracks],
               }
-              if len(anim.tracks) != anim.num_tracks:
-                  raise SystemExit(f'{filename}: parsed track count mismatch')
-              if anim.track_to_bone_indices and len(anim.track_to_bone_indices) != anim.num_tracks:
-                  raise SystemExit(f'{filename}: binding count mismatch')
-              (out_dir / (filename + '.json')).write_text(json.dumps(result, indent=2), encoding='utf-8')
-              aggregate[filename] = result
-              print(filename, json.dumps({k:result[k] for k in ['duration','numFrames','numTracks','fps','blendHint','originalSkeletonName']}, ensure_ascii=False))
-          (out_dir / 'aggregate.json').write_text(json.dumps(aggregate, indent=2), encoding='utf-8')
+              pathlib.Path(f'tools/action-studio/.g331/{ident}.json').write_text(json.dumps(payload,separators=(',',':')),encoding='utf-8')
+              summary[ident] = {k:payload[k] for k in ['duration','numFrames','numTracks','annotations']}
+          pathlib.Path('artifacts/g3-3-1/decode-summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
           PY
 
-      - name: Upload parse evidence
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Verify production Blockman retarget and capture reaction frames
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          python3 -m http.server 4173 > /tmp/g331-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          BASE='http://127.0.0.1:4173/tools/action-studio/g331-reaction-visual-lab.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=30000 --dump-dom \
+            "${BASE}?clip=shd_blockhit&progress=0.5&view=three" > artifacts/g3-3-1/g331-dom.html
+          if ! grep -q 'data-g331="pass"' artifacts/g3-3-1/g331-dom.html; then
+            echo 'G3.3.1 production retarget engineering gate failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-3-1/g331-dom.html || true
+            exit 1
+          fi
+          grep -q 'data-g331-count="4"' artifacts/g3-3-1/g331-dom.html
+
+          for id in shd_blockhit shd_blockbashintro shd_blockbash shd_blockbashpower; do
+            for pct in 0.25 0.50 0.75; do
+              label="$(echo "$pct" | tr -d '.')"
+              "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+                --window-size=1500,1000 --virtual-time-budget=22000 \
+                --screenshot="artifacts/g3-3-1/${id}-p${label}-three.png" \
+                "${BASE}?clip=${id}&progress=${pct}&view=three"
+            done
+            "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+              --window-size=1500,1000 --virtual-time-budget=22000 \
+              --screenshot="artifacts/g3-3-1/${id}-p50-side.png" \
+              "${BASE}?clip=${id}&progress=0.5&view=side"
+          done
+
+      - name: Upload G3.3.1 visual evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: g3-3-1-reaction-parse-probe
+          name: g3-3-1-reaction-visual-probe
           path: artifacts/g3-3-1
