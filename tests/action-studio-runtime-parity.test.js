@@ -4,10 +4,21 @@ import { readFile } from 'node:fs/promises';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('G2.5.2 generated standalone bundle cannot contain the stale Skyrim scale runtime', async () => {
+function generatedModule(bundle, sourcePath) {
+  const marker = `// ${sourcePath}`;
+  const start = bundle.indexOf(marker);
+  assert.notEqual(start, -1, `generated bundle is missing ${sourcePath}`);
+  const next = bundle.indexOf('\n// src/', start + marker.length);
+  return bundle.slice(start, next === -1 ? bundle.length : next);
+}
+
+test('G2.5.2 generated standalone Skyrim module cannot contain the stale scale runtime', async () => {
   const bundle = await read('tools/action-studio/action-studio.bundle.js');
   assert.match(bundle, /Runtime parity stage: G2\.5\.2/);
-  assert.doesNotMatch(bundle, /Math\.max\(0\.5,\s*Math\.min\(1\.5,\s*targetHeight\s*\/\s*sourceHeight\)\)/);
+
+  const skyrimModule = generatedModule(bundle, 'src/animation/skyrim-animation-retarget.js');
+  assert.match(skyrimModule, /function computeSkyrimTranslationScale\(/);
+  assert.doesNotMatch(skyrimModule, /Math\.max\(0\.5,\s*Math\.min\(1\.5,\s*targetHeight\s*\/\s*sourceHeight\)\)/);
 });
 
 test('G2.5.2 generated index identifies bundle versus module runtime paths', async () => {
