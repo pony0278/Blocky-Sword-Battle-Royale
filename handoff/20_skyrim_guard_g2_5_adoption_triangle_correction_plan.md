@@ -322,8 +322,6 @@ G2.5 contract validation:
 - `tests/longsword-guard-metadata.test.js`: PASS as part of `npm test`
 - all existing G2.4 regression tests: PASS
 
-A documentation-only follow-up commit may trigger another identical CI run; the authoritative requirement is that the latest code-bearing G2.5 contract passes the normal suite.
-
 G2.5 does not claim a corrected visual pose yet because `authored=false`; visual correction acceptance belongs to G2.5.1.
 
 ---
