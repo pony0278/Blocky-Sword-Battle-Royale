@@ -62,6 +62,24 @@ test('G3.1 authoritative parry may chain into authoritative counter then return 
   assert.equal(machine.snapshot.lastOutcome, 'counter');
 });
 
+test('G3.1 accepts a delayed authoritative counter after local reaction already entered recover', () => {
+  const machine = createGuardStateMachine();
+  machine.send(GUARD_EVENTS.GUARD_PRESS);
+  machine.send(GUARD_EVENTS.ENTER_COMPLETE);
+  machine.send(GUARD_EVENTS.BLOCK_CONFIRMED);
+  machine.send(GUARD_EVENTS.REACTION_COMPLETE);
+
+  assert.equal(machine.state, GUARD_STATES.RECOVER);
+  assert.equal(machine.snapshot.lastOutcome, 'block');
+  assert.equal(machine.can(GUARD_EVENTS.COUNTER_CONFIRMED), true);
+
+  const counter = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, { authorityTick: 912 });
+  assert.equal(counter.accepted, true);
+  assert.equal(counter.snapshot.state, GUARD_STATES.COUNTER);
+  assert.equal(counter.snapshot.lastOutcome, 'counter');
+  assert.equal(counter.snapshot.lastTransition.payload.authorityTick, 912);
+});
+
 test('G3.1 rejects combat outcomes outside valid guard reaction states', () => {
   const machine = createGuardStateMachine();
   const block = machine.send(GUARD_EVENTS.BLOCK_CONFIRMED);
