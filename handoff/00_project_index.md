@@ -135,7 +135,7 @@
 
 內容：
 - Action Studio Blockman rig 作為 canonical target skeleton
-- 19 個 Skyrim humanoid semantic bone mappings
+- 初始 19 個 Skyrim humanoid semantic bone mappings
 - bracketed Skyrim bone names 與 exporter alias resolution
 - decoder-independent `{ root, clip }` / `{ scene, animations }` contract
 - world-space rest-pose delta → target-local quaternion bake
@@ -208,7 +208,7 @@
 - 新增整段 max excursion / max step translation diagnostics
 - 新增「中途飛走但首尾相同」regression test
 - PR #13 CI engineering validation result
-- 明確保留 99 animated nodes → 19 semantic bones 的 fidelity follow-up 邊界
+- 記錄 99 animated nodes → 初始 19 semantic bones 的 fidelity follow-up 邊界
 - G2.4.1 canonical GLB visual playback acceptance gate
 
 ### 15 — G2.4.1 Canonical GLB Visual Playback Verification
@@ -233,6 +233,20 @@
 - G2.4.2 global coordinate-basis PASS
 - 保留 lowerarm / wrist / sword chain 作為下一階段 fidelity 問題
 - 記錄 canonical GLB duplicate `NPC Root [Root]` exporter wrapper 注意事項
+
+### 17 — G2.4.3 Skyrim Arm Chain / Wrist Fidelity Retarget
+`17_skyrim_guard_g2_4_3_arm_chain_fidelity.md`
+
+內容：
+- 確認 per-bone rest-axis mismatch 才是剩餘 arm-chain distortion 主因
+- 將 target coverage 從初始 19 semantic bones 擴充為完整 23-bone KayKit chain
+- `Skyrim Hand → wrist + hand` 與 `Weapon / Shield → handslot` helper mapping
+- shoulder→elbow、elbow→wrist direction-constrained FK retarget
+- clavicle motion透過 source world joint direction 折入 rigid limb
+- twist helper 記錄與 rigid line-limb 不重複套用 policy
+- 1201-frame 四段手臂方向誤差 gate，overall max 約 `0.00001093°`
+- G2.4.3 arm-chain / wrist CI gate PASS
+- 將剩餘低劍／shield-side silhouette 分離為 source-pose suitability 問題
 
 ---
 
