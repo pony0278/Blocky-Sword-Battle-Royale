@@ -2,6 +2,7 @@ import {
   LONGSWORD_GUARD_BASE,
   LONGSWORD_GUARD_AUTHORING_STATE,
 } from './longsword-guard-metadata.js';
+import { GUARD_TRANSITION_PROFILE_IDS } from './guard-transition-presentation.js';
 
 export const GUARD_STATE_AUTHORITY_NOTE =
   'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
@@ -52,6 +53,20 @@ const UNAUTHORED_PRESENTATION = Object.freeze({
   loop: false,
 });
 
+function authoredGuardTransition(role, transitionProfileId) {
+  return Object.freeze({
+    role,
+    clipId: LONGSWORD_GUARD_BASE.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    transitionProfileId,
+    authored: true,
+    authoredStage: 'G3.2',
+    inPlace: true,
+    loop: true,
+  });
+}
+
 export const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
   [GUARD_STATES.NEUTRAL]: Object.freeze({
     role: 'neutral',
@@ -60,17 +75,14 @@ export const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
     inPlace: true,
     loop: true,
   }),
-  [GUARD_STATES.ENTER]: Object.freeze({
-    role: 'guard-enter',
-    ...UNAUTHORED_PRESENTATION,
-    plannedStage: 'G3.2',
-  }),
+  [GUARD_STATES.ENTER]: authoredGuardTransition('guard-enter', GUARD_TRANSITION_PROFILE_IDS.ENTER),
   [GUARD_STATES.HOLD]: Object.freeze({
     role: 'guard-hold',
     clipId: LONGSWORD_GUARD_BASE.clipId,
     correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
     correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
     authored: LONGSWORD_GUARD_AUTHORING_STATE.authored === true,
+    authoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
     inPlace: true,
     loop: true,
   }),
@@ -89,16 +101,8 @@ export const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
     ...UNAUTHORED_PRESENTATION,
     plannedStage: 'G3.4',
   }),
-  [GUARD_STATES.RECOVER]: Object.freeze({
-    role: 'guard-recover',
-    ...UNAUTHORED_PRESENTATION,
-    plannedStage: 'G3.2',
-  }),
-  [GUARD_STATES.EXIT]: Object.freeze({
-    role: 'guard-exit',
-    ...UNAUTHORED_PRESENTATION,
-    plannedStage: 'G3.2',
-  }),
+  [GUARD_STATES.RECOVER]: authoredGuardTransition('guard-recover', GUARD_TRANSITION_PROFILE_IDS.RECOVER),
+  [GUARD_STATES.EXIT]: authoredGuardTransition('guard-exit', GUARD_TRANSITION_PROFILE_IDS.EXIT),
 });
 
 export const GUARD_TRANSITION_GRAPH = Object.freeze({

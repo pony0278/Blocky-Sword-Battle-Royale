@@ -12,6 +12,10 @@ function finite(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, finite(value)));
+}
+
 export function normalizeQuaternionArray(input = [0, 0, 0, 1]) {
   const values = Array.from(input || [0, 0, 0, 1], (value) => finite(value));
   while (values.length < 4) values.push(values.length === 3 ? 1 : 0);
@@ -37,6 +41,31 @@ export function quaternionFromEulerDegrees(input = {}) {
     c1 * s2 * c3 - s1 * c2 * s3,
     c1 * c2 * s3 + s1 * s2 * c3,
     c1 * c2 * c3 - s1 * s2 * s3,
+  ]);
+}
+
+export function scaleQuaternionOffset(input = [0, 0, 0, 1], weight = 1) {
+  const t = clamp01(weight);
+  let [x, y, z, w] = normalizeQuaternionArray(input);
+  if (w < 0) {
+    x = -x;
+    y = -y;
+    z = -z;
+    w = -w;
+  }
+  if (t <= EPSILON) return Object.freeze([0, 0, 0, 1]);
+  if (t >= 1 - EPSILON) return normalizeQuaternionArray([x, y, z, w]);
+
+  const halfAngle = Math.acos(Math.max(-1, Math.min(1, w)));
+  const sinHalfAngle = Math.sin(halfAngle);
+  if (Math.abs(sinHalfAngle) <= EPSILON) return Object.freeze([0, 0, 0, 1]);
+  const scaledHalfAngle = halfAngle * t;
+  const axisScale = Math.sin(scaledHalfAngle) / sinHalfAngle;
+  return normalizeQuaternionArray([
+    x * axisScale,
+    y * axisScale,
+    z * axisScale,
+    Math.cos(scaledHalfAngle),
   ]);
 }
 
@@ -77,9 +106,7 @@ export function validateGuardQuaternionOffsets(offsets = {}) {
   });
 }
 
-export function applyGuardQuaternionOffsets(THREE, rig, offsets = {}) {
-  if (!THREE?.Quaternion) throw new Error('Guard correction requires THREE.Quaternion');
-  if (!rig?.bones) throw new Error('Guard correction requires a rig with bones');
+function assertValidGuardOffsets(offsets) {
   const validation = validateGuardQuaternionOffsets(offsets);
   if (!validation.valid) {
     const details = [
@@ -88,13 +115,26 @@ export function applyGuardQuaternionOffsets(THREE, rig, offsets = {}) {
     ].filter(Boolean).join(' · ');
     throw new Error(`Invalid longsword Guard correction${details ? ` (${details})` : ''}`);
   }
+  return validation;
+}
+
+export function applyGuardQuaternionOffsetsWeighted(THREE, rig, offsets = {}, weight = 1) {
+  if (!THREE?.Quaternion) throw new Error('Guard correction requires THREE.Quaternion');
+  if (!rig?.bones) throw new Error('Guard correction requires a rig with bones');
+  const validation = assertValidGuardOffsets(offsets);
+  const blendWeight = clamp01(weight);
 
   for (const entry of validation.entries) {
     const bone = rig.bones[entry.bone];
     if (!bone) throw new Error(`Target rig is missing Guard correction bone: ${entry.bone}`);
-    bone.quaternion.multiply(new THREE.Quaternion().fromArray(entry.quaternion)).normalize();
+    const weighted = scaleQuaternionOffset(entry.quaternion, blendWeight);
+    bone.quaternion.multiply(new THREE.Quaternion().fromArray(weighted)).normalize();
   }
-  return validation;
+  return Object.freeze({ ...validation, weight: blendWeight });
+}
+
+export function applyGuardQuaternionOffsets(THREE, rig, offsets = {}) {
+  return applyGuardQuaternionOffsetsWeighted(THREE, rig, offsets, 1);
 }
 
 export function createGuardAuthoringExport(eulerByBone = {}, diagnostics = {}) {
