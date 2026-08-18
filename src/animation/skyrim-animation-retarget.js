@@ -220,6 +220,63 @@ function motionScale(sourceRest, targetRest) {
   return computeSkyrimTranslationScale(sourceHeight, targetHeight);
 }
 
+function normalizedDirection(vector, label) {
+  if (!vector || vector.lengthSq() <= 1e-10) throw new Error(`Skyrim basis calibration cannot resolve ${label} axis`);
+  return vector.normalize();
+}
+
+function humanoidBasis(THREE, rest, semantics) {
+  const pelvis = rest[semantics.pelvis]?.position;
+  const head = rest[semantics.head]?.position;
+  const left = rest[semantics.left]?.position;
+  const right = rest[semantics.right]?.position;
+  if (!pelvis || !head || !left || !right) throw new Error('Skyrim basis calibration requires pelvis, head, and both upper arms');
+
+  const up = normalizedDirection(head.clone().sub(pelvis), 'up');
+  const lateral = right.clone().sub(left);
+  lateral.addScaledVector(up, -lateral.dot(up));
+  normalizedDirection(lateral, 'right');
+  const forward = normalizedDirection(new THREE.Vector3().crossVectors(lateral, up), 'forward');
+  const orthogonalUp = normalizedDirection(new THREE.Vector3().crossVectors(forward, lateral), 'orthogonal up');
+  const matrix = new THREE.Matrix4().makeBasis(lateral, orthogonalUp, forward);
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(matrix).normalize();
+  return { right: lateral, up: orthogonalUp, forward, quaternion };
+}
+
+function axisMetadata(axis) {
+  return axis.toArray().map((value) => Number(value.toFixed(6)));
+}
+
+export function computeSkyrimBasisCalibration(THREE, sourceRest, targetRest) {
+  if (!THREE?.Vector3 || !THREE?.Quaternion || !THREE?.Matrix4) {
+    throw new Error('Skyrim basis calibration requires THREE Vector3/Quaternion/Matrix4');
+  }
+  const source = humanoidBasis(THREE, sourceRest, {
+    pelvis: 'pelvis', head: 'head', left: 'upperarm.l', right: 'upperarm.r',
+  });
+  const target = humanoidBasis(THREE, targetRest, {
+    pelvis: 'hips', head: 'head', left: 'upperarm.l', right: 'upperarm.r',
+  });
+  const quaternion = target.quaternion.clone().multiply(source.quaternion.clone().invert()).normalize();
+  const angleDegrees = THREE.MathUtils?.radToDeg
+    ? THREE.MathUtils.radToDeg(2 * Math.acos(Math.min(1, Math.abs(quaternion.w))))
+    : (2 * Math.acos(Math.min(1, Math.abs(quaternion.w))) * 180) / Math.PI;
+  return {
+    quaternion,
+    angleDegrees,
+    source: {
+      right: axisMetadata(source.right),
+      up: axisMetadata(source.up),
+      forward: axisMetadata(source.forward),
+    },
+    target: {
+      right: axisMetadata(target.right),
+      up: axisMetadata(target.up),
+      forward: axisMetadata(target.forward),
+    },
+  };
+}
+
 export function measureVectorSampleExcursion(values = []) {
   const sampleCount = Math.floor(values.length / 3);
   if (!sampleCount) return { sampleCount: 0, maxExcursion: 0, maxStep: 0 };
@@ -307,6 +364,16 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
     ? requestedTranslationScale
     : measuredTranslationScale;
   const targetHeight = targetRest.head.position.distanceTo(targetRest.root.position);
+  const measuredBasisCalibration = computeSkyrimBasisCalibration(THREE, sourceRest, targetRest);
+  const basisEnabled = options.basisCalibration !== false;
+  const requestedBasis = options.basisQuaternion;
+  const basisQuaternion = requestedBasis?.isQuaternion
+    ? requestedBasis.clone().normalize()
+    : measuredBasisCalibration.quaternion.clone();
+  if (!basisEnabled) basisQuaternion.identity();
+  const basisQuaternionInverse = basisQuaternion.clone().invert();
+  const targetRootRestQuaternionInverse = targetRest.root.quaternion.clone().invert();
+
   const fps = Math.max(1, Number(options.fps) || 30);
   const times = sampleTimes(sourceClip.duration, fps);
   const samples = new Map(retargets.map(({ target, position }) => [target, {
@@ -352,6 +419,7 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
       const targetBone = targetProxy.bones[target];
       sourceBone.getWorldQuaternion(sourceWorldQuaternion);
       rotationDelta.copy(sourceWorldQuaternion).multiply(sourceRest[id].quaternion.clone().invert());
+      rotationDelta.premultiply(basisQuaternion).multiply(basisQuaternionInverse).normalize();
       desiredWorldQuaternion.copy(rotationDelta).multiply(targetRest[target].quaternion);
       targetBone.parent.getWorldQuaternion(parentWorldQuaternion);
       targetBone.quaternion.copy(parentWorldQuaternion.invert().multiply(desiredWorldQuaternion)).normalize();
@@ -363,15 +431,17 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
           .applyQuaternion(sourceRootWorldQuaternionInverse);
         sourceRelativeDelta.copy(sourceRelativePosition)
           .sub(sourceRelativeRest)
+          .applyQuaternion(sourceRest.root.quaternion)
+          .applyQuaternion(basisQuaternion)
+          .applyQuaternion(targetRootRestQuaternionInverse)
           .multiplyScalar(translationScale);
         targetBone.position.fromArray(rig.restTransforms[target].position).add(sourceRelativeDelta);
       } else if (position) {
         sourceBone.getWorldPosition(sourceWorldPosition);
         sourceMotionDelta.copy(sourceWorldPosition)
           .sub(sourceRest[id].position)
-          .applyQuaternion(sourceRootRestQuaternionInverse)
-          .multiplyScalar(translationScale)
-          .applyQuaternion(targetRest.root.quaternion);
+          .applyQuaternion(basisQuaternion)
+          .multiplyScalar(translationScale);
         desiredWorldPosition.copy(targetRest[target].position).add(sourceMotionDelta);
         targetBone.position.copy(targetBone.parent.worldToLocal(desiredWorldPosition));
       }
@@ -417,6 +487,13 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
     targetHeight,
     translationMetrics,
     translationSafety,
+    basisCalibration: {
+      enabled: basisEnabled,
+      angleDegrees: measuredBasisCalibration.angleDegrees,
+      quaternion: basisQuaternion.toArray().map((value) => Number(value.toFixed(8))),
+      source: measuredBasisCalibration.source,
+      target: measuredBasisCalibration.target,
+    },
     positionSpaces: Object.fromEntries(retargets.filter((entry) => entry.position).map((entry) => [entry.target, entry.positionSpace || 'world-root'])),
     targetRigId: rig.definition.id,
   };
