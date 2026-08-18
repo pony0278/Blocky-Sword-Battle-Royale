@@ -24,17 +24,17 @@ if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G2.5.1 require
 
 const CLIP_ID = SKYRIM_GUARD_CONVERTED_FILES[0].clipId;
 const SAMPLE_FRACTIONS = Object.freeze([0, 0.25, 0.5, 0.75, 0.998]);
-const AUTHORING_BONES = Object.freeze(['upperarm.r', 'lowerarm.r', 'wrist.r', 'handslot.r']);
+const AUTHORING_BONES = Object.freeze(['chest', 'upperarm.r', 'lowerarm.r', 'wrist.r', 'handslot.r']);
 const AXES = Object.freeze(['x', 'y', 'z']);
 const SCORE_WEIGHTS = Object.freeze({
-  weaponHandHeight: 8,
-  offHandHeight: 5,
-  weaponHandCenterDistance: 6,
-  offHandCenterDistance: 5,
-  swordTipHeight: 14,
-  swordForwardDot: 20,
-  triangleArea: 5,
-  torsoYawDegrees: 5,
+  weaponHandHeight: 22,
+  offHandHeight: 6,
+  weaponHandCenterDistance: 22,
+  offHandCenterDistance: 6,
+  swordTipHeight: 16,
+  swordForwardDot: 10,
+  triangleArea: 2,
+  torsoYawDegrees: 7,
 });
 
 const canvas = document.getElementById('canvas');
@@ -58,7 +58,7 @@ let targetClip = null;
 let targetBasis = null;
 let currentFraction = LONGSWORD_GUARD_AUTHORING_STATE.baseSample;
 let lastValidation = null;
-let authoringEuler = Object.fromEntries(AUTHORING_BONES.map((bone) => [bone, { x:0, y:0, z:0 }]));
+let authoringEuler = blankEuler();
 
 const statusNode = document.getElementById('status');
 const metricsNode = document.getElementById('metrics');
@@ -93,8 +93,12 @@ function rounded(value, digits = 5) {
   return Number((Number(value) || 0).toFixed(digits));
 }
 
+function blankEuler() {
+  return Object.fromEntries(AUTHORING_BONES.map((bone) => [bone, { x:0, y:0, z:0 }]));
+}
+
 function cloneEuler(input = authoringEuler) {
-  return Object.fromEntries(AUTHORING_BONES.map((bone) => [bone, { ...input[bone] }]));
+  return Object.fromEntries(AUTHORING_BONES.map((bone) => [bone, { ...(input[bone] || { x:0, y:0, z:0 }) }]));
 }
 
 function setStatus(message, kind = '') {
@@ -129,7 +133,9 @@ function horizontalDistance(a, b) {
 
 function fixedLockOnAim(chest, torsoHeight) {
   const forward = new THREE.Vector3().fromArray(targetBasis.forward).normalize();
-  return chest.clone().addScaledVector(forward, Math.max(2.5, torsoHeight * 2.8)).add(new THREE.Vector3(0, torsoHeight * 0.12, 0));
+  return chest.clone()
+    .addScaledVector(forward, Math.max(2.5, torsoHeight * 2.8))
+    .add(new THREE.Vector3(0, torsoHeight * 0.12, 0));
 }
 
 function triangleMetrics() {
@@ -161,7 +167,8 @@ function triangleMetrics() {
   if (shoulderSpan.lengthSq() > 1e-10 && rightAxis.lengthSq() > 1e-10) {
     shoulderSpan.normalize();
     rightAxis.normalize();
-    torsoYawDegrees = THREE.MathUtils.radToDeg(Math.acos(Math.min(1, Math.max(-1, Math.abs(shoulderSpan.dot(rightAxis))))));
+    const dot = Math.min(1, Math.max(-1, Math.abs(shoulderSpan.dot(rightAxis))));
+    torsoYawDegrees = THREE.MathUtils.radToDeg(Math.acos(dot));
   }
 
   return {
@@ -173,7 +180,7 @@ function triangleMetrics() {
     swordForwardDot: rounded(bladeDirection.dot(threatDirection)),
     triangleArea: rounded((triangleCross.length() * 0.5) / (torsoHeight * torsoHeight)),
     torsoYawDegrees: rounded(torsoYawDegrees),
-    debug: { offHand, weaponHand, swordGrip, swordTip, aim, bladeDirection, threatDirection },
+    debug: { offHand, weaponHand, swordGrip, swordTip, aim, bladeDirection },
   };
 }
 
@@ -207,8 +214,7 @@ function sampleFraction(fraction, euler = authoringEuler, options = {}) {
   currentFraction = Math.max(0, Math.min(0.998, Number(fraction) || 0));
   const time = targetClip.duration * currentFraction;
   character.sampleAnimation(CLIP_ID, time, { loop:false, inPlace:true });
-  const offsets = currentOffsets(euler);
-  applyGuardQuaternionOffsets(THREE, character.rig, offsets);
+  applyGuardQuaternionOffsets(THREE, character.rig, currentOffsets(euler));
   character.object3d.updateMatrixWorld(true);
   sword.object3d.updateMatrixWorld(true);
   sword.update();
@@ -245,7 +251,7 @@ function renderMetrics(metrics) {
 function rangePenalty(value, range) {
   const naturalSpan = Number.isFinite(range.min) && Number.isFinite(range.max)
     ? Math.max(0.05, range.max - range.min)
-    : Math.max(0.2, Math.abs(Number(range.min ?? range.max ?? 1)) * 0.5);
+    : Math.max(0.12, Math.abs(Number(range.min ?? range.max ?? 1)) * 0.35);
   if (Number.isFinite(range.min) && value < range.min) return ((range.min - value) / naturalSpan) ** 2;
   if (Number.isFinite(range.max) && value > range.max) return ((value - range.max) / naturalSpan) ** 2;
   return 0;
@@ -255,21 +261,30 @@ function scoreEuler(euler) {
   const offsets = currentOffsets(euler);
   const validation = validateGuardQuaternionOffsets(offsets);
   if (!validation.valid) return { score:1e9, validation, samples:[] };
-  let score = 0;
+
+  let sum = 0;
+  let worst = 0;
   const samples = [];
   for (const fraction of SAMPLE_FRACTIONS) {
     const sample = sampleFraction(fraction, euler, { visual:false });
     samples.push(sample);
+    let samplePenalty = 0;
     for (const [name, range] of Object.entries(LONGSWORD_TRIANGLE_GUARD_TARGETS)) {
-      score += rangePenalty(sample.metrics[name], range) * (SCORE_WEIGHTS[name] || 1);
+      samplePenalty += rangePenalty(sample.metrics[name], range) * (SCORE_WEIGHTS[name] || 1);
     }
+    sum += samplePenalty;
+    worst = Math.max(worst, samplePenalty);
   }
+
+  let regularization = 0;
   for (const entry of validation.entries) {
     const budget = Math.max(1, entry.budgetDegrees);
-    score += 0.02 * (entry.angleDegrees / budget) ** 2;
-    if (entry.bone === 'handslot.r') score += 0.04 * (entry.angleDegrees / budget) ** 2;
+    const usage = entry.angleDegrees / budget;
+    regularization += 0.015 * usage * usage;
+    if (entry.bone === 'chest') regularization += 0.035 * usage * usage;
+    if (entry.bone === 'handslot.r') regularization += 0.07 * usage * usage;
   }
-  return { score, validation, samples };
+  return { score:sum + worst * 2.5 + regularization, validation, samples };
 }
 
 function allSamplesPass(result) {
@@ -277,17 +292,35 @@ function allSamplesPass(result) {
     && result.samples.every((sample) => sample.evaluation.status === 'good');
 }
 
-async function autoFitSeed() {
-  setStatus('AUTO-FIT · searching within G2.5 correction budgets…', 'warning');
-  let bestEuler = cloneEuler();
+function empiricalSeeds() {
+  const zero = blankEuler();
+  const prior = blankEuler();
+  Object.assign(prior['upperarm.r'], { x:-27, y:24, z:24 });
+  Object.assign(prior['lowerarm.r'], { x:43, y:24, z:-23 });
+  Object.assign(prior['wrist.r'], { x:-41, y:6, z:-49 });
+  Object.assign(prior['handslot.r'], { x:0, y:15, z:0 });
+
+  const seeds = [zero, prior];
+  for (const axis of AXES) {
+    for (const value of [-8, 8]) {
+      const candidate = cloneEuler(prior);
+      candidate.chest[axis] = value;
+      if (validateGuardQuaternionOffsets(currentOffsets(candidate)).valid) seeds.push(candidate);
+    }
+  }
+  return seeds;
+}
+
+async function optimizeSeed(seed) {
+  let bestEuler = cloneEuler(seed);
   let best = scoreEuler(bestEuler);
   const variables = AUTHORING_BONES.flatMap((bone) => AXES.map((axis) => ({ bone, axis })));
-  const steps = [24, 12, 6, 3, 1];
+  const steps = [18, 9, 4, 2, 1];
 
   for (const step of steps) {
     let changed = true;
     let rounds = 0;
-    while (changed && rounds < 3 && !allSamplesPass(best)) {
+    while (changed && rounds < 5 && !allSamplesPass(best)) {
       changed = false;
       rounds += 1;
       for (const { bone, axis } of variables) {
@@ -296,7 +329,7 @@ async function autoFitSeed() {
           const candidate = cloneEuler(bestEuler);
           candidate[bone][axis] = Math.max(-budget, Math.min(budget, candidate[bone][axis] + direction * Math.min(step, budget)));
           const result = scoreEuler(candidate);
-          if (result.score + 1e-7 < best.score) {
+          if (result.score + 1e-8 < best.score) {
             bestEuler = candidate;
             best = result;
             changed = true;
@@ -306,15 +339,31 @@ async function autoFitSeed() {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
+  return { euler:bestEuler, result:best };
+}
 
-  authoringEuler = bestEuler;
+async function autoFitSeed() {
+  setStatus('AUTO-FIT · constrained search with chest ≤ 8° and frozen lower body…', 'warning');
+  let winner = null;
+  for (const seed of empiricalSeeds()) {
+    const candidate = await optimizeSeed(seed);
+    if (!winner || candidate.result.score < winner.result.score) winner = candidate;
+    if (allSamplesPass(candidate.result)) {
+      winner = candidate;
+      break;
+    }
+  }
+
+  authoringEuler = cloneEuler(winner.euler);
   renderBoneControls();
-  const sample = sampleFraction(0.5);
+  sampleFraction(0.5);
   const validation = validateFiveSamples(false);
   refreshExport();
-  const pass = validation.pass;
-  setStatus(`AUTO-FIT ${pass ? 'PASS' : 'SEED'} · score ${best.score.toFixed(4)} · ${validation.passCount}/5 samples pass`, pass ? 'good' : 'warning');
-  return { best, sample, validation };
+  setStatus(
+    `AUTO-FIT ${validation.pass ? 'PASS' : 'SEED'} · score ${winner.result.score.toFixed(4)} · ${validation.passCount}/5 samples pass`,
+    validation.pass ? 'good' : 'warning',
+  );
+  return { best:winner.result, sample:sampleFraction(0.5), validation };
 }
 
 function validateFiveSamples(updateUi = true) {
@@ -327,7 +376,7 @@ function validateFiveSamples(updateUi = true) {
     pass,
     passCount,
     offsetValidation,
-    samples: samples.map((sample) => ({
+    samples:samples.map((sample) => ({
       fraction:sample.fraction,
       metrics:Object.fromEntries(Object.entries(sample.metrics).filter(([name]) => name !== 'debug')),
       status:sample.evaluation.status,
@@ -350,7 +399,7 @@ function renderBoneControls() {
     const budget = LONGSWORD_GUARD_CORRECTION_SCOPE.maxLocalCorrectionDegrees[bone];
     const wrapper = document.createElement('div');
     wrapper.className = 'bone';
-    wrapper.innerHTML = `<div class="bone-head"><b>${bone}</b><span class="budget">≤ ${budget}° quaternion${bone === 'handslot.r' ? ' · fine trim' : ''}</span></div>`;
+    wrapper.innerHTML = `<div class="bone-head"><b>${bone}</b><span class="budget">≤ ${budget}° quaternion${bone === 'handslot.r' ? ' · fine trim' : bone === 'chest' ? ' · optional silhouette trim' : ''}</span></div>`;
     for (const axis of AXES) {
       const row = document.createElement('label');
       row.className = 'axis';
@@ -395,8 +444,7 @@ function refreshExport() {
 
 async function loadCanonical() {
   setStatus('Loading canonical Skyrim Guard + G2.4.5 calibrated sword…', 'warning');
-  const loader = new THREE.GLTFLoader();
-  library = await loadSkyrimConvertedAnimationLibrary(loader, { THREE, rig:character.rig, fps:30 });
+  library = await loadSkyrimConvertedAnimationLibrary(new THREE.GLTFLoader(), { THREE, rig:character.rig, fps:30 });
   targetClip = library.clips.get(CLIP_ID);
   if (!targetClip) throw new Error(`Missing canonical clip ${CLIP_ID}`);
   const bind = targetClip.userData?.weaponBindCalibration;
@@ -448,7 +496,7 @@ document.getElementById('freeze50').addEventListener('click', () => sampleFracti
 document.getElementById('autoFit').addEventListener('click', () => autoFitSeed().catch((error) => setStatus(error.message, 'bad')));
 document.getElementById('validate5').addEventListener('click', () => validateFiveSamples(true));
 document.getElementById('resetAll').addEventListener('click', () => {
-  authoringEuler = Object.fromEntries(AUTHORING_BONES.map((bone) => [bone, { x:0, y:0, z:0 }]));
+  authoringEuler = blankEuler();
   lastValidation = null;
   renderBoneControls();
   if (targetClip) sampleFraction(0.5);
@@ -459,8 +507,13 @@ document.getElementById('resetAll').addEventListener('click', () => {
 document.getElementById('refreshExport').addEventListener('click', refreshExport);
 document.getElementById('copyExport').addEventListener('click', async () => {
   refreshExport();
-  try { await navigator.clipboard.writeText(exportNode.value); setStatus('Canonical authoring export copied.', 'good'); }
-  catch { exportNode.select(); setStatus('Clipboard unavailable; export text selected.', 'warning'); }
+  try {
+    await navigator.clipboard.writeText(exportNode.value);
+    setStatus('Canonical authoring export copied.', 'good');
+  } catch {
+    exportNode.select();
+    setStatus('Clipboard unavailable; export text selected.', 'warning');
+  }
 });
 
 renderBoneControls();
