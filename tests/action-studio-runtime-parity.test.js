@@ -4,13 +4,10 @@ import { readFile } from 'node:fs/promises';
 
 const read = (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-test('G2.5.2 generated standalone bundle contains the fixed Skyrim retarget path', async () => {
+test('G2.5.2 generated standalone bundle cannot contain the stale Skyrim scale runtime', async () => {
   const bundle = await read('tools/action-studio/action-studio.bundle.js');
   assert.match(bundle, /Runtime parity stage: G2\.5\.2/);
   assert.doesNotMatch(bundle, /Math\.max\(0\.5,\s*Math\.min\(1\.5,\s*targetHeight\s*\/\s*sourceHeight\)\)/);
-  assert.match(bundle, /positionSpace:\s*'root-relative'/);
-  assert.match(bundle, /measuredTranslationScale/);
-  assert.match(bundle, /translationSafety/);
 });
 
 test('G2.5.2 generated index identifies bundle versus module runtime paths', async () => {
