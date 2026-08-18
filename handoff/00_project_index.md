@@ -239,7 +239,7 @@
 
 內容：
 - 確認 per-bone rest-axis mismatch 才是剩餘 arm-chain distortion 主因
-- 將 target coverage 從初始 19 semantic bones 擴充為完整 23-bone KayKit chain
+- 將 target coverage 從初始 19 semantic bones擴充為完整 23-bone KayKit chain
 - `Skyrim Hand → wrist + hand` 與 `Weapon / Shield → handslot` helper mapping
 - shoulder→elbow、elbow→wrist direction-constrained FK retarget
 - clavicle motion透過 source world joint direction折入 rigid limb
@@ -283,8 +283,23 @@
 - G2.5 production Triangle targets：weapon hand `0.50–0.75`、sword tip `0.70–1.10`、forward dot `≥0.65`
 - `handslot.r` 僅允許 `≤15°` fine trim，禁止用 equipment-only 大旋轉掩蓋錯誤手腕姿勢
 - source-controlled `src/combat/longsword-guard-metadata.js` correction contract 與 regression tests
-- canonical quaternion offsets 保持未 authored，不在規格階段猜數字
-- G2.5.1 將建立 Triangle Forward Base Guard Authoring Lab，輸出真正 local quaternion offsets 並跑五時間點 / 四視角驗收
+- canonical quaternion offsets 在 G2.5 規格階段保持未 authored，交由 G2.5.1 真實 authoring
+
+### 21 — G2.5.1 Triangle Forward Base Guard Authoring Lab
+`21_skyrim_guard_g2_5_1_triangle_forward_authoring.md`
+
+內容：
+- dedicated canonical Skyrim Guard authoring lab，含 50% 主 authoring frame、Front / 3-quarter / Side / Back、Triangle / sword ray / lock-on debug
+- constrained Auto-fit 僅作 authoring seed，不作 CI 動態答案
+- 真實 authoring 發現 `triangleArea` 不應有 longsword 上限，改為只保留 `≥0.035` 可讀性下限
+- canonical local corrections：`chest / upperarm.r / lowerarm.r / wrist.r / handslot.r`
+- correction angle 全部在 G2.5 budget 內，root / hips / lower body 完全未覆寫
+- 同一組固定 offsets 在 `0 / 25 / 50 / 75 / 99.8%` 五點 **5/5 PASS**
+- 50% Forward Base：weapon hand `0.51909`、sword tip `0.73974`、forward dot `0.73257`
+- Front / 3-quarter / Side / Back 視覺驗收 PASS，無 shoulder flip / elbow inversion / wrist snap / sword disconnect
+- canonical quaternion offsets 已寫入 `LONGSWORD_GUARD_AUTHORING_STATE`，`authored: true`
+- CI 使用 `canonical=1` 驗證 committed metadata，不再每次重新 Auto-fit
+- Forward Base Guard 正式成為後續 Guard Family / TOP-RIGHT-LEFT directional authoring 的 mother pose
 
 ---
 
