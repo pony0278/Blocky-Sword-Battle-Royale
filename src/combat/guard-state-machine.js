@@ -152,6 +152,13 @@ function resolveDynamicTarget(state, event, guardHeld) {
   return GUARD_TRANSITION_GRAPH[state]?.[event] || null;
 }
 
+function outcomeForEvent(event) {
+  if (event === GUARD_EVENTS.BLOCK_CONFIRMED) return 'block';
+  if (event === GUARD_EVENTS.PARRY_CONFIRMED) return 'parry';
+  if (event === GUARD_EVENTS.COUNTER_CONFIRMED) return 'counter';
+  return null;
+}
+
 export function getGuardPresentation(state) {
   return LONGSWORD_GUARD_PRESENTATION[state] || LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.NEUTRAL];
 }
@@ -216,12 +223,11 @@ export function createGuardStateMachine(options = {}) {
 
     if (event === GUARD_EVENTS.GUARD_PRESS) guardHeld = true;
     if (event === GUARD_EVENTS.GUARD_RELEASE) guardHeld = false;
-    if (event === GUARD_EVENTS.BLOCK_CONFIRMED) lastOutcome = 'block';
-    if (event === GUARD_EVENTS.PARRY_CONFIRMED) lastOutcome = 'parry';
-    if (event === GUARD_EVENTS.COUNTER_CONFIRMED) lastOutcome = 'counter';
 
     const target = resolveDynamicTarget(state, event, guardHeld);
     if (target) {
+      const outcome = outcomeForEvent(event);
+      if (outcome) lastOutcome = outcome;
       const value = transition(event, target, payload);
       return Object.freeze({ accepted: true, transitioned: true, snapshot: value });
     }
