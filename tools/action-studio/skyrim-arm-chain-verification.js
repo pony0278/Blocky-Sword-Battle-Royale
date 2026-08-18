@@ -58,10 +58,10 @@ async function run() {
   const metrics = clip.userData?.armChainMetrics || null;
   const trackNames = new Set(clip.tracks.map((track) => track.name));
   const requiredTracks = [
-    'hand_l.quaternion',
-    'handslot_l.quaternion',
-    'hand_r.quaternion',
-    'handslot_r.quaternion',
+    'handl.quaternion',
+    'handslotl.quaternion',
+    'handr.quaternion',
+    'handslotr.quaternion',
   ];
   const missingTracks = requiredTracks.filter((name) => !trackNames.has(name));
   const topology = [0, 0.25, 0.5, 0.75, 0.998].map((fraction) => sampleArmTopology(
