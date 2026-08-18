@@ -39,6 +39,17 @@ export function classifySkyrimPoseEquivalence(metrics = {}, thresholds = {}) {
   });
 }
 
+export function classifySkyrimWeaponSocketEquivalence(input = {}, thresholds = {}) {
+  const goodMaxDegrees = Math.max(0, finite(thresholds.goodMaxDegrees, 15));
+  const warnMaxDegrees = Math.max(goodMaxDegrees, finite(thresholds.warnMaxDegrees, 30));
+  const maxDegrees = Math.max(0, finite(input.maxDegrees, 180));
+  return Object.freeze({
+    status: maxDegrees <= goodMaxDegrees ? 'good' : maxDegrees <= warnMaxDegrees ? 'warning' : 'bad',
+    maxDegrees,
+    thresholds: Object.freeze({ goodMaxDegrees, warnMaxDegrees }),
+  });
+}
+
 export function classifyTriangleGuardSample(input = {}) {
   const metrics = Object.freeze({
     weaponHandHeight: finite(input.weaponHandHeight, -1),
@@ -83,6 +94,7 @@ export function classifyTriangleGuardSample(input = {}) {
 
 export function decideSkyrimGuardAdoption(input = {}) {
   const equivalenceStatus = String(input.equivalenceStatus || 'bad').toLowerCase();
+  const weaponSocketStatus = String(input.weaponSocketStatus || 'good').toLowerCase();
   const suitabilityStatuses = Array.from(input.suitabilityStatuses || [])
     .map((value) => String(value || 'bad').toLowerCase());
 
@@ -90,10 +102,12 @@ export function decideSkyrimGuardAdoption(input = {}) {
   let reason = 'technical-equivalence-not-accepted';
 
   if (equivalenceStatus !== 'bad') {
-    if (suitabilityStatuses.includes('bad')) {
+    if (weaponSocketStatus === 'bad') {
+      reason = 'weapon-socket-equivalence-not-accepted';
+    } else if (suitabilityStatuses.includes('bad')) {
       decision = 'REJECT';
       reason = 'source-pose-correction-cost-too-high';
-    } else if (equivalenceStatus === 'warning' || suitabilityStatuses.includes('warning')) {
+    } else if (equivalenceStatus === 'warning' || weaponSocketStatus === 'warning' || suitabilityStatuses.includes('warning')) {
       decision = 'ADOPT WITH CORRECTIONS';
       reason = 'retarget-is-usable-but-triangle-guard-needs-local-corrections';
     } else if (suitabilityStatuses.length && suitabilityStatuses.every((value) => value === 'good')) {
@@ -102,5 +116,11 @@ export function decideSkyrimGuardAdoption(input = {}) {
     }
   }
 
-  return Object.freeze({ decision, reason, equivalenceStatus, suitabilityStatuses: Object.freeze(suitabilityStatuses) });
+  return Object.freeze({
+    decision,
+    reason,
+    equivalenceStatus,
+    weaponSocketStatus,
+    suitabilityStatuses: Object.freeze(suitabilityStatuses),
+  });
 }
