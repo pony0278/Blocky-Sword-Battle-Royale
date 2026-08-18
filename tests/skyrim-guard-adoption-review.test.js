@@ -38,7 +38,7 @@ test('triangle guard sample accepts compact forward threatening geometry', () =>
 test('triangle guard sample marks local silhouette fixes as warning', () => {
   const result = classifyTriangleGuardSample({
     weaponHandHeight: 0.40,
-    offHandHeight: 0.36,
+    offHandHeight: 0.50,
     weaponHandCenterDistance: 0.52,
     offHandCenterDistance: 0.82,
     swordTipHeight: 0.48,
