@@ -1,0 +1,81 @@
+name: G3.3.1 Temporary Reaction Parse Probe
+
+on:
+  push:
+    branches:
+      - probe/g3-3-1-reaction-visual
+
+permissions:
+  contents: read
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract temporary reaction inputs
+        run: |
+          mkdir -p .probe/reactions artifacts/g3-3-1/parsed
+          tar -xzf .probe/g3-3-1-reactions.tar.gz -C .probe/reactions
+          sha256sum .probe/reactions/*.hkx | tee artifacts/g3-3-1/input-sha256.txt
+
+      - name: Fetch pinned PyNifly native Skyrim HKX reader
+        run: |
+          mkdir -p .probe/pynifly
+          curl -fsSL https://raw.githubusercontent.com/BadDogSkyrim/PyNifly/2064a5cc6ec240f07a9df51ac5655541e756633c/io_scene_nifly/hkx/anim_fo4.py -o .probe/pynifly/anim_fo4.py
+          curl -fsSL https://raw.githubusercontent.com/BadDogSkyrim/PyNifly/2064a5cc6ec240f07a9df51ac5655541e756633c/io_scene_nifly/hkx/anim_skyrim.py -o .probe/pynifly/anim_skyrim.py
+
+      - name: Parse all four reaction animations
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          sys.path.insert(0, '.probe/pynifly')
+          from anim_skyrim import _parse_animation_hkx
+
+          out_dir = pathlib.Path('artifacts/g3-3-1/parsed')
+          expected = ['shd_blockhit.hkx','shd_blockbashintro.hkx','shd_blockbash.hkx','shd_blockbashpower.hkx']
+          aggregate = {}
+          for filename in expected:
+              path = pathlib.Path('.probe/reactions') / filename
+              anim = _parse_animation_hkx(path.read_bytes())
+              if anim is None:
+                  raise SystemExit(f'Could not parse {filename}')
+              result = {
+                  'file': filename,
+                  'duration': anim.duration,
+                  'numFrames': anim.num_frames,
+                  'numTracks': anim.num_tracks,
+                  'numBlocks': anim.num_blocks,
+                  'frameDuration': anim.frame_duration,
+                  'fps': (1.0 / anim.frame_duration) if anim.frame_duration else 0,
+                  'blendHint': anim.blend_hint,
+                  'originalSkeletonName': anim.original_skeleton_name,
+                  'trackToBoneIndices': anim.track_to_bone_indices,
+                  'boneNames': anim.bone_names,
+                  'annotations': [{'time': a.time, 'text': a.text} for a in anim.annotations],
+                  'trackFrameCounts': [
+                      {
+                          'translation': len(t.translations),
+                          'rotation': len(t.rotations),
+                          'scale': len(t.scales),
+                      }
+                      for t in anim.tracks
+                  ],
+              }
+              if len(anim.tracks) != anim.num_tracks:
+                  raise SystemExit(f'{filename}: parsed track count mismatch')
+              if anim.track_to_bone_indices and len(anim.track_to_bone_indices) != anim.num_tracks:
+                  raise SystemExit(f'{filename}: binding count mismatch')
+              (out_dir / (filename + '.json')).write_text(json.dumps(result, indent=2), encoding='utf-8')
+              aggregate[filename] = result
+              print(filename, json.dumps({k:result[k] for k in ['duration','numFrames','numTracks','fps','blendHint','originalSkeletonName']}, ensure_ascii=False))
+          (out_dir / 'aggregate.json').write_text(json.dumps(aggregate, indent=2), encoding='utf-8')
+          PY
+
+      - name: Upload parse evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-3-1-reaction-parse-probe
+          path: artifacts/g3-3-1
