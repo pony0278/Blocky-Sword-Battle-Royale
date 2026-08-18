@@ -12,6 +12,11 @@ on:
       - 'src/combat/longsword-guard-metadata.js'
       - 'src/combat/longsword-guard-correction.js'
       - 'src/character/**'
+      - 'build/build-action-studio.mjs'
+      - 'tools/action-studio/action-studio.js'
+      - 'tools/action-studio/action-studio-runtime-parity.js'
+      - 'tools/action-studio/studio-external-animation-controller.js'
+      - 'tools/action-studio/index.template.html'
       - 'tools/action-studio/skyrim-guard-visual-review.html'
       - 'tools/action-studio/skyrim-guard-visual-review.js'
       - 'tools/action-studio/skyrim-basis-verification.html'
@@ -59,6 +64,42 @@ jobs:
           fi
           echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
           "$BROWSER" --version
+
+      - name: Verify G2.5.2 Action Studio runtime parity
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g2-4-1
+          python3 -m http.server 4173 > /tmp/g2-5-2-runtime-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+
+          STUDIO='http://127.0.0.1:4173/tools/action-studio/index.html?g252=1'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            --window-size=1600,1100 --virtual-time-budget=22000 \
+            --dump-dom "$STUDIO" \
+            > artifacts/g2-4-1/g252-action-studio-runtime-dom.html
+
+          if ! grep -q 'data-g252="pass"' artifacts/g2-4-1/g252-action-studio-runtime-dom.html; then
+            echo 'G2.5.2 real Action Studio Skyrim runtime parity failed.' >&2
+            sed -n '/<pre id="g252RuntimeReport"/,/<\/pre>/p' artifacts/g2-4-1/g252-action-studio-runtime-dom.html || true
+            exit 1
+          fi
+          if ! grep -q 'data-g252-entry="module"' artifacts/g2-4-1/g252-action-studio-runtime-dom.html; then
+            echo 'G2.5.2 CI must exercise Action Studio HTTP/module production path.' >&2
+            exit 1
+          fi
+          if ! grep -q 'data-g252-root-stripped="true"' artifacts/g2-4-1/g252-action-studio-runtime-dom.html; then
+            echo 'G2.5.2 in-place prepared clip still contains root.position.' >&2
+            exit 1
+          fi
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            --window-size=1600,1100 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g2-4-1/g252-action-studio-runtime.png" \
+            "$STUDIO"
 
       - name: Verify G2.4.2 coordinate basis
         shell: bash
