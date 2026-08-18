@@ -58,7 +58,7 @@ let targetClip = null;
 let targetBasis = null;
 let currentFraction = LONGSWORD_GUARD_AUTHORING_STATE.baseSample;
 let lastValidation = null;
-let authoringEuler = blankEuler();
+let authoringEuler = LONGSWORD_GUARD_AUTHORING_STATE.authored ? canonicalEuler() : blankEuler();
 
 const statusNode = document.getElementById('status');
 const metricsNode = document.getElementById('metrics');
@@ -95,6 +95,15 @@ function rounded(value, digits = 5) {
 
 function blankEuler() {
   return Object.fromEntries(AUTHORING_BONES.map((bone) => [bone, { x:0, y:0, z:0 }]));
+}
+
+function canonicalEuler() {
+  const source = LONGSWORD_GUARD_AUTHORING_STATE.eulerDegrees || {};
+  return Object.fromEntries(AUTHORING_BONES.map((bone) => [bone, {
+    x:Number(source[bone]?.x) || 0,
+    y:Number(source[bone]?.y) || 0,
+    z:Number(source[bone]?.z) || 0,
+  }]));
 }
 
 function cloneEuler(input = authoringEuler) {
@@ -465,26 +474,40 @@ async function loadCanonical() {
 async function runAutomation() {
   const params = new URLSearchParams(window.location.search);
   const view = ['front','three','side','back'].includes(params.get('view')) ? params.get('view') : 'three';
+  const canonicalMode = params.get('canonical') === '1';
   setView(view);
   await loadCanonical();
-  const fit = await autoFitSeed();
+
+  let score = null;
+  if (canonicalMode) {
+    if (!LONGSWORD_GUARD_AUTHORING_STATE.authored) throw new Error('Canonical G2.5.1 metadata has not been authored');
+    authoringEuler = canonicalEuler();
+    renderBoneControls();
+    score = scoreEuler(authoringEuler);
+  } else {
+    const fit = await autoFitSeed();
+    score = fit.best;
+  }
+
   const validation = validateFiveSamples(false);
   sampleFraction(0.5);
   refreshExport();
   const offsets = currentOffsets();
   const result = {
     stage:'G2.5.1',
+    mode:canonicalMode ? 'canonical-metadata' : 'auto-fit',
     pass:validation.pass,
     view,
-    score:rounded(fit.best.score, 6),
+    score:rounded(score?.score, 6),
     eulerDegrees:cloneEuler(),
     quaternionOffsets:offsets,
     validation,
   };
   document.documentElement.dataset.g251 = result.pass ? 'pass' : 'needs-correction';
+  document.documentElement.dataset.g251Mode = result.mode;
   document.documentElement.dataset.g251Samples = `${validation.passCount}-of-5`;
   document.documentElement.dataset.g251Authoring = validateGuardQuaternionOffsets(offsets).valid ? 'within-budget' : 'invalid';
-  setStatus(`G2.5.1 ${result.pass ? 'PASS' : 'NEEDS CORRECTION'} · ${validation.passCount}/5 · ${view}`, result.pass ? 'good' : 'warning');
+  setStatus(`G2.5.1 ${result.pass ? 'PASS' : 'NEEDS CORRECTION'} · ${validation.passCount}/5 · ${result.mode} · ${view}`, result.pass ? 'good' : 'warning');
   validationNode.textContent = JSON.stringify(result, null, 2);
   window.__G251_RESULT__ = result;
   return result;
@@ -529,7 +552,7 @@ function frame() {
 requestAnimationFrame(frame);
 
 const params = new URLSearchParams(window.location.search);
-if (params.get('auto') === '1') {
+if (params.get('auto') === '1' || params.get('canonical') === '1') {
   runAutomation().catch((error) => {
     document.documentElement.dataset.g251 = 'fail';
     setStatus(`FAIL · ${error?.message || error}`, 'bad');
