@@ -203,7 +203,7 @@
 
 內容：
 - 修正 Skyrim / Action Studio 跨單位 translation scale，不再把約 `0.01` 的合理比例夾成 `0.5`
-- 將 root motion 與 pelvis root-relative body motion 分離，避免 world-space 位移重複套用
+- 將 root motion 與 pelvis root-relative body motion分離，避免 world-space 位移重複套用
 - 保留 `inPlace` 下的 pelvis 重心微移，同時只移除真正 root locomotion
 - 新增整段 max excursion / max step translation diagnostics
 - 新增「中途飛走但首尾相同」regression test
@@ -242,7 +242,7 @@
 - 將 target coverage 從初始 19 semantic bones 擴充為完整 23-bone KayKit chain
 - `Skyrim Hand → wrist + hand` 與 `Weapon / Shield → handslot` helper mapping
 - shoulder→elbow、elbow→wrist direction-constrained FK retarget
-- clavicle motion透過 source world joint direction 折入 rigid limb
+- clavicle motion透過 source world joint direction折入 rigid limb
 - twist helper 記錄與 rigid line-limb 不重複套用 policy
 - 1201-frame 四段手臂方向誤差 gate，overall max 約 `0.00001093°`
 - G2.4.3 arm-chain / wrist CI gate PASS
@@ -271,6 +271,20 @@
 - 校準後 sword-tip / forward-threat 指標可信，五個 sample 皆為 Triangle Guard `WARNING`
 - 最終 Skyrim `shd_blockidle` 採用決策：**ADOPT WITH CORRECTIONS**
 - 下一步進 G2.5，將技術 retarget 結案並規劃 Triangle Guard authored correction layer
+
+### 20 — G2.5 Skyrim Guard Adoption Decision & Triangle Correction Plan
+`20_skyrim_guard_g2_5_adoption_triangle_correction_plan.md`
+
+內容：
+- 正式凍結 G2.4 低層 retarget pipeline，不再以美術問題回頭修改 decoder / basis / FK / weapon bind
+- `shd_blockidle` 最終定案為 **ADOPT WITH CORRECTIONS**
+- correction layer 只以 `upperarm.r / lowerarm.r / wrist.r` 為必要骨骼
+- chest / 左臂 / `handslot.r` 僅為可選最小修正，root / hips / legs 完全禁止覆寫
+- G2.5 production Triangle targets：weapon hand `0.50–0.75`、sword tip `0.70–1.10`、forward dot `≥0.65`
+- `handslot.r` 僅允許 `≤15°` fine trim，禁止用 equipment-only 大旋轉掩蓋錯誤手腕姿勢
+- source-controlled `src/combat/longsword-guard-metadata.js` correction contract 與 regression tests
+- canonical quaternion offsets 保持未 authored，不在規格階段猜數字
+- G2.5.1 將建立 Triangle Forward Base Guard Authoring Lab，輸出真正 local quaternion offsets 並跑五時間點 / 四視角驗收
 
 ---
 
