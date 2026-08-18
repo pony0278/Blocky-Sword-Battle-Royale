@@ -29,8 +29,29 @@ jobs:
       - name: Build Action Studio
         run: npm run build:action-studio
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with captured log
+        shell: bash
+        run: |
+          set +e
+          npm test 2>&1 | tee g252-test.log
+          test_exit=${PIPESTATUS[0]}
+          echo "G252_TEST_EXIT=${test_exit}" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Upload G2.5.2 test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g252-ci-test-log
+          path: g252-test.log
+
+      - name: Fail on test errors
+        shell: bash
+        run: |
+          if [ "${G252_TEST_EXIT}" != "0" ]; then
+            echo "npm test failed with exit code ${G252_TEST_EXIT}; see g252-ci-test-log artifact."
+            exit "${G252_TEST_EXIT}"
+          fi
 
       - name: Sync generated standalone Action Studio files
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
