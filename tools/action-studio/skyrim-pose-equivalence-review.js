@@ -8,6 +8,7 @@ import {
 import { resolveSkyrimSourceNodes } from '../../src/animation/skyrim-animation-retarget.js';
 import {
   classifySkyrimPoseEquivalence,
+  classifySkyrimWeaponSocketEquivalence,
   classifyTriangleGuardSample,
   decideSkyrimGuardAdoption,
 } from '../../src/combat/skyrim-guard-adoption-review.js';
@@ -20,8 +21,8 @@ const CLIP_ID = SKYRIM_GUARD_CONVERTED_FILES[0].clipId;
 const FRACTIONS = Object.freeze([0, 0.25, 0.5, 0.75, 0.998]);
 const TARGET_OFFSET_X = 1.45;
 const SOURCE_OFFSET_X = -1.45;
+const SWORD_DEPENDENT_GATES = Object.freeze(new Set(['swordTipHeight', 'swordForwardDot', 'triangleArea']));
 
-// Detailed source display preserves the actual visible semantic skeleton.
 const DISPLAY_SEGMENTS = Object.freeze([
   Object.freeze({ source:['pelvis','spine'] }),
   Object.freeze({ source:['spine','chest'] }),
@@ -40,8 +41,6 @@ const DISPLAY_SEGMENTS = Object.freeze([
   Object.freeze({ source:['foot.r','toes.r'] }),
 ]);
 
-// Technical equivalence compares semantically equivalent chains. Skyrim has Spine0/1/2 while
-// the target has only spine/chest, so the lower torso must be compared as aggregate vectors.
 const EQUIVALENCE_SEGMENTS = Object.freeze([
   Object.freeze({ id:'torso.pelvis-chest', source:['pelvis','chest'], target:['hips','chest'], core:true }),
   Object.freeze({ id:'torso.pelvis-head', source:['pelvis','head'], target:['hips','head'], core:true }),
@@ -251,6 +250,11 @@ function targetTriangleMetrics(targetForward) {
   };
 }
 
+function bodySuitabilityStatus(suitability) {
+  const bodyFailures = suitability.failures.filter((name) => !SWORD_DEPENDENT_GATES.has(name));
+  return bodyFailures.length ? 'warning' : 'good';
+}
+
 async function run() {
   const params = new URLSearchParams(window.location.search);
   const requestedFraction = Math.max(0, Math.min(0.998, Number(params.get('sample') ?? 0.5) || 0));
@@ -304,6 +308,7 @@ async function run() {
 
   const coreAngles = samples.flatMap((sample) => sample.segments.filter((segment) => segment.core).map((segment) => segment.angleDegrees));
   const helperAngles = samples.flatMap((sample) => sample.segments.filter((segment) => !segment.core).map((segment) => segment.angleDegrees));
+  const weaponHelperAngles = samples.map((sample) => sample.segments.find((segment) => segment.id === 'arm.r.helper')?.angleDegrees || 180);
   const equivalenceMetrics = {
     sampleCount: coreAngles.length,
     meanDegrees: rounded(coreAngles.reduce((sum, value) => sum + value, 0) / Math.max(1, coreAngles.length)),
@@ -316,8 +321,18 @@ async function run() {
     maxDegrees: rounded(Math.max(0, ...helperAngles)),
   };
   const equivalence = classifySkyrimPoseEquivalence(equivalenceMetrics);
+  const weaponSocketEquivalence = classifySkyrimWeaponSocketEquivalence({
+    maxDegrees: Math.max(...weaponHelperAngles),
+  });
+  const bodySuitabilityStatuses = samples.map((sample) => bodySuitabilityStatus(sample.suitability));
+  const provisionalBodyAdoption = decideSkyrimGuardAdoption({
+    equivalenceStatus: equivalence.status,
+    weaponSocketStatus: 'good',
+    suitabilityStatuses: bodySuitabilityStatuses,
+  });
   const adoption = decideSkyrimGuardAdoption({
     equivalenceStatus: equivalence.status,
+    weaponSocketStatus: weaponSocketEquivalence.status,
     suitabilityStatuses: samples.map((sample) => sample.suitability.status),
   });
 
@@ -346,8 +361,11 @@ async function run() {
     comparisonFractions: FRACTIONS,
     equivalence,
     helperMetrics,
+    weaponSocketEquivalence,
     perSegmentWorst,
     adoption,
+    provisionalBodyAdoption,
+    bodySuitabilityStatuses,
     samples: samples.map((sample) => ({
       fraction: sample.fraction,
       time: sample.time,
@@ -356,9 +374,10 @@ async function run() {
     reviewPolicy: {
       coreEquivalence: 'aggregate torso + upper/lower arms + legs/feet direction angles after G2.4.2 basis conversion',
       torsoSegmentation: 'Skyrim Spine0/1/2 is compared to KayKit spine/chest using pelvis→chest and pelvis→head aggregate vectors',
-      helperEquivalence: 'Hand→Weapon / Hand→Shield is diagnostic-only because socket geometry differs between rigs',
+      helperEquivalence: 'Hand→Weapon / Hand→Shield is separate from body equivalence because equipment bind axes differ between rigs',
+      weaponSocketGate: 'final sword-tip adoption metrics are not trusted while Weapon→handslot.r direction mismatch is bad',
       displayScale: 'source pelvis→head normalized to target hips→head for side-by-side visual review',
-      adoption: 'technical equivalence must be accepted before authored source-pose suitability can be judged',
+      adoption: 'body equivalence and weapon socket equivalence must both be accepted before a final authored source-pose decision',
       triangleGuardReference: 'handoff/07_directional_triangle_guard_spec.md',
     },
     runtimeTranslationScale: rounded(Number(targetClip.userData.translationScale) || 1, 8),
@@ -368,9 +387,10 @@ async function run() {
 
   document.documentElement.dataset.g244 = 'ready';
   document.documentElement.dataset.g244Equivalence = equivalence.status;
+  document.documentElement.dataset.g244WeaponSocket = weaponSocketEquivalence.status;
   document.documentElement.dataset.g244Decision = adoption.decision.toLowerCase().replaceAll(' ', '-');
   decisionLabel.textContent = adoption.decision;
-  equivalenceLabel.textContent = `equivalence ${equivalence.status.toUpperCase()} · mean ${equivalence.meanDegrees.toFixed(2)}° · p95 ${equivalence.p95Degrees.toFixed(2)}° · max ${equivalence.maxDegrees.toFixed(2)}°`;
+  equivalenceLabel.textContent = `body ${equivalence.status.toUpperCase()} · weapon socket ${weaponSocketEquivalence.status.toUpperCase()} · mean ${equivalence.meanDegrees.toFixed(2)}° · max ${equivalence.maxDegrees.toFixed(2)}°`;
   sampleLabel.textContent = `${Math.round(requestedFraction * 100)}% · ${requestedTime.toFixed(3)}s · ${view} view`;
   reportNode.textContent = JSON.stringify(result, null, 2);
   window.__G244_RESULT__ = result;
