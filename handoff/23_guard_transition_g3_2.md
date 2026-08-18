@@ -1,5 +1,17 @@
 # G3.2 — Guard Enter / Recover / Exit Authoring
 
+## Status
+
+**PASS / READY FOR VISUAL ACCEPTANCE** on PR #15.
+
+Final verification head before this documentation update: `0ad8b0abad17e9f34dbec1c5aa08de9247cc0758`.
+
+- CI Run 181: **SUCCESS**
+- Guard Transition Visual Verification Run 4: **SUCCESS**
+- Skyrim Guard Visual Verification Run 106: **SUCCESS**
+- G3.2 visual artifact: `9315857673`
+- artifact digest: `sha256:80575ab1cee88cfed02c2a7dbd67e52c62db44a1c13c7ce0d1393b2d3b8df501`
+
 ## Goal
 
 Turn the G3.1 Guard state slots into authored presentation transitions without creating unrelated full-body animation clips.
@@ -10,6 +22,7 @@ G3.2 reuses the accepted Skyrim Triangle Forward Guard as the only Guard base:
 - correction layer: `longsword_triangle_forward_v1`
 - in-place: `true`
 - canonical G2.5.1 quaternion offsets remain unchanged
+- canonical neutral for Action Studio acceptance: `ACTION_STUDIO/IDLE_POSE`
 
 ## Authoring Strategy
 
@@ -25,7 +38,7 @@ correctionWeight 0 -> 1
 reactionOverlay  0
 ```
 
-This lets the real Skyrim Hold blend from the character's neutral/rest presentation while the G2.5.1 local quaternion correction ramps through the same envelope.
+The real Skyrim Hold blends from Action Studio's actual authored `IDLE_POSE`; the G2.5.1 local quaternion correction ramps through the same envelope.
 
 ### Guard Recover — 140 ms
 
@@ -49,7 +62,7 @@ correctionWeight 1 -> 0
 reactionOverlay  0
 ```
 
-Exit releases the Skyrim Hold and its authored correction together, avoiding a frame where the sword orientation and body pose disagree.
+Exit releases the Skyrim Hold and its authored correction together and returns to the exact same Action Studio `IDLE_POSE` used at Enter start.
 
 ## Quaternion Blend Rule
 
@@ -58,6 +71,27 @@ G2.5.1 correction offsets are not interpolated as Euler angles.
 `scaleQuaternionOffset()` scales each local correction through the shortest quaternion arc from identity to the accepted canonical offset. Therefore a 50% correction has approximately 50% of the canonical quaternion angle and cannot take an arbitrary Euler-axis route.
 
 `applyGuardQuaternionOffsetsWeighted()` is the runtime/application helper for the weighted correction layer.
+
+## Mixer Baseline Rule
+
+The first visual implementation exposed an important bug: although the numerical envelope was correct, `AnimationAction.play()` had captured procedural rig rest/T-pose as its PropertyMixer original state. The result was a visually wrong Exit endpoint.
+
+The corrected G3.2 lab now:
+
+1. applies the exact Action Studio `IDLE_POSE`,
+2. only then activates the Skyrim Guard AnimationAction through the animation controller,
+3. therefore captures Idle as the PropertyMixer original state,
+4. uses that same Idle as the zero-weight baseline for Neutral / Enter start / Exit end.
+
+The rejected intermediate run measured Exit-end vs Neutral at exactly `62°`, exposing the right-elbow Idle-vs-rest mismatch. After the baseline fix:
+
+- Neutral vs Action Studio Idle: `0°`
+- Enter start vs Neutral: about `0.0000017°`
+- Exit end vs Neutral: about `0.0000017°`
+- root max excursion: `0`
+- motion-root max excursion: `0`
+
+This gate prevents a future regression back to T-pose/rest even if the transition weights still look numerically correct.
 
 ## G3.1 State Contract Integration
 
@@ -83,11 +117,12 @@ The G3.1 authority boundary is unchanged. G3.2 only controls presentation weight
 
 The lab loads:
 
-1. the real canonical converted Skyrim Guard GLB,
-2. the actual procedural character,
-3. the G2.4.5 weapon-bind calibrated sword,
-4. the committed G2.5.1 correction offsets,
-5. the committed G3.2 transition profiles.
+1. Action Studio's actual authored `IDLE_POSE`,
+2. the real canonical converted Skyrim Guard GLB,
+3. the actual procedural character,
+4. the G2.4.5 weapon-bind calibrated sword,
+5. the committed G2.5.1 correction offsets,
+6. the committed G3.2 transition profiles.
 
 Controls:
 
@@ -99,18 +134,20 @@ Controls:
 The automation gate verifies:
 
 - canonical clip identity,
+- Neutral equals Action Studio Idle across 15 major bones,
+- Enter start equals Neutral,
+- Exit end equals Neutral,
 - Enter endpoint weights,
 - Recover reaction-overlay contract,
 - Exit endpoint weights,
 - root stability,
 - motion-root stability.
 
-## CI / Visual Evidence
+## Visual Evidence
 
-Workflow: `.github/workflows/guard-transition-visual.yml`
+The final artifact contains:
 
-Screenshots:
-
+- Neutral
 - Enter start
 - Enter midpoint
 - Enter end
@@ -120,20 +157,27 @@ Screenshots:
 - Exit end
 - Enter midpoint side view
 
-The workflow fails unless the lab reports `data-g32="pass"` and the committed timing metadata is exactly `180 / 140 / 160 ms`.
+Manual review of the final artifact confirmed:
+
+- Neutral and Exit end visually match,
+- no T-pose/rest fallback,
+- Enter midpoint moves toward the accepted Skyrim Guard without root drift,
+- Enter end/Hold preserve the accepted mother Guard,
+- Side view remains stable with no foot/root fly-away.
 
 ## Acceptance Contract
 
-G3.2 is complete when:
+G3.2 is accepted because:
 
-1. Enter uses the real canonical Skyrim Hold and ramps both hold/correction weight `0 -> 1`.
-2. Enter reaches full Guard in 180 ms.
+1. Enter starts from the real Action Studio Idle and reaches full Guard in 180 ms.
+2. Hold/correction weights ramp together `0 -> 1`.
 3. Recover preserves full Guard and fades only the future G3.3 reaction overlay in 140 ms.
-4. Exit fades hold/correction together `1 -> 0` in 160 ms.
+4. Exit fades hold/correction together `1 -> 0` in 160 ms and returns to the same Idle.
 5. Weighted correction uses shortest-path quaternion interpolation.
-6. No root, hips, leg or locomotion authoring is introduced.
+6. No root, hips, leg or locomotion authoring was introduced.
 7. Real-browser visual lab reports PASS.
 8. Full repository tests remain green.
+9. The complete pre-G3.2 Skyrim Guard regression workflow remains green.
 
 ## Follow-up
 
