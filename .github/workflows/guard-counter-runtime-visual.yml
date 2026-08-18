@@ -1,0 +1,79 @@
+name: G3.4 Guard Counter Runtime Visual
+
+on:
+  pull_request:
+    paths:
+      - 'assets/kaykit/animations/melee.glb'
+      - 'assets/skyrim/guard/converted/**'
+      - 'src/animation/kaykit-animation-library.js'
+      - 'src/animation/skyrim-*.js'
+      - 'src/combat/guard-*.js'
+      - 'src/combat/longsword-guard-*.js'
+      - 'src/character/character-sockets.js'
+      - 'src/character/default-character-mount.js'
+      - 'tools/action-studio/guard-counter-runtime-lab.*'
+      - '.github/workflows/guard-counter-runtime-visual.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Verify G3.4 authoritative Counter runtime
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-4
+          python3 -m http.server 4173 > /tmp/g34-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          BASE='http://127.0.0.1:4173/tools/action-studio/guard-counter-runtime-lab.html'
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=35000 --dump-dom \
+            "${BASE}?variant=normal&elapsed=220&view=three" > artifacts/g3-4/g34-dom.html
+
+          if ! grep -q 'data-g34="pass"' artifacts/g3-4/g34-dom.html; then
+            echo 'G3.4 runtime visual gate failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-4/g34-dom.html || true
+            cat /tmp/g34-http.log || true
+            exit 1
+          fi
+          grep -q 'data-g34-normal="pass"' artifacts/g3-4/g34-dom.html
+          grep -q 'data-g34-perfect="pass"' artifacts/g3-4/g34-dom.html
+          grep -q 'data-g34-counter-clip="pass"' artifacts/g3-4/g34-dom.html
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=25000 \
+            --screenshot="artifacts/g3-4/normal-counter-220ms.png" \
+            "${BASE}?variant=normal&elapsed=220&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=25000 \
+            --screenshot="artifacts/g3-4/perfect-counter-220ms.png" \
+            "${BASE}?variant=perfect&elapsed=220&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=25000 \
+            --screenshot="artifacts/g3-4/perfect-counter-220ms-side.png" \
+            "${BASE}?variant=perfect&elapsed=220&view=side"
+
+      - name: Upload G3.4 runtime evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-4-guard-counter-runtime-visual
+          path: artifacts/g3-4
