@@ -203,7 +203,7 @@ jobs:
           grep -o 'data-g251-samples="[^"]*"' artifacts/g2-4-1/g251-authoring-probe-dom.html || true
           grep -o 'data-g251-authoring="[^"]*"' artifacts/g2-4-1/g251-authoring-probe-dom.html || true
 
-          for view in front three; do
+          for view in front three side back; do
             "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
               --window-size=1600,1100 --virtual-time-budget=40000 \
               --screenshot="artifacts/g2-4-1/g251-${view}-0_5.png" \
