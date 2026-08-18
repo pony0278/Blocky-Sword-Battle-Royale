@@ -68,6 +68,18 @@ function installGuardPanel() {
   return document.getElementById('guardRuntimePanel');
 }
 
+function createUnavailableGuardRuntime() {
+  return Object.freeze({
+    start: async () => null,
+    deactivate: () => {},
+    get active() { return false; },
+    get mode() { return null; },
+    get snapshot() { return null; },
+    get report() { return null; },
+    get ready() { return false; },
+  });
+}
+
 export function createStudioGuardRuntimeController(THREE, options = {}) {
   const {
     character,
@@ -78,7 +90,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     applyCurrentEvaluation = () => {},
   } = options;
   if (!character?.sampleAnimation || !character?.registerAnimations) {
-    throw new Error('Action Studio Guard Runtime requires an animation-capable character');
+    return createUnavailableGuardRuntime();
   }
 
   const panel = installGuardPanel();
