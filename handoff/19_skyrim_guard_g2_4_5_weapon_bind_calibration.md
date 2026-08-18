@@ -222,18 +222,20 @@ Visual evidence includes calibrated front and 3/4 views plus the existing canoni
 
 ---
 
-## Recommended next stage
+## G2.5 follow-up
 
-**G2.5 — Skyrim Guard Adoption Decision & Triangle Correction Plan**
+G2.5 has now frozen this technical verdict and authored the source-controlled Triangle Forward correction contract.
 
-G2.5 should freeze the technical retarget verdict as `ADOPT WITH CORRECTIONS` and author the minimum correction layer needed to turn the shield-oriented Skyrim block idle into the desired longsword Triangle Forward Guard.
+See:
 
-Recommended correction priorities:
+`handoff/20_skyrim_guard_g2_5_adoption_triangle_correction_plan.md`
 
-1. Raise / compact the right weapon hand slightly.
-2. Redirect the sword tip upward and toward the lock-on target while preserving the source shoulder/elbow body language as much as possible.
-3. Keep the free/off hand active near the centerline.
-4. Preserve hips / legs / body-weight motion from the Skyrim source.
-5. Treat the correction as an authored upper-body / equipment layer, not another retarget-system fix.
+The low-level retarget pipeline is accepted and frozen. Canonical local quaternion correction offsets remain intentionally unauthored until G2.5.1.
 
-After the corrected base Guard is accepted, proceed to Guard Family / TOP-RIGHT-LEFT directional authoring.
+---
+
+## Next stage
+
+**G2.5.1 — Triangle Forward Base Guard Authoring Lab**
+
+Implement the additive upper-body correction layer in Action Studio, tune the real local quaternion offsets against the G2.5 target gates, and preserve the accepted source body motion.
