@@ -6,8 +6,12 @@ import {
   GUARD_STATES,
   createGuardStateMachine,
 } from '../src/combat/guard-state-machine.js';
+import {
+  GUARD_COUNTER_PROFILE_IDS,
+  GUARD_WEAPON_MOUNT_PROFILE_IDS,
+} from '../src/combat/guard-counter-presentation.js';
 
-function createCharacterStub() {
+function createCharacterStub(options = {}) {
   const samples = [];
   const stops = [];
   const updates = [];
@@ -16,6 +20,7 @@ function createCharacterStub() {
     ['SKYRIM_GUARD/shd_blockhit', 0.8],
     ['SKYRIM_GUARD/shd_blockbash', 1 / 3],
     ['SKYRIM_GUARD/shd_blockbashpower', 0.7],
+    ...(!options.omitCounter ? [['Melee_Block_Attack', 0.75]] : []),
   ]);
   return {
     samples,
@@ -23,8 +28,8 @@ function createCharacterStub() {
     updates,
     rig: { bones: {} },
     getAnimationDuration(name) { return durations.get(name) || 0; },
-    sampleAnimation(name, timeSeconds, options) {
-      samples.push({ name, timeSeconds, options: { ...options } });
+    sampleAnimation(name, timeSeconds, sampleOptions) {
+      samples.push({ name, timeSeconds, options: { ...sampleOptions } });
       return { name };
     },
     stopAnimation() { stops.push(true); },
@@ -39,16 +44,18 @@ function enterHold(machine, runtime) {
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
 }
 
-function createHarness() {
+function createHarness(options = {}) {
   const machine = createGuardStateMachine();
-  const character = createCharacterStub();
+  const character = createCharacterStub(options);
   const correctionWeights = [];
+  const mountProfiles = [];
   const runtime = createGuardPresentationRuntime(null, {
     machine,
     character,
     applyCorrection: (weight) => correctionWeights.push(weight),
+    applyWeaponMountProfile: (profileId, snapshot) => mountProfiles.push({ profileId, state: snapshot.state }),
   });
-  return { machine, character, correctionWeights, runtime };
+  return { machine, character, correctionWeights, mountProfiles, runtime };
 }
 
 test('G3.3.2 runtime completes Block Hit at 0.60s then reuses G3.2 Recover', () => {
@@ -114,7 +121,7 @@ test('G3.3.2 runtime selects and trims Bash Power for Perfect Parry', () => {
   assert.equal(perfectSamples.at(-1).timeSeconds, 0.48);
 });
 
-test('G3.3.2 counter window is presentation-only and never self-confirms a Counter', () => {
+test('G3.4 counter window remains presentation-only until authoritative COUNTER_CONFIRMED', () => {
   const { machine, runtime } = createHarness();
   enterHold(machine, runtime);
   machine.send(GUARD_EVENTS.PARRY_CONFIRMED);
@@ -129,16 +136,84 @@ test('G3.3.2 counter window is presentation-only and never self-confirms a Count
   assert.equal(counter.accepted, true);
   assert.equal(counter.snapshot.state, GUARD_STATES.COUNTER);
   assert.equal(counter.snapshot.lastTransition.authority, 'authoritative-combat');
-  runtime.sync();
+  const synced = runtime.sync();
+  assert.equal(synced.report.clipId, 'Melee_Block_Attack');
+  assert.equal(synced.report.counterProfileId, GUARD_COUNTER_PROFILE_IDS.LONGSWORD);
 });
 
-test('G3.3.2 keeps Guard release latched through reaction and Recover', () => {
+test('G3.4 runtime plays full Melee_Block_Attack then presentation-completes into G3.2 Recover', () => {
+  const { machine, character, correctionWeights, mountProfiles, runtime } = createHarness();
+  enterHold(machine, runtime);
+  machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { perfect: true });
+  runtime.update(120);
+
+  const confirmed = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, { authorityTick: 1001 });
+  assert.equal(confirmed.snapshot.state, GUARD_STATES.COUNTER);
+  assert.equal(confirmed.snapshot.lastTransition.authority, 'authoritative-combat');
+
+  let result = runtime.update(749);
+  assert.equal(result.snapshot.state, GUARD_STATES.COUNTER);
+  assert.equal(result.report.clipId, 'Melee_Block_Attack');
+  assert.equal(result.report.counterProfileId, GUARD_COUNTER_PROFILE_IDS.LONGSWORD);
+  assert.equal(result.report.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT);
+  assert.equal(result.report.complete, false);
+  assert.equal(correctionWeights.at(-1), 0);
+  assert.ok(result.report.sourceTimeSeconds < 0.75);
+
+  result = runtime.update(1);
+  assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
+  const completion = result.snapshot.lastTransition;
+  assert.equal(completion.event, GUARD_EVENTS.COUNTER_COMPLETE);
+  assert.equal(completion.authority, 'presentation');
+  assert.equal(completion.payload.counterProfileId, GUARD_COUNTER_PROFILE_IDS.LONGSWORD);
+  assert.equal(completion.payload.clipId, 'Melee_Block_Attack');
+  assert.equal(completion.payload.sourceTimeSeconds, 0.75);
+  assert.equal(result.report.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD);
+
+  const counterSamples = character.samples.filter((entry) => entry.name === 'Melee_Block_Attack');
+  assert.equal(counterSamples.at(-1).timeSeconds, 0.75);
+  assert.equal(counterSamples.at(-1).options.inPlace, true);
+  assert.equal(counterSamples.at(-1).options.loop, false);
+  assert.ok(mountProfiles.some((entry) => entry.state === GUARD_STATES.COUNTER
+    && entry.profileId === GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT));
+  assert.ok(mountProfiles.some((entry) => entry.state === GUARD_STATES.RECOVER
+    && entry.profileId === GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD));
+
+  result = runtime.update(140);
+  assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
+});
+
+test('G3.4 delayed authoritative Counter from Recover still gets the authored Counter presentation', () => {
+  const { machine, runtime } = createHarness();
+  enterHold(machine, runtime);
+  machine.send(GUARD_EVENTS.BLOCK_CONFIRMED);
+  let result = runtime.update(600);
+  assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
+
+  const counter = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, { authorityTick: 1200 });
+  assert.equal(counter.accepted, true);
+  assert.equal(counter.snapshot.state, GUARD_STATES.COUNTER);
+  result = runtime.sync();
+  assert.equal(result.report.clipId, 'Melee_Block_Attack');
+  assert.equal(result.report.sourceTimeSeconds, 0);
+});
+
+test('G3.4 fails loudly if the Counter animation was not registered', () => {
+  const { machine, runtime } = createHarness({ omitCounter: true });
+  enterHold(machine, runtime);
+  machine.send(GUARD_EVENTS.PARRY_CONFIRMED);
+  machine.send(GUARD_EVENTS.COUNTER_CONFIRMED);
+  assert.throws(() => runtime.sync(), /requires registered animation Melee_Block_Attack/);
+});
+
+test('G3.4 keeps Guard release latched through reaction, Counter and Recover', () => {
   const { machine, runtime } = createHarness();
   enterHold(machine, runtime);
   machine.send(GUARD_EVENTS.BLOCK_CONFIRMED);
   machine.send(GUARD_EVENTS.GUARD_RELEASE);
+  machine.send(GUARD_EVENTS.COUNTER_CONFIRMED);
 
-  let result = runtime.update(600);
+  let result = runtime.update(750);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
   assert.equal(result.snapshot.guardHeld, false);
 
