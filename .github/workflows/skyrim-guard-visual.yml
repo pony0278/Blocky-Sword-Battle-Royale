@@ -189,14 +189,19 @@ jobs:
 
           BASE='http://127.0.0.1:4173/tools/action-studio/skyrim-triangle-guard-authoring-lab.html'
           "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
-            --window-size=1600,1100 --virtual-time-budget=40000 \
-            --dump-dom "${BASE}?auto=1&view=three" \
+            --window-size=1600,1100 --virtual-time-budget=16000 \
+            --dump-dom "${BASE}?canonical=1&view=three" \
             > artifacts/g2-4-1/g251-authoring-probe-dom.html
 
           if ! grep -q 'data-g251="pass"' artifacts/g2-4-1/g251-authoring-probe-dom.html; then
-            echo 'G2.5.1 Triangle Forward authoring seed did not pass all five canonical samples.' >&2
+            echo 'G2.5.1 committed Triangle Forward Guard does not pass all five canonical samples.' >&2
             grep -o 'data-g251[^ >]*' artifacts/g2-4-1/g251-authoring-probe-dom.html || true
             sed -n '/<pre id="validation"/,/<\/pre>/p' artifacts/g2-4-1/g251-authoring-probe-dom.html || true
+            exit 1
+          fi
+
+          if ! grep -q 'data-g251-mode="canonical-metadata"' artifacts/g2-4-1/g251-authoring-probe-dom.html; then
+            echo 'G2.5.1 workflow must verify committed canonical metadata, not a newly optimized seed.' >&2
             exit 1
           fi
 
@@ -205,9 +210,9 @@ jobs:
 
           for view in front three side back; do
             "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
-              --window-size=1600,1100 --virtual-time-budget=40000 \
+              --window-size=1600,1100 --virtual-time-budget=16000 \
               --screenshot="artifacts/g2-4-1/g251-${view}-0_5.png" \
-              "${BASE}?auto=1&view=${view}"
+              "${BASE}?canonical=1&view=${view}"
           done
 
       - name: Capture canonical playback frames
