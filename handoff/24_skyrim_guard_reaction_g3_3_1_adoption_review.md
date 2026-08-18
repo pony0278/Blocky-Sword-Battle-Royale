@@ -1,188 +1,256 @@
-# G3.3.1 — Skyrim Guard Reaction Pack Adoption Review
+# G3.3.1 — Skyrim Guard Reaction Pack Final Visual Decision
 
 ## Goal
 
-Avoid unnecessary custom animation authoring by reusing the same Skyrim shield-block animation family that already produced the accepted `shd_blockidle` mother Guard.
+Avoid unnecessary custom reaction authoring by testing the same Skyrim shield-block family that already produced the accepted `shd_blockidle` mother Guard.
 
-This review separates two questions:
+The final decision is based on real Blockman playback, not file names alone.
 
-1. **Engineering compatibility** — can the raw HKX travel through the same Skyrim LE/HavokToolset → GLB → Blockman retarget path?
-2. **Combat semantics** — does the motion read correctly as Block Hit, Parry/Deflect, Perfect Parry, or Counter once the shield-oriented source is adapted to the longsword Triangle Guard?
+## Evidence Path
 
-## Stage 1 Decision Rules
+The temporary visual probe did **not** merge raw HKX assets into the product branch. It verified the four uploaded candidate hashes, decoded their native Skyrim LE `hkaSplineCompressedAnimation` data, matched all 99 transform tracks to the canonical 99-joint hierarchy from `shd_blockidle.source.glb`, rebuilt source clips, and passed them through the production Skyrim → Blockman retarget path.
 
-### ADOPT
-Use directly after the existing Skyrim retarget and weapon bind calibration with no special pose correction beyond the canonical Guard family baseline.
+The rendered review used:
 
-### ADOPT WITH CORRECTIONS
-Keep the source motion, but allow a small Guard-family correction layer to preserve:
+- actual procedural Blockman rig,
+- production `retargetConvertedSkyrimGltf()` / Skyrim retarget logic,
+- G2.4.5 calibrated longsword bind,
+- committed G2.5.1 Triangle Forward Guard correction,
+- in-place playback,
+- 25% / 50% / 75% three-quarter screenshots plus 50% side view for each candidate.
 
-- sword-forward threat,
-- weapon-hand connection,
-- readable off-hand position,
-- stable root/feet,
-- compatibility with the G2.5.1 Triangle Forward Guard.
+Visual evidence:
 
-Do not rewrite lower-body locomotion solely to make a shield-oriented silhouette look like a sword action.
+- GitHub Actions run: `32139901355`
+- artifact: `9325459654` (`g3-3-1-reaction-visual-probe`)
+- artifact SHA-256: `78cdb1d40f7b04e0fac56a291c23a334f64f52fd9b8671bf0a8c1874846e9b0d`
+- engineering gate: **PASS**
 
-### REJECT
-Do not place the clip in the core reactive Guard chain when its semantic timing is wrong for the state, even if the file is technically compatible.
+## Decode / Retarget Result
 
-## Raw HKX Compatibility Result
+All four final candidates decode as:
 
-All five reviewed files match the already proven Skyrim LE family signature:
+- Skyrim LE / Havok 2010 family,
+- `Normal` blend,
+- 30 fps,
+- exactly 99 transform tracks,
+- canonical root `NPC Root [Root]`,
+- production translation scale `0.01031482`, matching the already fixed Skyrim → Blockman scale regime.
 
-- Havok: `hk_2010.2.0-r1`
-- `hkaSplineCompressedAnimation`
-- `hkaAnimationBinding`
-- `NPC Root [Root]`
+| Clip | Duration | Frames | Root max excursion | Hips max excursion | Hips / height | Arm direction max error |
+|---|---:|---:|---:|---:|---:|---:|
+| `shd_blockhit` | 0.800 s | 25 | ~0 | 0.11415 | 9.20% | 0.000010° |
+| `shd_blockbashintro` | 0.300 s | 10 | 0 | 0.06414 | 5.17% | 0.000006° |
+| `shd_blockbash` | 0.333 s | 11 | 0 | 0.13291 | 10.71% | 0.000009° |
+| `shd_blockbashpower` | 0.700 s | 22 | 0 | 0.18332 | 14.77% | 0.000010° |
 
-Therefore none is rejected for binary-format incompatibility.
+All four pass translation-safety and helper-chain coverage. No candidate is rejected for retarget corruption, root fly-away, shoulder flip, elbow inversion, or sword detachment.
 
-## Decisions
+---
 
-### 1. `shd_blockhit` — **ADOPT WITH CORRECTIONS**
+# Final Decisions
 
-Role: `guard_block_hit`
+## 1. `shd_blockhit` — **ADOPT WITH CORRECTIONS**
 
-Why:
+Final role: `guard_block_hit`
 
-- exact semantic match for a successful Block reaction,
-- belongs to the same shield-block family as the accepted `shd_blockidle`,
-- contains `FootScuffLeft` / `FootScuffRight`, suggesting useful lower-body impact response rather than a hand-only twitch.
+### Visual read
 
-Correction boundary:
+The real Blockman playback reads correctly as a **received Guard impact**. The weapon line is visibly knocked away from the stable Triangle Hold, the torso/hips absorb force, and the root remains fixed. This is much more useful than authoring a synthetic upper-body twitch.
 
-- retain the source impact/recoil timing,
-- preserve source foot/weight response unless visual review exposes instability,
-- reuse G2.4.5 weapon bind calibration,
-- apply only small upper-body/weapon correction if the shield-oriented arm path pulls the longsword away from the Triangle Guard recovery line.
+### Why not plain ADOPT
 
-This replaces the earlier plan to author Block Hit from scratch. KayKit `Melee_Block_Hit` becomes fallback only.
+The source clip is `0.8 s`, and the later part of the motion keeps the weapon displaced longer than we want for a compact multiplayer Guard reaction. The source recoil itself is good; the correction is primarily **timing/windowing**, not replacement animation.
 
-### 2. `shd_blockbashintro` — **ADOPT WITH CORRECTIONS**
+### Production rule
 
-Primary role: `guard_parry_intro`
+Keep:
 
-Why:
+- source recoil,
+- source lower-body weight response / foot-scuff feel,
+- canonical sword bind,
+- canonical Triangle correction.
 
-- likely provides the compact departure from Guard Hold needed before a deflect/bash contact,
-- small file footprint suggests a short transition rather than a long standalone combat sequence,
-- can potentially solve the missing Parry reaction without new authored motion.
+Then:
 
-Acceptance requirement:
+- use the useful impact/recoil portion,
+- transition the late recovery into G3.2 `guard_recover`,
+- do not author a new Block Hit.
 
-- must leave Triangle Guard quickly,
-- cannot visibly prepare a shield strike for too long,
-- must connect cleanly into `shd_blockbash` or directly back to Recover.
+**KayKit `Melee_Block_Hit` remains fallback only.**
 
-### 3. `shd_blockbash` — **ADOPT WITH CORRECTIONS**
+---
 
-Primary role candidate: `guard_parry_deflect`
-Secondary role candidate: early Counter presentation
+## 2. `shd_blockbashintro` — **REJECT** from the post-confirmation Parry reaction chain
 
-Why:
+Preserve as optional future source.
 
-- a bash motion is closer to an active deflection than a passive Block Hit,
-- likely has the outward impulse needed to visually communicate that the defender actively displaced the incoming weapon.
+### Visual read
 
-Risk:
+The 0.3 s Blockman motion is technically clean but visually reads as **preparation / wind-up**. It does not look like the immediate displacement that should occur when the server/combat authority has already emitted `PARRY_CONFIRMED`.
 
-- shield-family source may drive the off-hand too aggressively while the weapon hand remains secondary.
+### Why REJECT here
 
-If that happens, preserve timing/body impulse but correct the weapon arm so the longsword performs the readable deflect.
+Current G3.1 semantics are:
 
-### 4. `shd_blockbashpower` — **ADOPT WITH CORRECTIONS**
+```text
+incoming contact
+      ↓
+PARRY_CONFIRMED
+      ↓
+parry reaction
+```
 
-Primary role candidate: Perfect Parry / strong deflect
-Secondary role candidate: heavy Guard Counter
+Putting `blockbashintro` after that confirmation introduces a preparatory beat after contact and weakens responsiveness.
 
-Why:
+### Possible future reuse
 
-- technically matches the same animation family,
-- the `power` variant gives us a natural stronger visual tier without authoring a new animation,
-- potentially differentiates ordinary Block from Perfect Parry through body commitment rather than only VFX.
+It remains useful for a different state if we later add:
 
-Constraint:
+- local `Parry Attempt` startup before contact,
+- AI defensive telegraph,
+- pre-contact bash/deflect wind-up.
 
-- do **not** use it as the default Parry if it creates a long or exaggerated full-body lunge,
-- prefer it for Perfect Parry / heavy deflect / counter if its commitment is visibly larger than `shd_blockbash`.
+So this is a **scoped rejection**, not deletion of the asset.
 
-### 5. `shd_blockanticipate` — **REJECT** for the core reactive G3.3 path
+---
 
-Reason:
+## 3. `shd_blockbash` — **ADOPT**
 
-- the semantic role is anticipation/brace, while G3.3 reactions occur after or at confirmed defensive contact,
-- inserting anticipation after `BLOCK_CONFIRMED` / `PARRY_CONFIRMED` would reverse cause and effect,
-- using it before contact would belong to input/telegraph presentation rather than reaction authoring.
+Final role: `guard_parry_deflect`
 
-Keep it as an optional future reference for:
+### Visual read
+
+This is the strongest result of the review.
+
+The 0.333 s Blockman playback is short, immediate, and visibly moves the longsword through a compact outward deflection. It does not read like the defender simply took damage, and the sword remains a readable part of the action even though the source belongs to Skyrim's shield family.
+
+### Why plain ADOPT
+
+With only the existing family-wide calibration:
+
+- root stays fixed,
+- arm-chain error is effectively zero,
+- sword remains attached,
+- body impulse is compact,
+- no reaction-specific pose correction is needed.
+
+Therefore **Parry Reaction does not need to be authored from scratch.**
+
+Production chain:
+
+```text
+Triangle Guard Hold
+      ↓
+PARRY_CONFIRMED
+      ↓
+shd_blockbash
+      ↓
+G3.2 Recover / Counter window
+```
+
+---
+
+## 4. `shd_blockbashpower` — **ADOPT WITH CORRECTIONS**
+
+Final role: `perfect_parry_strong_deflect`
+
+### Visual read
+
+The power variant is clearly stronger than normal `shd_blockbash`: larger cross-body sword sweep, larger torso/hips commitment, and a stronger displacement silhouette. That difference is exactly what Perfect Parry needs.
+
+It still has zero root locomotion, so the extra commitment comes from body motion rather than the character sliding across the floor.
+
+### Why not plain ADOPT
+
+At `0.7 s`, the late portion becomes broad enough to start reading like the beginning of a counter/follow-through rather than only a defensive deflect.
+
+Production should:
+
+- keep the strong initial displacement,
+- trim or weight down the late follow-through,
+- hand control to the authoritative `guard_counter` state before the move looks like an autonomous attack.
+
+No new Perfect Parry animation is required.
+
+Production chain:
+
+```text
+Triangle Guard Hold
+      ↓
+PERFECT PARRY CONFIRMED
+      ↓
+shd_blockbashpower (strong deflect window)
+      ↓
+Counter Window
+      ↓
+G3.4 Counter or G3.2 Recover
+```
+
+---
+
+## 5. `shd_blockanticipate` — **REJECT** from reactive G3.3
+
+This decision remains unchanged.
+
+Its semantic role is anticipation/brace. Playing anticipation after confirmed defensive contact reverses cause and effect.
+
+Preserve it for possible:
 
 - AI defensive telegraph,
 - heavy-guard brace,
 - stamina-break anticipation,
-- cinematic guard preparation.
+- cinematic/pre-contact guard preparation.
 
-It is not deleted or globally rejected as an asset; it is rejected from the core reactive state chain.
+---
 
-## Proposed Guard Family After Stage 1
+# Final G3.3.1 Guard Family
+
+The reviewed Skyrim family now gives us the reactions we actually need:
 
 ```text
 Action Studio Idle
         ↓
 G3.2 Guard Enter
         ↓
-Skyrim shd_blockidle + Triangle correction
+shd_blockidle + Triangle correction
         │
         ├─ BLOCK_CONFIRMED
         │      ↓
         │   shd_blockhit
+        │   [ADOPT WITH CORRECTIONS]
         │      ↓
         │   G3.2 Recover
         │      ↓
         │   Guard Hold
         │
-        └─ PARRY_CONFIRMED
+        ├─ PARRY_CONFIRMED
+        │      ↓
+        │   shd_blockbash
+        │   [ADOPT]
+        │      ↓
+        │   Recover / Counter Window
+        │
+        └─ PERFECT PARRY CONFIRMED
                ↓
-        shd_blockbashintro
+            shd_blockbashpower
+            [ADOPT WITH CORRECTIONS]
                ↓
-          shd_blockbash
-          or blockbashpower
-               ↓
-        G3.2 Recover / Counter
+            Counter Window
 ```
 
-## Visual Confirmation Gate
+`shd_blockbashintro` is removed from the post-confirmation chain.
 
-Only the four `ADOPT WITH CORRECTIONS` candidates proceed to conversion/playback review:
+## Consequence
 
-- `shd_blockhit`
-- `shd_blockbashintro`
-- `shd_blockbash`
-- `shd_blockbashpower`
+**G3.3 does not need a newly authored Block Hit or Parry reaction.**
 
-The visual probe must compare each against the accepted `shd_blockidle` baseline and issue a final promotion/demotion:
+The remaining work is integration/timing authoring:
 
-- **ADOPT** — motion already reads correctly with standard family calibration.
-- **ADOPT WITH CORRECTIONS** — useful source motion, small correction required.
-- **REJECT** — shield-specific semantics remain wrong after reasonable correction.
+1. register the accepted Skyrim reaction clips in the production converted-animation library,
+2. define the `shd_blockhit` useful reaction window,
+3. bind `shd_blockbash` directly to Parry reaction,
+4. define the strong-deflect window for `shd_blockbashpower`,
+5. connect their completion events to the existing G3.1 state machine and G3.2 Recover envelope.
 
-### Visual gates
-
-1. no root fly-away,
-2. feet/root remain physically plausible,
-3. no shoulder flip / elbow inversion / wrist snap,
-4. sword remains attached through G2.4.5 bind calibration,
-5. transition out of and back into Triangle Guard is readable,
-6. Parry candidate visibly displaces the threat rather than looking like the defender was simply hit,
-7. Perfect Parry candidate is stronger than normal Parry without becoming a long locomotion attack.
-
-## Fallback Order
-
-Only if Skyrim candidates fail visual review:
-
-1. KayKit `Melee_Block_Hit` / `Melee_Block_Attack`
-2. UAL2 `Sword_Block`
-3. custom authoring
-
-This keeps the Guard family visually consistent and minimizes cross-pack retarget complexity.
+That follow-up should be treated as **G3.3.2 — Guard Reaction Runtime Integration**, not custom animation authoring.
