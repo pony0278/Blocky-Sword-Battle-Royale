@@ -10,6 +10,10 @@ import {
 } from '../src/combat/guard-state-machine.js';
 import { LONGSWORD_GUARD_BASE } from '../src/combat/longsword-guard-metadata.js';
 import { GUARD_TRANSITION_PROFILE_IDS } from '../src/combat/guard-transition-presentation.js';
+import {
+  GUARD_REACTION_PROFILE_IDS,
+  GUARD_REACTION_VARIANTS,
+} from '../src/combat/guard-reaction-presentation.js';
 
 test('G3.1 enters and exits the canonical Skyrim guard hold', () => {
   const machine = createGuardStateMachine();
@@ -105,7 +109,7 @@ test('G3.1 re-press during exit re-enters guard without transient neutral', () =
   assert.equal(machine.guardHeld, true);
 });
 
-test('G3.2 authors enter/recover/exit while preserving future reaction and counter slots', () => {
+test('G3.2 authors enter/recover/exit while G3.3.2 promotes Block and Parry reactions', () => {
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.GUARD_PRESS], 'local-intent');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.BLOCK_CONFIRMED], 'authoritative-combat');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.PARRY_CONFIRMED], 'authoritative-combat');
@@ -126,9 +130,44 @@ test('G3.2 authors enter/recover/exit while preserving future reaction and count
   assert.equal(recover.transitionProfileId, GUARD_TRANSITION_PROFILE_IDS.RECOVER);
   assert.equal(exit.transitionProfileId, GUARD_TRANSITION_PROFILE_IDS.EXIT);
 
-  assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.BLOCK_HIT].plannedStage, 'G3.3');
-  assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.PARRY].plannedStage, 'G3.3');
+  const block = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.BLOCK_HIT];
+  assert.equal(block.authored, true);
+  assert.equal(block.authoredStage, 'G3.3.2');
+  assert.equal(block.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(block.reactionProfileId, GUARD_REACTION_PROFILE_IDS.BLOCK_HIT);
+  assert.equal(block.reactionVariant, GUARD_REACTION_VARIANTS.BLOCK_HIT);
+  assert.equal(block.loop, false);
+
+  const parry = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.PARRY];
+  assert.equal(parry.authored, true);
+  assert.equal(parry.authoredStage, 'G3.3.2');
+  assert.equal(parry.clipId, 'SKYRIM_GUARD/shd_blockbash');
+  assert.equal(parry.reactionProfileId, GUARD_REACTION_PROFILE_IDS.PARRY);
+  assert.equal(parry.reactionVariant, GUARD_REACTION_VARIANTS.PARRY);
+
+  const perfect = getGuardPresentation(GUARD_STATES.PARRY, { perfect: true });
+  assert.equal(perfect.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
+  assert.equal(perfect.reactionProfileId, GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY);
+  assert.equal(perfect.reactionVariant, GUARD_REACTION_VARIANTS.PERFECT_PARRY);
+
   assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.COUNTER].plannedStage, 'G3.4');
+});
+
+test('G3.3.2 preserves the authoritative Perfect Parry payload in the active PARRY snapshot', () => {
+  const machine = createGuardStateMachine();
+  machine.send(GUARD_EVENTS.GUARD_PRESS);
+  machine.send(GUARD_EVENTS.ENTER_COMPLETE);
+  const result = machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
+    perfect: true,
+    authorityTick: 451,
+  });
+
+  assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
+  assert.equal(result.snapshot.lastOutcome, 'parry');
+  assert.equal(result.snapshot.lastTransition.authority, 'authoritative-combat');
+  assert.equal(result.snapshot.lastTransition.payload.authorityTick, 451);
+  assert.equal(result.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
+  assert.equal(result.snapshot.presentation.reactionVariant, 'perfect-parry');
 });
 
 test('G3.1 tracks deterministic state age and transition sequence', () => {
