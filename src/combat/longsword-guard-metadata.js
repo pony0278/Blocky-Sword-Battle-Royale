@@ -18,7 +18,7 @@ export const LONGSWORD_TRIANGLE_GUARD_TARGETS = Object.freeze({
   offHandCenterDistance: freezeRange({ max: 0.62 }),
   swordTipHeight: freezeRange({ min: 0.70, max: 1.10 }),
   swordForwardDot: freezeRange({ min: 0.65 }),
-  triangleArea: freezeRange({ min: 0.035, max: 0.20 }),
+  triangleArea: freezeRange({ min: 0.035 }),
   torsoYawDegrees: freezeRange({ min: 20, max: 38 }),
 });
 
