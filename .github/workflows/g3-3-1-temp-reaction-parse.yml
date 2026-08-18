@@ -14,11 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract temporary reaction inputs
+      - name: Extract verified temporary reaction inputs
+        shell: bash
         run: |
           mkdir -p .probe/reactions artifacts/g3-3-1/parsed
-          tar -xzf .probe/g3-3-1-reactions.tar.gz -C .probe/reactions
+          cat .probe/chunks/reactions.b64.* | base64 -d > /tmp/g3-3-1-reactions.tar.gz
+          ARCHIVE_SHA="$(sha256sum /tmp/g3-3-1-reactions.tar.gz | cut -d' ' -f1)"
+          echo "archive sha256=$ARCHIVE_SHA"
+          test "$ARCHIVE_SHA" = "08fa1638d3b3a1c9feeae90e3849d2b42c27df606d3eeadb73c856db5e7c61de"
+          tar -xzf /tmp/g3-3-1-reactions.tar.gz -C .probe/reactions
           sha256sum .probe/reactions/*.hkx | tee artifacts/g3-3-1/input-sha256.txt
+          grep -q '139f0e90d25bd9be5657fecdb5912adbe6bce453949518769ee02f7ed01cfa04' artifacts/g3-3-1/input-sha256.txt
+          grep -q '78d4569e12a855264b4667667763381ad729796ae3d26ad8c42e8d7724e3583b' artifacts/g3-3-1/input-sha256.txt
+          grep -q '37bc83926597a65e7660cae7367a3dd0b0f23d812137907a7548b3754bf90bfd' artifacts/g3-3-1/input-sha256.txt
+          grep -q 'b5813d5877b2cf698913d3fbb228078d8e7384780db79957f133326f74c36168' artifacts/g3-3-1/input-sha256.txt
 
       - name: Fetch pinned PyNifly native Skyrim HKX reader
         run: |
