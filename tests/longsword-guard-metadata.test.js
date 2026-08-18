@@ -11,12 +11,21 @@ import {
   getLongswordGuardCorrectionBones,
 } from '../src/combat/longsword-guard-metadata.js';
 
-test('G2.5 freezes shd_blockidle as ADOPT WITH CORRECTIONS', () => {
+test('G2.5.1 freezes shd_blockidle as an authored ADOPT WITH CORRECTIONS base', () => {
   assert.equal(LONGSWORD_GUARD_BASE.clipId, 'SKYRIM_GUARD/shd_blockidle');
   assert.equal(LONGSWORD_GUARD_BASE.adoptionDecision, 'ADOPT WITH CORRECTIONS');
   assert.equal(LONGSWORD_GUARD_BASE.lowLevelRetargetFrozen, true);
-  assert.equal(LONGSWORD_GUARD_AUTHORING_STATE.authored, false);
-  assert.deepEqual(LONGSWORD_GUARD_AUTHORING_STATE.offsets, {});
+  assert.equal(LONGSWORD_GUARD_AUTHORING_STATE.authored, true);
+  assert.equal(LONGSWORD_GUARD_AUTHORING_STATE.authoredStage, 'G2.5.1');
+  assert.equal(LONGSWORD_GUARD_AUTHORING_STATE.validation.fiveSamplePass, true);
+  assert.equal(LONGSWORD_GUARD_AUTHORING_STATE.validation.visualFourViewPass, true);
+  assert.deepEqual(Object.keys(LONGSWORD_GUARD_AUTHORING_STATE.offsets), [
+    'chest',
+    'upperarm.r',
+    'lowerarm.r',
+    'wrist.r',
+    'handslot.r',
+  ]);
 });
 
 test('G2.5 correction scope cannot overwrite root or lower body', () => {
@@ -54,16 +63,16 @@ test('G2.5 canonical pre-correction shape isolates the three known failures', ()
   ]);
 });
 
-test('G2.5 corrected Triangle Forward candidate passes the authored target contract', () => {
+test('G2.5.1 canonical 50 percent sample passes the authored target contract', () => {
   const result = evaluateLongswordTriangleGuardTargets({
-    weaponHandHeight: 0.62,
-    offHandHeight: 0.72,
-    weaponHandCenterDistance: 0.50,
-    offHandCenterDistance: 0.55,
-    swordTipHeight: 0.88,
-    swordForwardDot: 0.82,
-    triangleArea: 0.35,
-    torsoYawDegrees: 32,
+    weaponHandHeight: 0.51909,
+    offHandHeight: 0.69086,
+    weaponHandCenterDistance: 0.52421,
+    offHandCenterDistance: 0.58354,
+    swordTipHeight: 0.73974,
+    swordForwardDot: 0.73257,
+    triangleArea: 0.64921,
+    torsoYawDegrees: 34.47474,
   });
 
   assert.equal(result.status, 'good');
