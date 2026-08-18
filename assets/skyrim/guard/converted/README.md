@@ -1,29 +1,64 @@
-# Skyrim Guard converted-source slot
+# Skyrim Guard converted-source assets
 
-G2 experimental source asset name:
+These GLBs contain the **Skyrim source hierarchy + source animation**, not an Action Studio-baked target rig. Action Studio retargets them at runtime/authoring time through the production Skyrim → procedural Blockman bridge.
+
+## Canonical Guard Hold
 
 ```text
 shd_blockidle.source.glb
+→ SKYRIM_GUARD/shd_blockidle
 ```
 
-This GLB is expected to contain the **Skyrim source hierarchy + source animation**, not an Action Studio-baked target rig.
+`shd_blockidle` remains the G2.5.1 Triangle Forward mother Guard and the source of the accepted G2.4.5 weapon bind calibration.
 
-Preferred during the probe: keep the GLB local and use **Import converted Skyrim GLB** in Action Studio or the dedicated G2.3 review page:
+## G3.3.2 accepted Guard reactions
+
+```text
+shd_blockhit.source.glb
+→ SKYRIM_GUARD/shd_blockhit
+→ guard_block_hit
+
+shd_blockbash.source.glb
+→ SKYRIM_GUARD/shd_blockbash
+→ guard_parry (normal Parry)
+
+shd_blockbashpower.source.glb
+→ SKYRIM_GUARD/shd_blockbashpower
+→ guard_parry (Perfect Parry variant)
+```
+
+The reaction GLBs were baked from the real reviewed Skyrim LE HKX motions against the same canonical 99-joint source hierarchy used by `shd_blockidle.source.glb`. Raw `.hkx` files are intentionally **not shipped** in this directory.
+
+### Frozen source hashes
+
+```text
+SHA256 270d68b5c62a7de68c39112ab9a813f27a758ac737a078fe55b21896cfce1f28  shd_blockhit.source.glb
+SHA256 bae74b1cdf8724eb17073a7347192946fef8cc9cedcdb8c9728e6ea9004ea637  shd_blockbash.source.glb
+SHA256 603cf8326501ca2dd3628e8f47c37c6cbad6bec491b224123af418e70c36fd47  shd_blockbashpower.source.glb
+```
+
+All three source GLBs preserve the canonical 99-joint skin and contain 297 animation channels (translation + rotation + scale for 99 transform tracks).
+
+## G3.3.2 runtime windows
+
+The source assets stay intact; trimming is presentation metadata, not destructive editing:
+
+```text
+Block Hit       shd_blockhit       source 0.000–0.600 s of 0.800 s
+Parry           shd_blockbash      source 0.000–0.333 s of 0.333 s
+Perfect Parry   shd_blockbashpower source 0.000–0.480 s of 0.700 s
+```
+
+After the useful source window, the G3.1 state machine receives presentation-owned `REACTION_COMPLETE` and hands presentation back to the existing G3.2 Recover transition. Counter availability is exposed as a presentation window only; an actual Counter still requires authoritative `COUNTER_CONFIRMED`.
+
+## Review / authoring tools
+
+The original dedicated source review remains available at:
 
 ```text
 tools/action-studio/skyrim-guard-visual-review.html
 ```
 
-The dedicated review page adds Front / Side / 3/4 views, Once / Loop / scrub, automatic loop-seam measurements, and the five ADOPT decision gates.
+Action Studio loads this directory through **Skyrim Guard Probe → Load selected pack**. The production converted-source list now contains the Hold plus the three accepted G3.3.2 reactions.
 
-If deliberately placed here, Action Studio can load it through **Skyrim Guard Probe → Load selected pack**.
-
-The bridge retargets it at runtime/authoring time to:
-
-```text
-SKYRIM_GUARD/shd_blockidle
-```
-
-The source GLB should be produced from the real `shd_blockidle.hkx` using a matching Skyrim LE humanoid `skeleton.hkx`. Do not approximate the source rest pose from the Action Studio rig.
-
-Do not place raw `.hkx` files in this directory. The repository `.gitignore` also ignores experimental `.glb` files in this slot.
+Do not place raw `.hkx` files in this directory. New experimental GLBs should remain ignored unless they have passed an explicit adoption decision and are deliberately force-added as product assets.
