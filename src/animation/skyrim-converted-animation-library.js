@@ -1,4 +1,5 @@
 import { retargetSkyrimClip } from './skyrim-animation-retarget.js';
+import { computeSkyrimWeaponBindCalibration } from './skyrim-weapon-bind-calibration.js';
 
 export const SKYRIM_GUARD_CONVERTED_FILES = Object.freeze([
   Object.freeze({
@@ -48,11 +49,19 @@ export function retargetConvertedSkyrimGltf(THREE, gltf, rig, entry = SKYRIM_GUA
   if (!scene || !clip) {
     throw new Error('Converted Skyrim GLB must contain a named source hierarchy and at least one animation');
   }
-  return retarget(THREE, { scene, animations: [clip] }, rig, {
+  const retargetedClip = retarget(THREE, { scene, animations: [clip] }, rig, {
     fps: options.fps || 30,
     clipId: entry.clipId,
     boneRetargets: options.boneRetargets,
   });
+  retargetedClip.userData = retargetedClip.userData || {};
+  retargetedClip.userData.weaponBindCalibration = computeSkyrimWeaponBindCalibration(
+    THREE,
+    scene,
+    rig,
+    retargetedClip,
+  );
+  return retargetedClip;
 }
 
 export function createSkyrimConvertedAnimationLibrary(clip, options = {}) {
