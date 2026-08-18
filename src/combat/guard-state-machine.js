@@ -139,9 +139,16 @@ function frozenPayload(payload) {
   return Object.freeze({ ...payload });
 }
 
-function resolveDynamicTarget(state, event, guardHeld) {
+function canRecoverIntoConfirmedCounter(lastOutcome) {
+  return lastOutcome === 'block' || lastOutcome === 'parry';
+}
+
+function resolveDynamicTarget(state, event, guardHeld, lastOutcome) {
   if (state === GUARD_STATES.ENTER && event === GUARD_EVENTS.ENTER_COMPLETE) {
     return guardHeld ? GUARD_STATES.HOLD : GUARD_STATES.EXIT;
+  }
+  if (state === GUARD_STATES.RECOVER && event === GUARD_EVENTS.COUNTER_CONFIRMED) {
+    return canRecoverIntoConfirmedCounter(lastOutcome) ? GUARD_STATES.COUNTER : null;
   }
   if (state === GUARD_STATES.RECOVER && event === GUARD_EVENTS.RECOVER_COMPLETE) {
     return guardHeld ? GUARD_STATES.HOLD : GUARD_STATES.EXIT;
@@ -224,7 +231,7 @@ export function createGuardStateMachine(options = {}) {
     if (event === GUARD_EVENTS.GUARD_PRESS) guardHeld = true;
     if (event === GUARD_EVENTS.GUARD_RELEASE) guardHeld = false;
 
-    const target = resolveDynamicTarget(state, event, guardHeld);
+    const target = resolveDynamicTarget(state, event, guardHeld, lastOutcome);
     if (target) {
       const outcome = outcomeForEvent(event);
       if (outcome) lastOutcome = outcome;
@@ -256,7 +263,7 @@ export function createGuardStateMachine(options = {}) {
         : event === GUARD_EVENTS.GUARD_RELEASE
           ? false
           : guardHeld;
-      return Boolean(resolveDynamicTarget(state, event, simulatedHeld));
+      return Boolean(resolveDynamicTarget(state, event, simulatedHeld, lastOutcome));
     },
     send,
     update(deltaMs) {
