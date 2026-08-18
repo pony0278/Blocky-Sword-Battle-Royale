@@ -3,6 +3,11 @@ import {
   LONGSWORD_GUARD_AUTHORING_STATE,
 } from './longsword-guard-metadata.js';
 import { GUARD_TRANSITION_PROFILE_IDS } from './guard-transition-presentation.js';
+import {
+  GUARD_REACTION_VARIANTS,
+  LONGSWORD_GUARD_REACTION_PROFILES,
+  getGuardReactionProfile,
+} from './guard-reaction-presentation.js';
 
 export const GUARD_STATE_AUTHORITY_NOTE =
   'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
@@ -67,6 +72,29 @@ function authoredGuardTransition(role, transitionProfileId) {
   });
 }
 
+function authoredGuardReaction(role, profile, extra = {}) {
+  return Object.freeze({
+    role,
+    clipId: profile.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    reactionProfileId: profile.id,
+    reactionVariant: profile.variant,
+    sourceWindow: profile.sourceWindow,
+    counterWindowSeconds: profile.counterWindowSeconds,
+    completionEvent: profile.completionEvent,
+    authored: true,
+    authoredStage: 'G3.3.2',
+    inPlace: true,
+    loop: false,
+    ...extra,
+  });
+}
+
+const BLOCK_HIT_PROFILE = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
+const PARRY_PROFILE = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PARRY];
+const PERFECT_PARRY_PROFILE = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PERFECT_PARRY];
+
 export const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
   [GUARD_STATES.NEUTRAL]: Object.freeze({
     role: 'neutral',
@@ -86,15 +114,18 @@ export const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
     inPlace: true,
     loop: true,
   }),
-  [GUARD_STATES.BLOCK_HIT]: Object.freeze({
-    role: 'block-hit',
-    ...UNAUTHORED_PRESENTATION,
-    plannedStage: 'G3.3',
-  }),
-  [GUARD_STATES.PARRY]: Object.freeze({
-    role: 'parry-reaction',
-    ...UNAUTHORED_PRESENTATION,
-    plannedStage: 'G3.3',
+  [GUARD_STATES.BLOCK_HIT]: authoredGuardReaction('block-hit', BLOCK_HIT_PROFILE),
+  [GUARD_STATES.PARRY]: authoredGuardReaction('parry-reaction', PARRY_PROFILE, {
+    variants: Object.freeze({
+      [GUARD_REACTION_VARIANTS.PARRY]: Object.freeze({
+        clipId: PARRY_PROFILE.clipId,
+        reactionProfileId: PARRY_PROFILE.id,
+      }),
+      [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: Object.freeze({
+        clipId: PERFECT_PARRY_PROFILE.clipId,
+        reactionProfileId: PERFECT_PARRY_PROFILE.id,
+      }),
+    }),
   }),
   [GUARD_STATES.COUNTER]: Object.freeze({
     role: 'guard-counter',
@@ -170,8 +201,21 @@ function outcomeForEvent(event) {
   return null;
 }
 
-export function getGuardPresentation(state) {
-  return LONGSWORD_GUARD_PRESENTATION[state] || LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.NEUTRAL];
+export function getGuardPresentation(state, payload = {}) {
+  const baseline = LONGSWORD_GUARD_PRESENTATION[state]
+    || LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.NEUTRAL];
+  const reaction = getGuardReactionProfile(state, payload);
+  if (!reaction) return baseline;
+  if (baseline.reactionProfileId === reaction.id && baseline.clipId === reaction.clipId) return baseline;
+  return Object.freeze({
+    ...baseline,
+    clipId: reaction.clipId,
+    reactionProfileId: reaction.id,
+    reactionVariant: reaction.variant,
+    sourceWindow: reaction.sourceWindow,
+    counterWindowSeconds: reaction.counterWindowSeconds,
+    completionEvent: reaction.completionEvent,
+  });
 }
 
 export function createGuardStateMachine(options = {}) {
@@ -193,7 +237,7 @@ export function createGuardStateMachine(options = {}) {
       sequence,
       lastOutcome,
       lastTransition,
-      presentation: getGuardPresentation(state),
+      presentation: getGuardPresentation(state, lastTransition?.payload || {}),
       authority: GUARD_STATE_AUTHORITY_NOTE,
     });
   }
