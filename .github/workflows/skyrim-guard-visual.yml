@@ -12,6 +12,8 @@ on:
       - 'tools/action-studio/skyrim-guard-visual-review.js'
       - 'tools/action-studio/skyrim-basis-verification.html'
       - 'tools/action-studio/skyrim-basis-verification.js'
+      - 'tools/action-studio/skyrim-arm-chain-verification.html'
+      - 'tools/action-studio/skyrim-arm-chain-verification.js'
       - 'assets/skyrim/guard/converted/shd_blockidle.source.glb'
       - '.github/workflows/skyrim-guard-visual.yml'
 
@@ -55,7 +57,7 @@ jobs:
         run: |
           mkdir -p artifacts/g2-4-1
           cp assets/skyrim/guard/converted/shd_blockidle.source.glb artifacts/g2-4-1/canonical-source.glb
-          python3 -m http.server 4173 > /tmp/g2-4-1-http.log 2>&1 &
+          python3 -m http.server 4173 > /tmp/g2-4-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
@@ -72,12 +74,34 @@ jobs:
             exit 1
           fi
 
+      - name: Verify G2.4.3 arm chain and wrist fidelity
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          python3 -m http.server 4173 > /tmp/g2-4-arm-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+
+          ARM='http://127.0.0.1:4173/tools/action-studio/skyrim-arm-chain-verification.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            --window-size=1280,900 --virtual-time-budget=12000 \
+            --dump-dom "$ARM" \
+            > artifacts/g2-4-1/arm-chain-probe-dom.html
+
+          if ! grep -q 'data-g243="pass"' artifacts/g2-4-1/arm-chain-probe-dom.html; then
+            echo 'G2.4.3 arm-chain / wrist fidelity verification failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g2-4-1/arm-chain-probe-dom.html || true
+            exit 1
+          fi
+
       - name: Capture canonical playback frames
         shell: bash
         env:
           BROWSER: ${{ steps.browser.outputs.browser }}
         run: |
-          python3 -m http.server 4173 > /tmp/g2-4-1-http.log 2>&1 &
+          python3 -m http.server 4173 > /tmp/g2-4-visual-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
