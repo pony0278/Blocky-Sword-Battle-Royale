@@ -10,12 +10,14 @@ export const SKYRIM_BONE_RETARGETS = Object.freeze([
     sourceAliases: aliases('NPC Root [Root]', 'NPC Root', 'Root', 'root'),
     target: 'root',
     position: true,
+    positionSpace: 'world-root',
   }),
   Object.freeze({
     id: 'pelvis',
     sourceAliases: aliases('NPC Pelvis [Pelv]', 'NPC Pelvis', 'Pelvis', 'pelvis'),
     target: 'hips',
     position: true,
+    positionSpace: 'root-relative',
   }),
   Object.freeze({
     id: 'spine',
@@ -204,11 +206,60 @@ function sampleTimes(duration, fps) {
   return times;
 }
 
+export function computeSkyrimTranslationScale(sourceHeight, targetHeight) {
+  const source = Number(sourceHeight);
+  const target = Number(targetHeight);
+  if (!Number.isFinite(source) || !Number.isFinite(target) || source <= 1e-6 || target <= 1e-6) return 1;
+  const scale = target / source;
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
 function motionScale(sourceRest, targetRest) {
   const sourceHeight = sourceRest.head.position.distanceTo(sourceRest.root.position);
   const targetHeight = targetRest.head.position.distanceTo(targetRest.root.position);
-  if (sourceHeight < 0.001 || targetHeight < 0.001) return 1;
-  return Math.max(0.5, Math.min(1.5, targetHeight / sourceHeight));
+  return computeSkyrimTranslationScale(sourceHeight, targetHeight);
+}
+
+export function measureVectorSampleExcursion(values = []) {
+  const sampleCount = Math.floor(values.length / 3);
+  if (!sampleCount) return { sampleCount: 0, maxExcursion: 0, maxStep: 0 };
+  const sx = Number(values[0]) || 0;
+  const sy = Number(values[1]) || 0;
+  const sz = Number(values[2]) || 0;
+  let px = sx;
+  let py = sy;
+  let pz = sz;
+  let maxExcursion = 0;
+  let maxStep = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const offset = index * 3;
+    const x = Number(values[offset]) || 0;
+    const y = Number(values[offset + 1]) || 0;
+    const z = Number(values[offset + 2]) || 0;
+    maxExcursion = Math.max(maxExcursion, Math.hypot(x - sx, y - sy, z - sz));
+    if (index > 0) maxStep = Math.max(maxStep, Math.hypot(x - px, y - py, z - pz));
+    px = x;
+    py = y;
+    pz = z;
+  }
+  return { sampleCount, maxExcursion, maxStep };
+}
+
+export function classifySkyrimTranslationSafety(metrics = {}, targetHeight = 1, options = {}) {
+  const height = Math.max(1e-6, Number(targetHeight) || 1);
+  const maxExcursionRatio = Math.max(0, Number(options.maxExcursionRatio ?? 3));
+  const maxStepRatio = Math.max(0, Number(options.maxStepRatio ?? 1.5));
+  const root = metrics.root || { maxExcursion: 0, maxStep: 0 };
+  const hips = metrics.hips || { maxExcursion: 0, maxStep: 0 };
+  const excursionRatio = Math.max(root.maxExcursion || 0, hips.maxExcursion || 0) / height;
+  const stepRatio = Math.max(root.maxStep || 0, hips.maxStep || 0) / height;
+  return {
+    safe: excursionRatio <= maxExcursionRatio && stepRatio <= maxStepRatio,
+    excursionRatio,
+    stepRatio,
+    maxExcursionRatio,
+    maxStepRatio,
+  };
 }
 
 function decodedSource(input) {
@@ -250,7 +301,12 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
     targetRest[target] = worldSnapshot(THREE, targetProxy.bones[target]);
   });
 
-  const translationScale = motionScale(sourceRest, targetRest);
+  const measuredTranslationScale = motionScale(sourceRest, targetRest);
+  const requestedTranslationScale = Number(options.translationScale);
+  const translationScale = Number.isFinite(requestedTranslationScale) && requestedTranslationScale > 0
+    ? requestedTranslationScale
+    : measuredTranslationScale;
+  const targetHeight = targetRest.head.position.distanceTo(targetRest.root.position);
   const fps = Math.max(1, Number(options.fps) || 30);
   const times = sampleTimes(sourceClip.duration, fps);
   const samples = new Map(retargets.map(({ target, position }) => [target, {
@@ -270,13 +326,28 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
   const desiredWorldQuaternion = new THREE.Quaternion();
   const parentWorldQuaternion = new THREE.Quaternion();
   const desiredWorldPosition = new THREE.Vector3();
+  const sourceRootWorldPosition = new THREE.Vector3();
+  const sourceRootWorldQuaternion = new THREE.Quaternion();
+  const sourceRootWorldQuaternionInverse = new THREE.Quaternion();
+  const sourceRootRestQuaternionInverse = sourceRest.root.quaternion.clone().invert();
+  const sourceMotionDelta = new THREE.Vector3();
+  const sourceRelativePosition = new THREE.Vector3();
+  const sourceRelativeRest = sourceRest.pelvis.position.clone()
+    .sub(sourceRest.root.position)
+    .applyQuaternion(sourceRootRestQuaternionInverse);
+  const sourceRelativeDelta = new THREE.Vector3();
 
   times.forEach((time) => {
     mixer.setTime(time);
     sourceRoot.updateMatrixWorld(true);
     restoreTargetProxy(targetProxy, rig);
 
-    retargets.forEach(({ id, target, position }) => {
+    const sourceMotionRoot = sourceReport.nodes.root;
+    sourceMotionRoot.getWorldPosition(sourceRootWorldPosition);
+    sourceMotionRoot.getWorldQuaternion(sourceRootWorldQuaternion);
+    sourceRootWorldQuaternionInverse.copy(sourceRootWorldQuaternion).invert();
+
+    retargets.forEach(({ id, target, position, positionSpace }) => {
       const sourceBone = sourceReport.nodes[id];
       const targetBone = targetProxy.bones[target];
       sourceBone.getWorldQuaternion(sourceWorldQuaternion);
@@ -285,12 +356,23 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
       targetBone.parent.getWorldQuaternion(parentWorldQuaternion);
       targetBone.quaternion.copy(parentWorldQuaternion.invert().multiply(desiredWorldQuaternion)).normalize();
 
-      if (position) {
+      if (position && positionSpace === 'root-relative') {
         sourceBone.getWorldPosition(sourceWorldPosition);
-        desiredWorldPosition.copy(sourceWorldPosition)
+        sourceRelativePosition.copy(sourceWorldPosition)
+          .sub(sourceRootWorldPosition)
+          .applyQuaternion(sourceRootWorldQuaternionInverse);
+        sourceRelativeDelta.copy(sourceRelativePosition)
+          .sub(sourceRelativeRest)
+          .multiplyScalar(translationScale);
+        targetBone.position.fromArray(rig.restTransforms[target].position).add(sourceRelativeDelta);
+      } else if (position) {
+        sourceBone.getWorldPosition(sourceWorldPosition);
+        sourceMotionDelta.copy(sourceWorldPosition)
           .sub(sourceRest[id].position)
+          .applyQuaternion(sourceRootRestQuaternionInverse)
           .multiplyScalar(translationScale)
-          .add(targetRest[target].position);
+          .applyQuaternion(targetRest.root.quaternion);
+        desiredWorldPosition.copy(targetRest[target].position).add(sourceMotionDelta);
         targetBone.position.copy(targetBone.parent.worldToLocal(desiredWorldPosition));
       }
 
@@ -315,12 +397,27 @@ export function retargetSkyrimClip(THREE, decoded, rig, options = {}) {
     }
   });
 
+  const translationMetrics = {
+    root: measureVectorSampleExcursion(samples.get('root')?.position || []),
+    hips: measureVectorSampleExcursion(samples.get('hips')?.position || []),
+  };
+  const translationSafety = classifySkyrimTranslationSafety(
+    translationMetrics,
+    targetHeight,
+    options.translationSafety,
+  );
+
   const clip = new THREE.AnimationClip(clipId, sourceClip.duration, tracks);
   clip.userData = {
     source: 'skyrim',
     sourceClip: sourceClip.name,
     retargetFps: fps,
     translationScale,
+    measuredTranslationScale,
+    targetHeight,
+    translationMetrics,
+    translationSafety,
+    positionSpaces: Object.fromEntries(retargets.filter((entry) => entry.position).map((entry) => [entry.target, entry.positionSpace || 'world-root'])),
     targetRigId: rig.definition.id,
   };
   return clip;
