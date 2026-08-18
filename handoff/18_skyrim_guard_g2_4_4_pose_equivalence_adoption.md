@@ -1,21 +1,23 @@
 # G2.4.4 — Canonical Source ↔ Target Pose Equivalence & Guard Adoption Review
 
-## Status
+## Status at G2.4.4
 
 **BODY RETARGET EQUIVALENCE: WARNING / ACCEPTABLE FOR REVIEW**  
-**WEAPON SOCKET EQUIVALENCE: BAD / BLOCKER**  
-**FINAL GUARD ADOPTION: PENDING**
+**WEAPON SOCKET EQUIVALENCE: UNRESOLVED AT THIS STAGE**  
+**G2.4.4 GUARD ADOPTION: PENDING**
 
-Reason:
+Historical G2.4.4 reason:
 
 `weapon-socket-equivalence-not-accepted`
 
-This stage deliberately separates two questions that had previously been mixed together:
+> **G2.4.5 follow-up:** the equipment blocker described in this document has now been resolved with real quaternion bind-frame calibration. The earlier `~77°` helper-direction number was a positional-vector proxy, not the true bind-frame angular error. G2.4.5 measured the real uncalibrated quaternion mismatch at about `112.116°`, derived a bind correction, reduced canonical frame error to `0.004103°`, and upgraded the weapon socket to `GOOD`. The final `shd_blockidle` adoption decision is therefore **ADOPT WITH CORRECTIONS**. See `19_skyrim_guard_g2_4_5_weapon_bind_calibration.md`.
+
+This stage deliberately separated two questions that had previously been mixed together:
 
 1. Does the Action Studio Blockman preserve the canonical Skyrim `shd_blockidle` body pose closely enough?
 2. If it does, is the authored source pose actually suitable for the intended Triangle Forward Guard?
 
-The answer to question 1 is now sufficiently clear for the body. The answer to question 2 is **not yet valid for the sword silhouette**, because the Skyrim `Weapon` helper frame and the KayKit / procedural-longword equipment frame are still not equivalent.
+G2.4.4 answered question 1 for the body and correctly refused to answer question 2 until the sword equipment frame became trustworthy.
 
 ---
 
@@ -60,7 +62,7 @@ The accepted technical body gate instead compares aggregate semantic directions:
 - upper arm / lower arm on both sides
 - upper leg / lower leg / foot on both sides
 
-Hand → Weapon and Hand → Shield helper directions are recorded separately as equipment/helper diagnostics.
+Hand → Weapon and Hand → Shield helper position directions were recorded separately as diagnostics. G2.4.5 later replaced these position-vector diagnostics with real quaternion equipment-frame equivalence.
 
 ---
 
@@ -100,120 +102,75 @@ This confirms the G2.4.3 arm-chain work: the weapon arm itself is no longer the 
 
 ---
 
-## Weapon helper / sword socket blocker
+## G2.4.4 equipment blocker and later correction
 
-The helper diagnostics exposed a separate problem:
+At G2.4.4, the available helper diagnostics reported:
 
-- helper mean direction error: `75.24312°`
-- helper max direction error: `77.08663°`
-- right `Hand → Weapon` vs target `wrist → handslot.r` max error: `77.08663°`
-- weapon socket classification: **BAD**
+- helper mean positional-direction error: `75.24312°`
+- helper max positional-direction error: `77.08663°`
 
-Weapon socket acceptance thresholds:
+These numbers correctly showed that the two equipment systems could not yet be assumed equivalent, but they were **not sufficient to derive a bind quaternion**.
 
-- GOOD: ≤ `15°`
-- WARNING: ≤ `30°`
-- BAD: > `30°`
+G2.4.4 therefore correctly treated sword-tip suitability as unresolved and returned `PENDING`.
 
-This means G2.4.3 successfully propagated Skyrim `Weapon` rotation into `handslot.r`, but the two equipment systems do not share the same bind-space frame.
+G2.4.5 subsequently established the real equipment-frame result:
 
-The remaining sword-down visual must therefore **not** be interpreted as proof that the authored `shd_blockidle` source sword pose points downward.
+- true uncalibrated quaternion frame mismatch: about `112.116211°`
+- derived correction quaternion: `[0.18599574, -0.80092339, -0.11031984, 0.55835189]`
+- corrected canonical max quaternion frame error: `0.004103°`
+- weapon socket: `GOOD`
 
-A 77° bind-frame mismatch is large enough to invalidate target sword-tip direction as a source-pose suitability metric.
+The original G2.4.4 blocker is therefore closed.
 
 ---
 
-## Triangle Guard suitability observations
+## Triangle Guard body observations
 
-The current target samples show the following stable body qualities:
+The target body samples show stable useful qualities:
 
-- off-hand height: approximately `0.715–0.753` torso heights — usable
-- weapon-hand horizontal center distance: approximately `0.565–0.591` — compact enough
-- off-hand horizontal center distance: approximately `0.570–0.586` — compact enough
-- torso yaw: approximately `35.77–36.11°` — near the intended side-on combat range
-- weapon-hand height: approximately `0.397–0.425` — slightly below the current `0.45` minimum
+- off-hand height: approximately `0.715–0.753` torso heights
+- weapon-hand horizontal center distance: approximately `0.565–0.591`
+- off-hand horizontal center distance: approximately `0.570–0.586`
+- torso yaw: approximately `35.77–36.11°`
+- weapon-hand height: approximately `0.397–0.425`
 
-Ignoring sword-dependent metrics while the equipment bind is unresolved, all five samples classify as **WARNING**, not BAD.
-
-Therefore the provisional body-only adoption result is:
+The body-only provisional decision at G2.4.4 was already:
 
 **ADOPT WITH CORRECTIONS**
 
-The main body correction currently indicated is raising / compacting the weapon hand slightly for the intended Triangle Forward Guard language.
-
-### Metrics that are currently invalid for final source suitability
-
-The target currently reports:
-
-- sword-tip height below the intended region
-- negative sword-forward dot
-- sword/hand/off-hand triangle geometry affected by the mounted sword frame
-
-These values must not drive ADOPT / REJECT while Weapon-helper ↔ sword-bind equivalence is BAD.
+G2.4.5 made the sword-dependent metrics trustworthy and confirmed that same final decision.
 
 ---
 
-## Final G2.4.4 decision
+## Final historical interpretation
 
-**PENDING**
+G2.4.4 itself remains an important truthful checkpoint:
 
-Reason:
+**PENDING at the time because equipment bind equivalence was not yet accepted.**
 
-`weapon-socket-equivalence-not-accepted`
+It did **not** reject `shd_blockidle`.
 
-G2.4.4 does **not** reject `shd_blockidle`.
+The subsequent G2.4.5 result resolves this checkpoint to:
 
-What is now accepted:
+**ADOPT WITH CORRECTIONS**
+
+What is accepted across G2.4.0–G2.4.5:
 
 - HKX → canonical source GLB is coherent.
 - root / pelvis motion is stable.
 - global Skyrim ↔ Action Studio basis is calibrated.
 - upper/lower arm FK fidelity is effectively exact.
 - full-body source ↔ target semantic pose fidelity is within a correction-level WARNING range.
+- weapon helper ↔ target equipment frame is now GOOD after bind calibration.
 
-What remains unresolved:
-
-- Skyrim `Weapon` helper bind frame ↔ KayKit `HAND_R` / `handslot.r` / procedural longsword grip-blade frame.
-
-Only after that equipment-frame correction can the source sword threat direction and final Triangle Guard suitability be judged honestly.
+The remaining work is an authored Triangle Guard correction layer, not another retarget-system repair.
 
 ---
 
 ## Validation
 
-Latest canonical execution for the final G2.4.4 logic:
+G2.4.4 canonical execution was successful, and G2.4.5 later reran the dependent review with the equipment bind fixed.
 
-- CI Run 97: **success**
-- Skyrim Guard Visual Verification Run 28: **success**
-- G2.4.2 basis gate: **success**
-- G2.4.3 arm-chain gate: **success**
-- G2.4.4 source-target review: **success**
-- canonical playback / screenshot capture: **success**
+See:
 
-Final page state:
-
-- `data-g244="ready"`
-- `data-g244-equivalence="warning"`
-- `data-g244-weapon-socket="bad"`
-- `data-g244-decision="pending"`
-
----
-
-## Recommended next stage
-
-**G2.4.5 — Skyrim Weapon Helper ↔ KayKit Sword Socket Bind Calibration**
-
-The next stage must derive a bind-space correction rather than manually rotating the visible sword until it looks right.
-
-Recommended approach:
-
-1. Capture Skyrim `Weapon` helper rest world frame.
-2. Convert that frame through the accepted G2.4.2 basis.
-3. Capture the canonical target equipment frame at `handslot.r / HAND_R`.
-4. Include the procedural longsword's canonical grip / blade frame rather than assuming `wrist → handslot` is the blade axis.
-5. Derive a bind correction quaternion from source equipment rest frame to target weapon frame.
-6. Apply Skyrim Weapon animation delta through that correction.
-7. Add a weapon-frame equivalence gate.
-8. Rerun G2.4.4 only after weapon socket equivalence reaches GOOD or WARNING.
-
-Do not hard-code `77°` as a visual offset. The `77.08663°` value is evidence of a frame mismatch, not the desired correction axis by itself.
+`19_skyrim_guard_g2_4_5_weapon_bind_calibration.md`
