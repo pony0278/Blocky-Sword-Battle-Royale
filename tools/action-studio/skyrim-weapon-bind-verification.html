@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>G2.4.5 Skyrim Weapon Bind Verification</title>
+  <style>
+    html,body{margin:0;height:100%;background:#0d1119;color:#e8edf7;font:14px/1.45 system-ui,sans-serif;overflow:hidden}
+    canvas{position:absolute;inset:0;width:100%;height:100%}
+    .panel{position:absolute;left:18px;top:18px;max-width:520px;padding:14px 16px;border:1px solid #33415c;border-radius:10px;background:#111827e8;white-space:pre-wrap}
+    h1{font-size:16px;margin:0 0 8px}.status{font-weight:700;margin-bottom:8px}pre{max-height:46vh;overflow:auto;font-size:11px;color:#b9c6dc}
+  </style>
+  <script src="../../vendor/three.min.js"></script>
+  <script src="../../vendor/GLTFLoader.js"></script>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <section class="panel">
+    <h1>G2.4.5 — Weapon Helper ↔ Sword Socket Bind</h1>
+    <div id="status" class="status">RUNNING</div>
+    <pre id="report">Loading canonical GLB…</pre>
+  </section>
+  <script type="module" src="./skyrim-weapon-bind-verification.js"></script>
+</body>
+</html>
