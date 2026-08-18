@@ -58,9 +58,9 @@ jobs:
           sleep 2
 
           BASE='http://127.0.0.1:4173/tools/action-studio/skyrim-guard-visual-review.html?canonical=1'
+          CHROME_FLAGS='--headless --no-sandbox --disable-gpu --hide-scrollbars --window-size=1600,1100 --virtual-time-budget=7000'
 
-          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
-            --window-size=1600,1100 --virtual-time-budget=15000 \
+          "$BROWSER" $CHROME_FLAGS \
             --dump-dom "${BASE}&view=three&sample=0.5" \
             > artifacts/g2-4-1/probe-dom.html
 
@@ -72,12 +72,15 @@ jobs:
 
           for sample in 0 0.25 0.5 0.75 0.998; do
             label="$(printf '%s' "$sample" | tr '.' '_')"
-            for view in front three side back; do
-              "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
-                --window-size=1600,1100 --virtual-time-budget=15000 \
-                --screenshot="artifacts/g2-4-1/${view}-${label}.png" \
-                "${BASE}&view=${view}&sample=${sample}"
-            done
+            "$BROWSER" $CHROME_FLAGS \
+              --screenshot="artifacts/g2-4-1/three-${label}.png" \
+              "${BASE}&view=three&sample=${sample}"
+          done
+
+          for view in front side back; do
+            "$BROWSER" $CHROME_FLAGS \
+              --screenshot="artifacts/g2-4-1/${view}-0_5.png" \
+              "${BASE}&view=${view}&sample=0.5"
           done
 
       - name: Upload G2.4.1 visual evidence
