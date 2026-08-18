@@ -1,4 +1,6 @@
 const freezeRange = (range) => Object.freeze({ ...range });
+const freezeEuler = (value) => Object.freeze({ x:value.x, y:value.y, z:value.z });
+const freezeQuaternion = (value) => Object.freeze([...value]);
 
 export const LONGSWORD_GUARD_BASE = Object.freeze({
   weapon: 'longsword',
@@ -77,10 +79,30 @@ export const LONGSWORD_GUARD_CORRECTION_ORDER = Object.freeze([
 ]);
 
 export const LONGSWORD_GUARD_AUTHORING_STATE = Object.freeze({
-  authored: false,
+  authored: true,
+  authoredStage: 'G2.5.1',
   baseSample: 0.50,
-  offsets: Object.freeze({}),
-  note: 'G2.5 freezes the correction contract only. Canonical local quaternion offsets are authored in G2.5.1+ and must not be guessed here.',
+  eulerDegrees: Object.freeze({
+    chest: freezeEuler({ x:0, y:0, z:-8 }),
+    'upperarm.r': freezeEuler({ x:-18, y:18, z:-27 }),
+    'lowerarm.r': freezeEuler({ x:9, y:27, z:-36 }),
+    'wrist.r': freezeEuler({ x:-9, y:0, z:-36 }),
+    'handslot.r': freezeEuler({ x:15, y:0, z:0 }),
+  }),
+  offsets: Object.freeze({
+    chest: freezeQuaternion([0, 0, -0.06975647374412532, 0.9975640502598243]),
+    'upperarm.r': freezeQuaternion([-0.18630870745570743, 0.11417012276618953, -0.251528134852012, 0.9428615200397167]),
+    'lowerarm.r': freezeQuaternion([0.0006410988903337023, 0.2449106190525179, -0.2821330866659231, 0.9275878929114393]),
+    'wrist.r': freezeQuaternion([-0.07461903425459218, -0.02424519394319492, -0.3080643981104976, 0.9481247264544816]),
+    'handslot.r': freezeQuaternion([0.1305261922200516, 0, 0, 0.9914448613738105]),
+  }),
+  validation: Object.freeze({
+    fiveSamplePass: true,
+    visualFourViewPass: true,
+    workflowRunId: 32098216549,
+    sampleFractions: Object.freeze([0, 0.25, 0.5, 0.75, 0.998]),
+  }),
+  note: 'G2.5.1 canonical Triangle Forward Base Guard. Euler values are authoring provenance only; runtime canonical data is the local quaternion offset map.',
 });
 
 function finite(value, fallback = Number.NaN) {
