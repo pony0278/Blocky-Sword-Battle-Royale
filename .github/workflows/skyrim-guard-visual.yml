@@ -10,6 +10,8 @@ on:
       - 'src/character/**'
       - 'tools/action-studio/skyrim-guard-visual-review.html'
       - 'tools/action-studio/skyrim-guard-visual-review.js'
+      - 'tools/action-studio/skyrim-basis-verification.html'
+      - 'tools/action-studio/skyrim-basis-verification.js'
       - 'assets/skyrim/guard/converted/shd_blockidle.source.glb'
       - '.github/workflows/skyrim-guard-visual.yml'
 
@@ -46,13 +48,35 @@ jobs:
           echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
           "$BROWSER" --version
 
-      - name: Capture canonical playback frames
+      - name: Verify G2.4.2 coordinate basis
         shell: bash
         env:
           BROWSER: ${{ steps.browser.outputs.browser }}
         run: |
           mkdir -p artifacts/g2-4-1
           cp assets/skyrim/guard/converted/shd_blockidle.source.glb artifacts/g2-4-1/canonical-source.glb
+          python3 -m http.server 4173 > /tmp/g2-4-1-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+
+          BASIS='http://127.0.0.1:4173/tools/action-studio/skyrim-basis-verification.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            --window-size=1280,900 --virtual-time-budget=12000 \
+            --dump-dom "$BASIS" \
+            > artifacts/g2-4-1/basis-probe-dom.html
+
+          if ! grep -q 'data-g242="pass"' artifacts/g2-4-1/basis-probe-dom.html; then
+            echo 'G2.4.2 coordinate basis verification failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g2-4-1/basis-probe-dom.html || true
+            exit 1
+          fi
+
+      - name: Capture canonical playback frames
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
           python3 -m http.server 4173 > /tmp/g2-4-1-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
@@ -86,10 +110,10 @@ jobs:
               "${BASE}&view=${view}&sample=0.5"
           done
 
-      - name: Upload G2.4.1 visual evidence
+      - name: Upload G2.4 visual evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: g2-4-1-skyrim-guard-visual
+          name: g2-4-skyrim-guard-visual
           path: artifacts/g2-4-1
           if-no-files-found: warn
