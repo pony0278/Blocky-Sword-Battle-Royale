@@ -317,7 +317,6 @@ while the preserved off-hand / compactness / triangle / torso properties remain 
 
 G2.5 contract validation:
 
-- CI Run 126: **PASS**
 - Build Action Studio: PASS
 - `tests/longsword-guard-metadata.test.js`: PASS as part of `npm test`
 - all existing G2.4 regression tests: PASS
