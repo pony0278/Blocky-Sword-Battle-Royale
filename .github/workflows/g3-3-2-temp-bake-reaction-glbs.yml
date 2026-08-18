@@ -181,7 +181,7 @@ jobs:
           cp /tmp/g332-assets/*.source.glb assets/skyrim/guard/converted/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/skyrim/guard/converted/shd_blockhit.source.glb assets/skyrim/guard/converted/shd_blockbash.source.glb assets/skyrim/guard/converted/shd_blockbashpower.source.glb
+          git add -f assets/skyrim/guard/converted/shd_blockhit.source.glb assets/skyrim/guard/converted/shd_blockbash.source.glb assets/skyrim/guard/converted/shd_blockbashpower.source.glb
           git commit -m "assets: add accepted G3.3.2 guard reaction sources"
           git push --force origin HEAD:agent/g3-3-2-guard-reaction-runtime
 
