@@ -1,5 +1,6 @@
 import { createDefaultCharacter } from '../../src/character/default-character.js';
-import { restoreProceduralKayKitRestPose } from '../../src/character/procedural-kaykit-rig.js';
+import { applyPoseToProceduralKayKitRig } from '../../src/animation/kaykit-pose-adapter.js';
+import { IDLE_POSE } from '../../src/animation/action-templates.js';
 import { createDebugSword, mountDebugSword } from '../../src/character/debug-sword.js';
 import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
 import {
@@ -19,6 +20,15 @@ if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G3.2 requires 
 
 const CLIP_ID = SKYRIM_GUARD_CONVERTED_FILES[0].clipId;
 const BASE_FRACTION = LONGSWORD_GUARD_AUTHORING_STATE.baseSample;
+const NEUTRAL_SOURCE = 'ACTION_STUDIO/IDLE_POSE';
+const POSE_COMPARE_BONES = Object.freeze([
+  'hips', 'spine', 'chest',
+  'upperarm.l', 'lowerarm.l', 'wrist.l',
+  'upperarm.r', 'lowerarm.r', 'wrist.r',
+  'upperleg.l', 'lowerleg.l', 'foot.l',
+  'upperleg.r', 'lowerleg.r', 'foot.r',
+]);
+
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -34,6 +44,13 @@ scene.add(new THREE.GridHelper(8, 16, 0x34435d, 0x202a3b));
 
 const character = createDefaultCharacter(THREE);
 scene.add(character.object3d);
+const idleReferenceCharacter = createDefaultCharacter(THREE);
+applyPoseToProceduralKayKitRig(idleReferenceCharacter.rig, IDLE_POSE);
+idleReferenceCharacter.rig.motionRoot.position.set(0, 0, 0);
+idleReferenceCharacter.rig.motionRoot.rotation.set(0, 0, 0);
+idleReferenceCharacter.rig.motionRoot.scale.set(1, 1, 1);
+idleReferenceCharacter.object3d.updateMatrixWorld(true);
+
 let targetClip = null;
 let sword = null;
 let guardAction = null;
@@ -84,6 +101,26 @@ function captureRootPose() {
   };
 }
 
+function captureBoneQuaternions(rig) {
+  return Object.fromEntries(POSE_COMPARE_BONES.map((boneId) => [
+    boneId,
+    rig.bones[boneId].quaternion.toArray(),
+  ]));
+}
+
+const idleReferenceQuaternions = captureBoneQuaternions(idleReferenceCharacter.rig);
+
+function quaternionAngleDifferenceDegrees(a, b) {
+  const dot = Math.min(1, Math.max(-1, Math.abs(
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+  )));
+  return THREE.MathUtils.radToDeg(2 * Math.acos(dot));
+}
+
+function maxQuaternionDifferenceDegrees(a, b) {
+  return Math.max(...POSE_COMPARE_BONES.map((boneId) => quaternionAngleDifferenceDegrees(a[boneId], b[boneId])));
+}
+
 function distance(a, b) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
@@ -97,7 +134,9 @@ function ensureGuardAction() {
 }
 
 function resetRigForBlend() {
-  restoreProceduralKayKitRestPose(character.rig);
+  // This is intentionally the exact authored Action Studio neutral pose, not rig rest/T-pose.
+  // Use the low-level adapter so we do not stop the active Skyrim AnimationMixer action.
+  applyPoseToProceduralKayKitRig(character.rig, IDLE_POSE);
   character.rig.motionRoot.position.set(0, 0, 0);
   character.rig.motionRoot.rotation.set(0, 0, 0);
   character.rig.motionRoot.scale.set(1, 1, 1);
@@ -140,7 +179,14 @@ function applyPresentation(state, elapsedMs = 0) {
   timeLabel.textContent = `${Math.round(currentElapsedMs)} ms`;
   hudState.textContent = `${state}${profile ? ` · ${profile.durationMs}ms ${profile.curve}` : ''}`;
   hudWeights.textContent = `Hold ${(weights.holdWeight * 100).toFixed(1)}% · Correction ${(weights.correctionWeight * 100).toFixed(1)}% · Reaction ${(weights.reactionOverlayWeight * 100).toFixed(1)}%`;
-  return { state, elapsedMs:currentElapsedMs, profile, weights, root:captureRootPose() };
+  return {
+    state,
+    elapsedMs:currentElapsedMs,
+    profile,
+    weights,
+    root:captureRootPose(),
+    boneQuaternions:captureBoneQuaternions(character.rig),
+  };
 }
 
 function runVerification() {
@@ -158,8 +204,14 @@ function runVerification() {
   const rootSamples = [enter0, enterMid, enterEnd, recover0, recoverEnd, exit0, exitMid, exitEnd];
   const rootMax = Math.max(...rootSamples.map((sample) => distance(sample.root.root, neutral.root.root)));
   const motionRootMax = Math.max(...rootSamples.map((sample) => distance(sample.root.motionRoot, neutral.root.motionRoot)));
+  const neutralIdleErrorDegrees = maxQuaternionDifferenceDegrees(neutral.boneQuaternions, idleReferenceQuaternions);
+  const enterStartNeutralErrorDegrees = maxQuaternionDifferenceDegrees(enter0.boneQuaternions, neutral.boneQuaternions);
+  const exitEndNeutralErrorDegrees = maxQuaternionDifferenceDegrees(exitEnd.boneQuaternions, neutral.boneQuaternions);
   const gates = {
     canonicalClip: CLIP_ID === 'SKYRIM_GUARD/shd_blockidle',
+    neutralUsesActionStudioIdle: neutralIdleErrorDegrees <= 0.05,
+    enterStartsAtNeutral: enterStartNeutralErrorDegrees <= 0.05,
+    exitEndsAtNeutral: exitEndNeutralErrorDegrees <= 0.05,
     enterEndpoints: enter0.weights.holdWeight === 0 && enterEnd.weights.holdWeight === 1
       && enter0.weights.correctionWeight === 0 && enterEnd.weights.correctionWeight === 1,
     recoverContract: recover0.weights.holdWeight === 1 && recoverEnd.weights.holdWeight === 1
@@ -174,26 +226,31 @@ function runVerification() {
     stage:'G3.2',
     pass:failures.length === 0,
     clipId:CLIP_ID,
+    neutralSource:NEUTRAL_SOURCE,
     profiles:{ enterMs:180, recoverMs:140, exitMs:160 },
     targetHeight,
+    neutralIdleErrorDegrees,
+    enterStartNeutralErrorDegrees,
+    exitEndNeutralErrorDegrees,
     rootMax,
     motionRootMax,
     gates,
     failures,
   };
   document.documentElement.dataset.g32 = report.pass ? 'pass' : 'fail';
+  document.documentElement.dataset.g32Neutral = 'action-studio-idle';
   document.documentElement.dataset.g32Enter = '180ms';
   document.documentElement.dataset.g32Recover = '140ms';
   document.documentElement.dataset.g32Exit = '160ms';
   document.documentElement.dataset.g32Clip = CLIP_ID;
   reportNode.textContent = JSON.stringify(report, null, 2);
   window.__G32_RESULT__ = report;
-  setStatus(`G3.2 ${report.pass ? 'PASS' : 'FAIL'} · real Skyrim Hold transition envelopes`, report.pass ? 'good' : 'bad');
+  setStatus(`G3.2 ${report.pass ? 'PASS' : 'FAIL'} · Action Studio Idle → Skyrim Guard`, report.pass ? 'good' : 'bad');
   return report;
 }
 
 async function loadCanonical() {
-  setStatus('Loading canonical Skyrim Guard…', 'warn');
+  setStatus('Loading Action Studio Idle + canonical Skyrim Guard…', 'warn');
   const library = await loadSkyrimConvertedAnimationLibrary(new THREE.GLTFLoader(), {
     THREE,
     rig:character.rig,
