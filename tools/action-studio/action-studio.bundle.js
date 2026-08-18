@@ -9566,6 +9566,1612 @@ function installStudioSkyrimBridgeControls() {
 return Object.freeze({ installStudioSkyrimBridgeControls });
 })();
 
+// src/combat/longsword-guard-metadata.js
+const __actionStudioModule48 = (() => {
+const freezeRange = (range) => Object.freeze({ ...range });
+const freezeEuler = (value) => Object.freeze({ x:value.x, y:value.y, z:value.z });
+const freezeQuaternion = (value) => Object.freeze([...value]);
+
+const LONGSWORD_GUARD_BASE = Object.freeze({
+  weapon: 'longsword',
+  source: 'skyrim',
+  sourceAsset: 'assets/skyrim/guard/converted/shd_blockidle.source.glb',
+  clipId: 'SKYRIM_GUARD/shd_blockidle',
+  adoptionDecision: 'ADOPT WITH CORRECTIONS',
+  adoptionReason: 'retarget-is-usable-but-triangle-guard-needs-local-corrections',
+  lowLevelRetargetFrozen: true,
+  correctionLayerId: 'longsword_triangle_forward_v1',
+});
+
+const LONGSWORD_TRIANGLE_GUARD_TARGETS = Object.freeze({
+  weaponHandHeight: freezeRange({ min: 0.50, max: 0.75 }),
+  offHandHeight: freezeRange({ min: 0.55, max: 0.85 }),
+  weaponHandCenterDistance: freezeRange({ max: 0.58 }),
+  offHandCenterDistance: freezeRange({ max: 0.62 }),
+  swordTipHeight: freezeRange({ min: 0.70, max: 1.10 }),
+  swordForwardDot: freezeRange({ min: 0.65 }),
+  triangleArea: freezeRange({ min: 0.035 }),
+  torsoYawDegrees: freezeRange({ min: 20, max: 38 }),
+});
+
+const LONGSWORD_GUARD_CORRECTION_SCOPE = Object.freeze({
+  requiredBones: Object.freeze([
+    'upperarm.r',
+    'lowerarm.r',
+    'wrist.r',
+  ]),
+  optionalBones: Object.freeze([
+    'chest',
+    'upperarm.l',
+    'lowerarm.l',
+    'wrist.l',
+    'handslot.r',
+  ]),
+  forbiddenBones: Object.freeze([
+    'root',
+    'hips',
+    'upperleg.l',
+    'upperleg.r',
+    'lowerleg.l',
+    'lowerleg.r',
+    'foot.l',
+    'foot.r',
+    'toes.l',
+    'toes.r',
+  ]),
+  maxLocalCorrectionDegrees: Object.freeze({
+    chest: 8,
+    'upperarm.r': 40,
+    'lowerarm.r': 50,
+    'wrist.r': 65,
+    'upperarm.l': 20,
+    'lowerarm.l': 25,
+    'wrist.l': 30,
+    'handslot.r': 15,
+  }),
+  policy: Object.freeze({
+    preserveRootAndLowerBody: true,
+    preserveSourceTorsoWeight: true,
+    preserveOffHandUnlessNeeded: true,
+    equipmentTrimOnly: true,
+    equipmentTrimMaxDegrees: 15,
+  }),
+});
+
+const LONGSWORD_GUARD_CORRECTION_ORDER = Object.freeze([
+  'sample-retargeted-skyrim-guard',
+  'apply-local-upper-body-corrections',
+  'solve-weapon-hand-height-and-compactness',
+  'solve-sword-tip-height-and-forward-threat',
+  'apply-g2.4.5-weapon-bind-calibration',
+  'apply-handslot-fine-trim-if-needed',
+  'validate-triangle-guard-gates',
+]);
+
+const LONGSWORD_GUARD_AUTHORING_STATE = Object.freeze({
+  authored: true,
+  authoredStage: 'G2.5.1',
+  baseSample: 0.50,
+  eulerDegrees: Object.freeze({
+    chest: freezeEuler({ x:0, y:0, z:-8 }),
+    'upperarm.r': freezeEuler({ x:-18, y:18, z:-27 }),
+    'lowerarm.r': freezeEuler({ x:9, y:27, z:-36 }),
+    'wrist.r': freezeEuler({ x:-9, y:0, z:-36 }),
+    'handslot.r': freezeEuler({ x:15, y:0, z:0 }),
+  }),
+  offsets: Object.freeze({
+    chest: freezeQuaternion([0, 0, -0.06975647374412532, 0.9975640502598243]),
+    'upperarm.r': freezeQuaternion([-0.18630870745570743, 0.11417012276618953, -0.251528134852012, 0.9428615200397167]),
+    'lowerarm.r': freezeQuaternion([0.0006410988903337023, 0.2449106190525179, -0.2821330866659231, 0.9275878929114393]),
+    'wrist.r': freezeQuaternion([-0.07461903425459218, -0.02424519394319492, -0.3080643981104976, 0.9481247264544816]),
+    'handslot.r': freezeQuaternion([0.1305261922200516, 0, 0, 0.9914448613738105]),
+  }),
+  validation: Object.freeze({
+    fiveSamplePass: true,
+    visualFourViewPass: true,
+    workflowRunId: 32098216549,
+    sampleFractions: Object.freeze([0, 0.25, 0.5, 0.75, 0.998]),
+  }),
+  note: 'G2.5.1 canonical Triangle Forward Base Guard. Euler values are authoring provenance only; runtime canonical data is the local quaternion offset map.',
+});
+
+function finite(value, fallback = Number.NaN) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function passesRange(value, range) {
+  if (!Number.isFinite(value)) return false;
+  if (Number.isFinite(range.min) && value < range.min) return false;
+  if (Number.isFinite(range.max) && value > range.max) return false;
+  return true;
+}
+
+function evaluateLongswordTriangleGuardTargets(input = {}, targets = LONGSWORD_TRIANGLE_GUARD_TARGETS) {
+  const metrics = Object.freeze({
+    weaponHandHeight: finite(input.weaponHandHeight),
+    offHandHeight: finite(input.offHandHeight),
+    weaponHandCenterDistance: finite(input.weaponHandCenterDistance),
+    offHandCenterDistance: finite(input.offHandCenterDistance),
+    swordTipHeight: finite(input.swordTipHeight),
+    swordForwardDot: finite(input.swordForwardDot),
+    triangleArea: finite(input.triangleArea),
+    torsoYawDegrees: finite(input.torsoYawDegrees),
+  });
+
+  const gates = Object.freeze(Object.fromEntries(
+    Object.entries(targets).map(([name, range]) => [name, passesRange(metrics[name], range)]),
+  ));
+  const failures = Object.freeze(Object.entries(gates)
+    .filter(([, pass]) => !pass)
+    .map(([name]) => name));
+
+  return Object.freeze({
+    status: failures.length === 0 ? 'good' : 'needs-correction',
+    metrics,
+    gates,
+    failures,
+  });
+}
+
+function getLongswordGuardCorrectionBones() {
+  return Object.freeze([
+    ...LONGSWORD_GUARD_CORRECTION_SCOPE.requiredBones,
+    ...LONGSWORD_GUARD_CORRECTION_SCOPE.optionalBones,
+  ]);
+}
+return Object.freeze({ LONGSWORD_GUARD_BASE, LONGSWORD_TRIANGLE_GUARD_TARGETS, LONGSWORD_GUARD_CORRECTION_SCOPE, LONGSWORD_GUARD_CORRECTION_ORDER, LONGSWORD_GUARD_AUTHORING_STATE, evaluateLongswordTriangleGuardTargets, getLongswordGuardCorrectionBones });
+})();
+
+// src/combat/guard-transition-presentation.js
+const __actionStudioModule49 = (() => {
+const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
+
+const GUARD_TRANSITION_PROFILE_IDS = Object.freeze({
+  ENTER: 'longsword_guard_enter_v1',
+  RECOVER: 'longsword_guard_recover_v1',
+  EXIT: 'longsword_guard_exit_v1',
+});
+
+const LONGSWORD_GUARD_TRANSITION_PROFILES = Object.freeze({
+  guard_enter: Object.freeze({
+    id: GUARD_TRANSITION_PROFILE_IDS.ENTER,
+    state: 'guard_enter',
+    durationMs: 180,
+    curve: 'ease-out-cubic',
+    clipId: LONGSWORD_GUARD_BASE.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    inPlace: true,
+    loop: true,
+    from: Object.freeze({ holdWeight: 0, correctionWeight: 0, reactionOverlayWeight: 0 }),
+    to: Object.freeze({ holdWeight: 1, correctionWeight: 1, reactionOverlayWeight: 0 }),
+    completionEvent: 'enter_complete',
+  }),
+  guard_recover: Object.freeze({
+    id: GUARD_TRANSITION_PROFILE_IDS.RECOVER,
+    state: 'guard_recover',
+    durationMs: 140,
+    curve: 'ease-out-cubic',
+    clipId: LONGSWORD_GUARD_BASE.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    inPlace: true,
+    loop: true,
+    from: Object.freeze({ holdWeight: 1, correctionWeight: 1, reactionOverlayWeight: 1 }),
+    to: Object.freeze({ holdWeight: 1, correctionWeight: 1, reactionOverlayWeight: 0 }),
+    completionEvent: 'recover_complete',
+  }),
+  guard_exit: Object.freeze({
+    id: GUARD_TRANSITION_PROFILE_IDS.EXIT,
+    state: 'guard_exit',
+    durationMs: 160,
+    curve: 'ease-in-cubic',
+    clipId: LONGSWORD_GUARD_BASE.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    inPlace: true,
+    loop: true,
+    from: Object.freeze({ holdWeight: 1, correctionWeight: 1, reactionOverlayWeight: 0 }),
+    to: Object.freeze({ holdWeight: 0, correctionWeight: 0, reactionOverlayWeight: 0 }),
+    completionEvent: 'exit_complete',
+  }),
+});
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function sampleGuardTransitionCurve(curve, progress) {
+  const t = clamp01(progress);
+  if (curve === 'ease-out-cubic') return 1 - ((1 - t) ** 3);
+  if (curve === 'ease-in-cubic') return t ** 3;
+  if (curve === 'smoothstep') return t * t * (3 - 2 * t);
+  return t;
+}
+
+function lerp(from, to, weight) {
+  return from + (to - from) * weight;
+}
+
+function getGuardTransitionProfile(state) {
+  return LONGSWORD_GUARD_TRANSITION_PROFILES[String(state || '')] || null;
+}
+
+function sampleGuardTransitionProfile(state, elapsedMs) {
+  const profile = getGuardTransitionProfile(state);
+  if (!profile) return null;
+  const durationMs = Math.max(1, Number(profile.durationMs) || 1);
+  const progress = clamp01((Number(elapsedMs) || 0) / durationMs);
+  const eased = sampleGuardTransitionCurve(profile.curve, progress);
+  const weights = Object.freeze({
+    holdWeight: lerp(profile.from.holdWeight, profile.to.holdWeight, eased),
+    correctionWeight: lerp(profile.from.correctionWeight, profile.to.correctionWeight, eased),
+    reactionOverlayWeight: lerp(profile.from.reactionOverlayWeight, profile.to.reactionOverlayWeight, eased),
+  });
+  return Object.freeze({
+    profile,
+    progress,
+    eased,
+    complete: progress >= 1,
+    weights,
+    completionEvent: profile.completionEvent,
+  });
+}
+
+function getStableGuardPresentationWeights(state) {
+  if (state === 'guard_hold') {
+    return Object.freeze({ holdWeight: 1, correctionWeight: 1, reactionOverlayWeight: 0 });
+  }
+  if (state === 'guard_block_hit' || state === 'guard_parry' || state === 'guard_counter') {
+    return Object.freeze({ holdWeight: 1, correctionWeight: 1, reactionOverlayWeight: 1 });
+  }
+  if (state === 'neutral') {
+    return Object.freeze({ holdWeight: 0, correctionWeight: 0, reactionOverlayWeight: 0 });
+  }
+  return Object.freeze({ holdWeight: 0, correctionWeight: 0, reactionOverlayWeight: 0 });
+}
+
+function sampleGuardPresentationWeights(state, elapsedMs = 0) {
+  return sampleGuardTransitionProfile(state, elapsedMs)?.weights || getStableGuardPresentationWeights(state);
+}
+return Object.freeze({ GUARD_TRANSITION_PROFILE_IDS, LONGSWORD_GUARD_TRANSITION_PROFILES, sampleGuardTransitionCurve, getGuardTransitionProfile, sampleGuardTransitionProfile, getStableGuardPresentationWeights, sampleGuardPresentationWeights });
+})();
+
+// src/combat/guard-reaction-presentation.js
+const __actionStudioModule50 = (() => {
+const GUARD_REACTION_VARIANTS = Object.freeze({
+  BLOCK_HIT: 'block-hit',
+  PARRY: 'parry',
+  PERFECT_PARRY: 'perfect-parry',
+});
+
+const GUARD_REACTION_PROFILE_IDS = Object.freeze({
+  BLOCK_HIT: 'longsword_guard_block_hit_v1',
+  PARRY: 'longsword_guard_parry_deflect_v1',
+  PERFECT_PARRY: 'longsword_guard_perfect_parry_v1',
+});
+
+const REACTION_COMPLETE_EVENT = 'reaction_complete';
+
+function reactionProfile({
+  id,
+  variant,
+  state,
+  sourceId,
+  file,
+  clipId,
+  sourceDurationSeconds,
+  sourceStartSeconds = 0,
+  sourceEndSeconds,
+  counterWindowSeconds,
+  visualDecision,
+}) {
+  const start = Math.max(0, Number(sourceStartSeconds) || 0);
+  const sourceDuration = Math.max(start, Number(sourceDurationSeconds) || start);
+  const end = Math.max(start, Math.min(sourceDuration, Number(sourceEndSeconds) || sourceDuration));
+  const durationSeconds = end - start;
+  const counterStart = Math.max(0, Math.min(durationSeconds, Number(counterWindowSeconds?.[0]) || 0));
+  const counterEnd = Math.max(counterStart, Math.min(durationSeconds, Number(counterWindowSeconds?.[1]) || durationSeconds));
+  return Object.freeze({
+    id,
+    variant,
+    state,
+    sourceId,
+    file,
+    clipId,
+    sourceDurationSeconds: sourceDuration,
+    sourceWindow: Object.freeze({ startSeconds: start, endSeconds: end }),
+    durationSeconds,
+    durationMs: durationSeconds * 1000,
+    counterWindowSeconds: Object.freeze([counterStart, counterEnd]),
+    completionEvent: REACTION_COMPLETE_EVENT,
+    correctionWeight: 1,
+    inPlace: true,
+    loop: false,
+    authored: true,
+    authoredStage: 'G3.3.2',
+    visualDecision,
+  });
+}
+
+const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
+  [GUARD_REACTION_VARIANTS.BLOCK_HIT]: reactionProfile({
+    id: GUARD_REACTION_PROFILE_IDS.BLOCK_HIT,
+    variant: GUARD_REACTION_VARIANTS.BLOCK_HIT,
+    state: 'guard_block_hit',
+    sourceId: 'shd_blockhit',
+    file: 'shd_blockhit.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockhit',
+    sourceDurationSeconds: 0.8,
+    sourceEndSeconds: 0.6,
+    counterWindowSeconds: [0.24, 0.6],
+    visualDecision: 'ADOPT WITH CORRECTIONS — preserve recoil, replace the late 0.20s with G3.2 Recover',
+  }),
+  [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
+    id: GUARD_REACTION_PROFILE_IDS.PARRY,
+    variant: GUARD_REACTION_VARIANTS.PARRY,
+    state: 'guard_parry',
+    sourceId: 'shd_blockbash',
+    file: 'shd_blockbash.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockbash',
+    sourceDurationSeconds: 1 / 3,
+    sourceEndSeconds: 1 / 3,
+    counterWindowSeconds: [0.08, 1 / 3],
+    visualDecision: 'ADOPT — compact active longsword deflect; use the complete source motion',
+  }),
+  [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
+    id: GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY,
+    variant: GUARD_REACTION_VARIANTS.PERFECT_PARRY,
+    state: 'guard_parry',
+    sourceId: 'shd_blockbashpower',
+    file: 'shd_blockbashpower.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockbashpower',
+    sourceDurationSeconds: 0.7,
+    sourceEndSeconds: 0.48,
+    counterWindowSeconds: [0.1, 0.48],
+    visualDecision: 'ADOPT WITH CORRECTIONS — keep the strong displacement, trim the late 0.22s counter-like follow-through',
+  }),
+});
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function isPerfectParryPayload(payload = {}) {
+  return payload?.perfect === true
+    || payload?.perfectParry === true
+    || String(payload?.grade || '').toLowerCase() === 'perfect'
+    || String(payload?.variant || '').toLowerCase() === GUARD_REACTION_VARIANTS.PERFECT_PARRY;
+}
+
+function getGuardReactionProfile(state, payload = {}) {
+  if (state === 'guard_block_hit') return LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
+  if (state === 'guard_parry') {
+    const variant = isPerfectParryPayload(payload)
+      ? GUARD_REACTION_VARIANTS.PERFECT_PARRY
+      : GUARD_REACTION_VARIANTS.PARRY;
+    return LONGSWORD_GUARD_REACTION_PROFILES[variant];
+  }
+  return null;
+}
+
+function sampleGuardReactionProfile(state, elapsedMs = 0, payload = {}) {
+  const profile = getGuardReactionProfile(state, payload);
+  if (!profile) return null;
+  const elapsedSeconds = Math.max(0, Number(elapsedMs) || 0) / 1000;
+  const progress = profile.durationSeconds > 0
+    ? clamp(elapsedSeconds / profile.durationSeconds, 0, 1)
+    : 1;
+  const sourceTimeSeconds = profile.sourceWindow.startSeconds
+    + profile.durationSeconds * progress;
+  const [counterStart, counterEnd] = profile.counterWindowSeconds;
+  return Object.freeze({
+    profile,
+    progress,
+    sourceTimeSeconds,
+    complete: progress >= 1,
+    counterWindowOpen: elapsedSeconds >= counterStart && elapsedSeconds <= counterEnd,
+    completionEvent: profile.completionEvent,
+  });
+}
+return Object.freeze({ GUARD_REACTION_VARIANTS, GUARD_REACTION_PROFILE_IDS, LONGSWORD_GUARD_REACTION_PROFILES, isPerfectParryPayload, getGuardReactionProfile, sampleGuardReactionProfile });
+})();
+
+// src/combat/guard-counter-presentation.js
+const __actionStudioModule51 = (() => {
+const GUARD_COUNTER_PROFILE_IDS = Object.freeze({
+  LONGSWORD: 'longsword_guard_counter_melee_block_attack_v1',
+});
+
+const GUARD_WEAPON_MOUNT_PROFILE_IDS = Object.freeze({
+  SKYRIM_GUARD: 'skyrim-guard-calibrated',
+  KAYKIT_DEFAULT: 'kaykit-default',
+});
+
+const COUNTER_COMPLETE_EVENT = 'counter_complete';
+
+const LONGSWORD_GUARD_COUNTER_PROFILE = Object.freeze({
+  id: GUARD_COUNTER_PROFILE_IDS.LONGSWORD,
+  state: 'guard_counter',
+  sourceFamily: 'kaykit-melee',
+  sourceId: 'Melee_Block_Attack',
+  clipId: 'Melee_Block_Attack',
+  completionEvent: COUNTER_COMPLETE_EVENT,
+  correctionWeight: 0,
+  weaponMountProfileId: GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT,
+  inPlace: true,
+  loop: false,
+  authored: true,
+  authoredStage: 'G3.4',
+  visualDecision: 'ADOPT — original Triangle Guard spec counter candidate; authoritative COUNTER_CONFIRMED only',
+});
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function sampleGuardCounterProfile(elapsedMs = 0, clipDurationSeconds = 0) {
+  const durationSeconds = Math.max(0, Number(clipDurationSeconds) || 0);
+  if (!(durationSeconds > 0)) return null;
+  const elapsedSeconds = Math.max(0, Number(elapsedMs) || 0) / 1000;
+  const progress = clamp(elapsedSeconds / durationSeconds, 0, 1);
+  return Object.freeze({
+    profile: LONGSWORD_GUARD_COUNTER_PROFILE,
+    progress,
+    sourceTimeSeconds: durationSeconds * progress,
+    durationSeconds,
+    durationMs: durationSeconds * 1000,
+    complete: progress >= 1,
+    completionEvent: LONGSWORD_GUARD_COUNTER_PROFILE.completionEvent,
+  });
+}
+return Object.freeze({ GUARD_COUNTER_PROFILE_IDS, GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE, sampleGuardCounterProfile });
+})();
+
+// src/combat/guard-state-machine.js
+const __actionStudioModule47 = (() => {
+const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
+const { GUARD_TRANSITION_PROFILE_IDS } = __actionStudioModule49;
+const { GUARD_REACTION_VARIANTS, LONGSWORD_GUARD_REACTION_PROFILES, getGuardReactionProfile } = __actionStudioModule50;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule51;
+
+const GUARD_STATE_AUTHORITY_NOTE =
+  'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
+
+const GUARD_STATES = Object.freeze({
+  NEUTRAL: 'neutral',
+  ENTER: 'guard_enter',
+  HOLD: 'guard_hold',
+  BLOCK_HIT: 'guard_block_hit',
+  PARRY: 'guard_parry',
+  COUNTER: 'guard_counter',
+  RECOVER: 'guard_recover',
+  EXIT: 'guard_exit',
+});
+
+const GUARD_EVENTS = Object.freeze({
+  GUARD_PRESS: 'guard_press',
+  GUARD_RELEASE: 'guard_release',
+  ENTER_COMPLETE: 'enter_complete',
+  BLOCK_CONFIRMED: 'block_confirmed',
+  PARRY_CONFIRMED: 'parry_confirmed',
+  COUNTER_CONFIRMED: 'counter_confirmed',
+  REACTION_COMPLETE: 'reaction_complete',
+  COUNTER_COMPLETE: 'counter_complete',
+  RECOVER_COMPLETE: 'recover_complete',
+  EXIT_COMPLETE: 'exit_complete',
+  RESET: 'reset',
+});
+
+const GUARD_EVENT_AUTHORITY = Object.freeze({
+  [GUARD_EVENTS.GUARD_PRESS]: 'local-intent',
+  [GUARD_EVENTS.GUARD_RELEASE]: 'local-intent',
+  [GUARD_EVENTS.ENTER_COMPLETE]: 'presentation',
+  [GUARD_EVENTS.BLOCK_CONFIRMED]: 'authoritative-combat',
+  [GUARD_EVENTS.PARRY_CONFIRMED]: 'authoritative-combat',
+  [GUARD_EVENTS.COUNTER_CONFIRMED]: 'authoritative-combat',
+  [GUARD_EVENTS.REACTION_COMPLETE]: 'presentation',
+  [GUARD_EVENTS.COUNTER_COMPLETE]: 'presentation',
+  [GUARD_EVENTS.RECOVER_COMPLETE]: 'presentation',
+  [GUARD_EVENTS.EXIT_COMPLETE]: 'presentation',
+  [GUARD_EVENTS.RESET]: 'system',
+});
+
+function authoredGuardTransition(role, transitionProfileId) {
+  return Object.freeze({
+    role,
+    clipId: LONGSWORD_GUARD_BASE.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    transitionProfileId,
+    weaponMountProfileId: GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD,
+    authored: true,
+    authoredStage: 'G3.2',
+    inPlace: true,
+    loop: true,
+  });
+}
+
+function authoredGuardReaction(role, profile, extra = {}) {
+  return Object.freeze({
+    role,
+    clipId: profile.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    reactionProfileId: profile.id,
+    reactionVariant: profile.variant,
+    sourceWindow: profile.sourceWindow,
+    counterWindowSeconds: profile.counterWindowSeconds,
+    completionEvent: profile.completionEvent,
+    weaponMountProfileId: GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD,
+    authored: true,
+    authoredStage: 'G3.3.2',
+    inPlace: true,
+    loop: false,
+    ...extra,
+  });
+}
+
+function authoredGuardCounter() {
+  const profile = LONGSWORD_GUARD_COUNTER_PROFILE;
+  return Object.freeze({
+    role: 'guard-counter',
+    clipId: profile.clipId,
+    counterProfileId: profile.id,
+    sourceFamily: profile.sourceFamily,
+    completionEvent: profile.completionEvent,
+    correctionWeight: profile.correctionWeight,
+    weaponMountProfileId: profile.weaponMountProfileId,
+    authored: true,
+    authoredStage: profile.authoredStage,
+    inPlace: profile.inPlace,
+    loop: profile.loop,
+  });
+}
+
+const BLOCK_HIT_PROFILE = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
+const PARRY_PROFILE = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PARRY];
+const PERFECT_PARRY_PROFILE = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PERFECT_PARRY];
+
+const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
+  [GUARD_STATES.NEUTRAL]: Object.freeze({
+    role: 'neutral',
+    clipId: null,
+    authored: false,
+    inPlace: true,
+    loop: true,
+  }),
+  [GUARD_STATES.ENTER]: authoredGuardTransition('guard-enter', GUARD_TRANSITION_PROFILE_IDS.ENTER),
+  [GUARD_STATES.HOLD]: Object.freeze({
+    role: 'guard-hold',
+    clipId: LONGSWORD_GUARD_BASE.clipId,
+    correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
+    correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    weaponMountProfileId: GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD,
+    authored: LONGSWORD_GUARD_AUTHORING_STATE.authored === true,
+    authoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    inPlace: true,
+    loop: true,
+  }),
+  [GUARD_STATES.BLOCK_HIT]: authoredGuardReaction('block-hit', BLOCK_HIT_PROFILE),
+  [GUARD_STATES.PARRY]: authoredGuardReaction('parry-reaction', PARRY_PROFILE, {
+    variants: Object.freeze({
+      [GUARD_REACTION_VARIANTS.PARRY]: Object.freeze({
+        clipId: PARRY_PROFILE.clipId,
+        reactionProfileId: PARRY_PROFILE.id,
+      }),
+      [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: Object.freeze({
+        clipId: PERFECT_PARRY_PROFILE.clipId,
+        reactionProfileId: PERFECT_PARRY_PROFILE.id,
+      }),
+    }),
+  }),
+  [GUARD_STATES.COUNTER]: authoredGuardCounter(),
+  [GUARD_STATES.RECOVER]: authoredGuardTransition('guard-recover', GUARD_TRANSITION_PROFILE_IDS.RECOVER),
+  [GUARD_STATES.EXIT]: authoredGuardTransition('guard-exit', GUARD_TRANSITION_PROFILE_IDS.EXIT),
+});
+
+const GUARD_TRANSITION_GRAPH = Object.freeze({
+  [GUARD_STATES.NEUTRAL]: Object.freeze({
+    [GUARD_EVENTS.GUARD_PRESS]: GUARD_STATES.ENTER,
+  }),
+  [GUARD_STATES.ENTER]: Object.freeze({
+    [GUARD_EVENTS.GUARD_RELEASE]: GUARD_STATES.EXIT,
+    [GUARD_EVENTS.ENTER_COMPLETE]: GUARD_STATES.HOLD,
+  }),
+  [GUARD_STATES.HOLD]: Object.freeze({
+    [GUARD_EVENTS.GUARD_RELEASE]: GUARD_STATES.EXIT,
+    [GUARD_EVENTS.BLOCK_CONFIRMED]: GUARD_STATES.BLOCK_HIT,
+    [GUARD_EVENTS.PARRY_CONFIRMED]: GUARD_STATES.PARRY,
+  }),
+  [GUARD_STATES.BLOCK_HIT]: Object.freeze({
+    [GUARD_EVENTS.COUNTER_CONFIRMED]: GUARD_STATES.COUNTER,
+    [GUARD_EVENTS.REACTION_COMPLETE]: GUARD_STATES.RECOVER,
+  }),
+  [GUARD_STATES.PARRY]: Object.freeze({
+    [GUARD_EVENTS.COUNTER_CONFIRMED]: GUARD_STATES.COUNTER,
+    [GUARD_EVENTS.REACTION_COMPLETE]: GUARD_STATES.RECOVER,
+  }),
+  [GUARD_STATES.COUNTER]: Object.freeze({
+    [GUARD_EVENTS.COUNTER_COMPLETE]: GUARD_STATES.RECOVER,
+  }),
+  [GUARD_STATES.RECOVER]: Object.freeze({
+    [GUARD_EVENTS.RECOVER_COMPLETE]: GUARD_STATES.HOLD,
+  }),
+  [GUARD_STATES.EXIT]: Object.freeze({
+    [GUARD_EVENTS.GUARD_PRESS]: GUARD_STATES.ENTER,
+    [GUARD_EVENTS.EXIT_COMPLETE]: GUARD_STATES.NEUTRAL,
+  }),
+});
+
+function frozenPayload(payload) {
+  if (!payload || typeof payload !== 'object') return Object.freeze({});
+  return Object.freeze({ ...payload });
+}
+
+function canRecoverIntoConfirmedCounter(lastOutcome) {
+  return lastOutcome === 'block' || lastOutcome === 'parry';
+}
+
+function resolveDynamicTarget(state, event, guardHeld, lastOutcome) {
+  if (state === GUARD_STATES.ENTER && event === GUARD_EVENTS.ENTER_COMPLETE) {
+    return guardHeld ? GUARD_STATES.HOLD : GUARD_STATES.EXIT;
+  }
+  if (state === GUARD_STATES.RECOVER && event === GUARD_EVENTS.COUNTER_CONFIRMED) {
+    return canRecoverIntoConfirmedCounter(lastOutcome) ? GUARD_STATES.COUNTER : null;
+  }
+  if (state === GUARD_STATES.RECOVER && event === GUARD_EVENTS.RECOVER_COMPLETE) {
+    return guardHeld ? GUARD_STATES.HOLD : GUARD_STATES.EXIT;
+  }
+  if (state === GUARD_STATES.EXIT && event === GUARD_EVENTS.EXIT_COMPLETE) {
+    return guardHeld ? GUARD_STATES.ENTER : GUARD_STATES.NEUTRAL;
+  }
+  return GUARD_TRANSITION_GRAPH[state]?.[event] || null;
+}
+
+function outcomeForEvent(event) {
+  if (event === GUARD_EVENTS.BLOCK_CONFIRMED) return 'block';
+  if (event === GUARD_EVENTS.PARRY_CONFIRMED) return 'parry';
+  if (event === GUARD_EVENTS.COUNTER_CONFIRMED) return 'counter';
+  return null;
+}
+
+function getGuardPresentation(state, payload = {}) {
+  const baseline = LONGSWORD_GUARD_PRESENTATION[state]
+    || LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.NEUTRAL];
+  const reaction = getGuardReactionProfile(state, payload);
+  if (!reaction) return baseline;
+  if (baseline.reactionProfileId === reaction.id && baseline.clipId === reaction.clipId) return baseline;
+  return Object.freeze({
+    ...baseline,
+    clipId: reaction.clipId,
+    reactionProfileId: reaction.id,
+    reactionVariant: reaction.variant,
+    sourceWindow: reaction.sourceWindow,
+    counterWindowSeconds: reaction.counterWindowSeconds,
+    completionEvent: reaction.completionEvent,
+  });
+}
+
+function createGuardStateMachine(options = {}) {
+  let state = Object.values(GUARD_STATES).includes(options.initialState)
+    ? options.initialState
+    : GUARD_STATES.NEUTRAL;
+  let guardHeld = Boolean(options.guardHeld);
+  let elapsedMs = 0;
+  let sequence = 0;
+  let lastOutcome = null;
+  let lastTransition = null;
+  const listeners = new Set();
+
+  function snapshot() {
+    return Object.freeze({
+      state,
+      guardHeld,
+      elapsedMs,
+      sequence,
+      lastOutcome,
+      lastTransition,
+      presentation: getGuardPresentation(state, lastTransition?.payload || {}),
+      authority: GUARD_STATE_AUTHORITY_NOTE,
+    });
+  }
+
+  function emit() {
+    const value = snapshot();
+    for (const listener of listeners) listener(value);
+    return value;
+  }
+
+  function transition(event, target, payload) {
+    const from = state;
+    state = target;
+    elapsedMs = 0;
+    sequence += 1;
+    lastTransition = Object.freeze({
+      sequence,
+      event,
+      authority: GUARD_EVENT_AUTHORITY[event] || 'unknown',
+      from,
+      to: target,
+      payload: frozenPayload(payload),
+    });
+    return emit();
+  }
+
+  function send(event, payload = {}) {
+    if (!Object.values(GUARD_EVENTS).includes(event)) {
+      return Object.freeze({ accepted: false, transitioned: false, reason: 'unknown-event', snapshot: snapshot() });
+    }
+
+    if (event === GUARD_EVENTS.RESET) {
+      guardHeld = false;
+      lastOutcome = null;
+      const value = transition(event, GUARD_STATES.NEUTRAL, payload);
+      return Object.freeze({ accepted: true, transitioned: true, snapshot: value });
+    }
+
+    if (event === GUARD_EVENTS.GUARD_PRESS) guardHeld = true;
+    if (event === GUARD_EVENTS.GUARD_RELEASE) guardHeld = false;
+
+    const target = resolveDynamicTarget(state, event, guardHeld, lastOutcome);
+    if (target) {
+      const outcome = outcomeForEvent(event);
+      if (outcome) lastOutcome = outcome;
+      const value = transition(event, target, payload);
+      return Object.freeze({ accepted: true, transitioned: true, snapshot: value });
+    }
+
+    const intentOnly = (event === GUARD_EVENTS.GUARD_PRESS || event === GUARD_EVENTS.GUARD_RELEASE)
+      && [GUARD_STATES.BLOCK_HIT, GUARD_STATES.PARRY, GUARD_STATES.COUNTER, GUARD_STATES.RECOVER].includes(state);
+    if (intentOnly) {
+      const value = emit();
+      return Object.freeze({ accepted: true, transitioned: false, reason: 'intent-latched-until-recovery', snapshot: value });
+    }
+
+    return Object.freeze({ accepted: false, transitioned: false, reason: 'event-not-valid-for-state', snapshot: snapshot() });
+  }
+
+  return Object.freeze({
+    get state() { return state; },
+    get guardHeld() { return guardHeld; },
+    get snapshot() { return snapshot(); },
+    can(event) {
+      if (!Object.values(GUARD_EVENTS).includes(event)) return false;
+      if (event === GUARD_EVENTS.RESET) return true;
+      if ((event === GUARD_EVENTS.GUARD_PRESS || event === GUARD_EVENTS.GUARD_RELEASE)
+        && [GUARD_STATES.BLOCK_HIT, GUARD_STATES.PARRY, GUARD_STATES.COUNTER, GUARD_STATES.RECOVER].includes(state)) return true;
+      const simulatedHeld = event === GUARD_EVENTS.GUARD_PRESS
+        ? true
+        : event === GUARD_EVENTS.GUARD_RELEASE
+          ? false
+          : guardHeld;
+      return Boolean(resolveDynamicTarget(state, event, simulatedHeld, lastOutcome));
+    },
+    send,
+    update(deltaMs) {
+      elapsedMs += Math.max(0, Number(deltaMs) || 0);
+      return snapshot();
+    },
+    subscribe(listener) {
+      if (typeof listener !== 'function') return () => {};
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  });
+}
+return Object.freeze({ GUARD_STATE_AUTHORITY_NOTE, GUARD_STATES, GUARD_EVENTS, GUARD_EVENT_AUTHORITY, LONGSWORD_GUARD_PRESENTATION, GUARD_TRANSITION_GRAPH, getGuardPresentation, createGuardStateMachine });
+})();
+
+// src/combat/longsword-guard-correction.js
+const __actionStudioModule53 = (() => {
+const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = __actionStudioModule48;
+
+const DEG_TO_RAD = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
+const EPSILON = 1e-12;
+
+function finite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, finite(value)));
+}
+
+function normalizeQuaternionArray(input = [0, 0, 0, 1]) {
+  const values = Array.from(input || [0, 0, 0, 1], (value) => finite(value));
+  while (values.length < 4) values.push(values.length === 3 ? 1 : 0);
+  const length = Math.hypot(values[0], values[1], values[2], values[3]);
+  if (length <= EPSILON) return Object.freeze([0, 0, 0, 1]);
+  return Object.freeze(values.slice(0, 4).map((value) => value / length));
+}
+
+function quaternionAngleDegrees(input = [0, 0, 0, 1]) {
+  const quaternion = normalizeQuaternionArray(input);
+  const w = Math.min(1, Math.max(-1, Math.abs(quaternion[3])));
+  return 2 * Math.acos(w) * RAD_TO_DEG;
+}
+
+function quaternionFromEulerDegrees(input = {}) {
+  const x = finite(input.x) * DEG_TO_RAD * 0.5;
+  const y = finite(input.y) * DEG_TO_RAD * 0.5;
+  const z = finite(input.z) * DEG_TO_RAD * 0.5;
+  const c1 = Math.cos(x), c2 = Math.cos(y), c3 = Math.cos(z);
+  const s1 = Math.sin(x), s2 = Math.sin(y), s3 = Math.sin(z);
+  return normalizeQuaternionArray([
+    s1 * c2 * c3 + c1 * s2 * s3,
+    c1 * s2 * c3 - s1 * c2 * s3,
+    c1 * c2 * s3 + s1 * s2 * c3,
+    c1 * c2 * c3 - s1 * s2 * s3,
+  ]);
+}
+
+function scaleQuaternionOffset(input = [0, 0, 0, 1], weight = 1) {
+  const t = clamp01(weight);
+  let [x, y, z, w] = normalizeQuaternionArray(input);
+  if (w < 0) {
+    x = -x;
+    y = -y;
+    z = -z;
+    w = -w;
+  }
+  if (t <= EPSILON) return Object.freeze([0, 0, 0, 1]);
+  if (t >= 1 - EPSILON) return normalizeQuaternionArray([x, y, z, w]);
+
+  const halfAngle = Math.acos(Math.max(-1, Math.min(1, w)));
+  const sinHalfAngle = Math.sin(halfAngle);
+  if (Math.abs(sinHalfAngle) <= EPSILON) return Object.freeze([0, 0, 0, 1]);
+  const scaledHalfAngle = halfAngle * t;
+  const axisScale = Math.sin(scaledHalfAngle) / sinHalfAngle;
+  return normalizeQuaternionArray([
+    x * axisScale,
+    y * axisScale,
+    z * axisScale,
+    Math.cos(scaledHalfAngle),
+  ]);
+}
+
+function buildGuardQuaternionOffsets(eulerByBone = {}) {
+  const allowed = new Set(getLongswordGuardCorrectionBones());
+  return Object.freeze(Object.fromEntries(
+    Object.entries(eulerByBone)
+      .filter(([bone]) => allowed.has(bone))
+      .map(([bone, euler]) => [bone, quaternionFromEulerDegrees(euler)]),
+  ));
+}
+
+function validateGuardQuaternionOffsets(offsets = {}) {
+  const allowed = new Set(getLongswordGuardCorrectionBones());
+  const limits = LONGSWORD_GUARD_CORRECTION_SCOPE.maxLocalCorrectionDegrees;
+  const entries = [];
+  const invalidBones = [];
+  const overBudget = [];
+
+  for (const [bone, rawQuaternion] of Object.entries(offsets || {})) {
+    if (!allowed.has(bone)) {
+      invalidBones.push(bone);
+      continue;
+    }
+    const quaternion = normalizeQuaternionArray(rawQuaternion);
+    const angleDegrees = quaternionAngleDegrees(quaternion);
+    const budgetDegrees = finite(limits[bone], 0);
+    const withinBudget = angleDegrees <= budgetDegrees + 1e-6;
+    if (!withinBudget) overBudget.push(bone);
+    entries.push(Object.freeze({ bone, quaternion, angleDegrees, budgetDegrees, withinBudget }));
+  }
+
+  return Object.freeze({
+    valid: invalidBones.length === 0 && overBudget.length === 0,
+    invalidBones: Object.freeze(invalidBones),
+    overBudget: Object.freeze(overBudget),
+    entries: Object.freeze(entries),
+  });
+}
+
+function assertValidGuardOffsets(offsets) {
+  const validation = validateGuardQuaternionOffsets(offsets);
+  if (!validation.valid) {
+    const details = [
+      validation.invalidBones.length ? `invalid bones: ${validation.invalidBones.join(', ')}` : '',
+      validation.overBudget.length ? `over budget: ${validation.overBudget.join(', ')}` : '',
+    ].filter(Boolean).join(' · ');
+    throw new Error(`Invalid longsword Guard correction${details ? ` (${details})` : ''}`);
+  }
+  return validation;
+}
+
+function applyGuardQuaternionOffsetsWeighted(THREE, rig, offsets = {}, weight = 1) {
+  if (!THREE?.Quaternion) throw new Error('Guard correction requires THREE.Quaternion');
+  if (!rig?.bones) throw new Error('Guard correction requires a rig with bones');
+  const validation = assertValidGuardOffsets(offsets);
+  const blendWeight = clamp01(weight);
+
+  for (const entry of validation.entries) {
+    const bone = rig.bones[entry.bone];
+    if (!bone) throw new Error(`Target rig is missing Guard correction bone: ${entry.bone}`);
+    const weighted = scaleQuaternionOffset(entry.quaternion, blendWeight);
+    bone.quaternion.multiply(new THREE.Quaternion().fromArray(weighted)).normalize();
+  }
+  return Object.freeze({ ...validation, weight: blendWeight });
+}
+
+function applyGuardQuaternionOffsets(THREE, rig, offsets = {}) {
+  return applyGuardQuaternionOffsetsWeighted(THREE, rig, offsets, 1);
+}
+
+function createGuardAuthoringExport(eulerByBone = {}, diagnostics = {}) {
+  const offsets = buildGuardQuaternionOffsets(eulerByBone);
+  const validation = validateGuardQuaternionOffsets(offsets);
+  return Object.freeze({
+    authored: validation.valid,
+    baseSample: 0.5,
+    offsets,
+    eulerDegrees: Object.freeze(Object.fromEntries(
+      Object.entries(eulerByBone).map(([bone, value]) => [bone, Object.freeze({
+        x: finite(value?.x), y: finite(value?.y), z: finite(value?.z),
+      })]),
+    )),
+    validation,
+    diagnostics: Object.freeze({ ...diagnostics }),
+  });
+}
+return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quaternionFromEulerDegrees, scaleQuaternionOffset, buildGuardQuaternionOffsets, validateGuardQuaternionOffsets, applyGuardQuaternionOffsetsWeighted, applyGuardQuaternionOffsets, createGuardAuthoringExport });
+})();
+
+// src/combat/guard-presentation-runtime.js
+const __actionStudioModule52 = (() => {
+const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule47;
+const { sampleGuardPresentationWeights, sampleGuardTransitionProfile } = __actionStudioModule49;
+const { sampleGuardReactionProfile } = __actionStudioModule50;
+const { sampleGuardCounterProfile } = __actionStudioModule51;
+const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
+const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule53;
+
+function positiveDuration(character, clipId, fallback = 1) {
+  const value = Number(character?.getAnimationDuration?.(clipId));
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function requiredDuration(character, clipId, role) {
+  const value = Number(character?.getAnimationDuration?.(clipId));
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${role} requires registered animation ${clipId}`);
+  }
+  return value;
+}
+
+function wrappedTime(elapsedMs, durationSeconds) {
+  const duration = Math.max(1e-6, Number(durationSeconds) || 1);
+  const elapsed = Math.max(0, Number(elapsedMs) || 0) / 1000;
+  return elapsed % duration;
+}
+
+function reactionPayload(snapshot) {
+  return snapshot?.lastTransition?.payload || {};
+}
+
+function reactionCompletionPayload(report) {
+  return Object.freeze({
+    source: 'guard-presentation-runtime',
+    reactionProfileId: report?.reactionProfileId || null,
+    reactionVariant: report?.reactionVariant || null,
+    sourceTimeSeconds: Number(report?.sourceTimeSeconds) || 0,
+    counterWindowOpen: Boolean(report?.counterWindowOpen),
+  });
+}
+
+function counterCompletionPayload(report) {
+  return Object.freeze({
+    source: 'guard-presentation-runtime',
+    counterProfileId: report?.counterProfileId || null,
+    clipId: report?.clipId || null,
+    sourceTimeSeconds: Number(report?.sourceTimeSeconds) || 0,
+  });
+}
+
+function defaultReport(snapshot) {
+  return Object.freeze({
+    managed: false,
+    state: snapshot?.state || GUARD_STATES.NEUTRAL,
+    clipId: snapshot?.presentation?.clipId || null,
+    sourceTimeSeconds: 0,
+    correctionWeight: 0,
+    reactionOverlayWeight: 0,
+    reactionProfileId: null,
+    reactionVariant: null,
+    counterProfileId: null,
+    counterWindowOpen: false,
+    weaponMountProfileId: snapshot?.presentation?.weaponMountProfileId || null,
+    complete: false,
+    completionEvent: null,
+  });
+}
+
+function createGuardPresentationRuntime(THREE, options = {}) {
+  const machine = options.machine;
+  const character = options.character;
+  if (!machine?.update || !machine?.send) throw new Error('Guard presentation runtime requires a guard state machine');
+  if (!character?.sampleAnimation || !character?.getAnimationDuration) {
+    throw new Error('Guard presentation runtime requires an animation-capable character');
+  }
+
+  const guardOffsets = options.guardOffsets || LONGSWORD_GUARD_AUTHORING_STATE.offsets;
+  const applyCorrection = options.applyCorrection || ((weight) => (
+    applyGuardQuaternionOffsetsWeighted(THREE, character.rig, guardOffsets, weight)
+  ));
+  const applyWeaponMountProfile = typeof options.applyWeaponMountProfile === 'function'
+    ? options.applyWeaponMountProfile
+    : () => {};
+  const autoComplete = options.autoComplete !== false;
+  let lastAutoCompletionSequence = -1;
+  let lastStoppedSequence = -1;
+  let lastReport = defaultReport(machine.snapshot);
+
+  function preparePresentation(snapshot) {
+    const presentation = snapshot?.presentation || {};
+    applyWeaponMountProfile(presentation.weaponMountProfileId || null, snapshot);
+    return presentation;
+  }
+
+  function sampleStableGuard(snapshot, camera) {
+    const presentation = preparePresentation(snapshot);
+    const weights = sampleGuardPresentationWeights(snapshot.state, snapshot.elapsedMs);
+    const duration = positiveDuration(character, presentation.clipId, 1);
+    const sourceTimeSeconds = wrappedTime(snapshot.elapsedMs, duration);
+    character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
+      loop: presentation.loop !== false,
+      inPlace: presentation.inPlace !== false,
+    });
+    applyCorrection(weights.correctionWeight);
+    character.update?.(0, camera);
+    return Object.freeze({
+      managed: true,
+      state: snapshot.state,
+      clipId: presentation.clipId,
+      sourceTimeSeconds,
+      correctionWeight: weights.correctionWeight,
+      reactionOverlayWeight: weights.reactionOverlayWeight,
+      reactionProfileId: null,
+      reactionVariant: null,
+      counterProfileId: null,
+      counterWindowOpen: false,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
+      complete: false,
+      completionEvent: null,
+    });
+  }
+
+  function sampleTransition(snapshot, camera) {
+    const presentation = preparePresentation(snapshot);
+    const transition = sampleGuardTransitionProfile(snapshot.state, snapshot.elapsedMs);
+    if (!transition) return sampleStableGuard(snapshot, camera);
+    const duration = positiveDuration(character, presentation.clipId, 1);
+    const sourceTimeSeconds = wrappedTime(snapshot.elapsedMs, duration);
+    character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
+      loop: true,
+      inPlace: true,
+    });
+    applyCorrection(transition.weights.correctionWeight);
+    character.update?.(0, camera);
+    return Object.freeze({
+      managed: true,
+      state: snapshot.state,
+      clipId: presentation.clipId,
+      sourceTimeSeconds,
+      correctionWeight: transition.weights.correctionWeight,
+      reactionOverlayWeight: transition.weights.reactionOverlayWeight,
+      reactionProfileId: null,
+      reactionVariant: null,
+      counterProfileId: null,
+      counterWindowOpen: false,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
+      complete: transition.complete,
+      completionEvent: transition.completionEvent,
+    });
+  }
+
+  function sampleReaction(snapshot, camera) {
+    const payload = reactionPayload(snapshot);
+    const reaction = sampleGuardReactionProfile(snapshot.state, snapshot.elapsedMs, payload);
+    if (!reaction) return defaultReport(snapshot);
+    const presentation = preparePresentation(snapshot);
+    const clipId = reaction.profile.clipId;
+    const registeredDuration = positiveDuration(character, clipId, reaction.profile.sourceDurationSeconds);
+    if (registeredDuration + 1e-4 < reaction.profile.sourceWindow.endSeconds) {
+      throw new Error(`Guard reaction ${clipId} is shorter than its G3.3.2 source window`);
+    }
+    character.sampleAnimation(clipId, Math.min(reaction.sourceTimeSeconds, registeredDuration), {
+      loop: false,
+      inPlace: true,
+    });
+    applyCorrection(reaction.profile.correctionWeight);
+    character.update?.(0, camera);
+    return Object.freeze({
+      managed: true,
+      state: snapshot.state,
+      clipId: presentation.clipId,
+      sourceTimeSeconds: reaction.sourceTimeSeconds,
+      correctionWeight: reaction.profile.correctionWeight,
+      reactionOverlayWeight: 1,
+      reactionProfileId: reaction.profile.id,
+      reactionVariant: reaction.profile.variant,
+      counterProfileId: null,
+      counterWindowOpen: reaction.counterWindowOpen,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
+      complete: reaction.complete,
+      completionEvent: reaction.completionEvent,
+    });
+  }
+
+  function sampleCounter(snapshot, camera) {
+    const presentation = preparePresentation(snapshot);
+    const clipId = presentation.clipId;
+    const registeredDuration = requiredDuration(character, clipId, 'G3.4 Guard Counter');
+    const counter = sampleGuardCounterProfile(snapshot.elapsedMs, registeredDuration);
+    if (!counter) throw new Error(`G3.4 Guard Counter cannot sample ${clipId}`);
+    character.sampleAnimation(clipId, counter.sourceTimeSeconds, {
+      loop: false,
+      inPlace: true,
+    });
+    applyCorrection(counter.profile.correctionWeight);
+    character.update?.(0, camera);
+    return Object.freeze({
+      managed: true,
+      state: snapshot.state,
+      clipId,
+      sourceTimeSeconds: counter.sourceTimeSeconds,
+      correctionWeight: counter.profile.correctionWeight,
+      reactionOverlayWeight: 0,
+      reactionProfileId: null,
+      reactionVariant: null,
+      counterProfileId: counter.profile.id,
+      counterWindowOpen: false,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
+      complete: counter.complete,
+      completionEvent: counter.completionEvent,
+    });
+  }
+
+  function sampleSnapshot(snapshot = machine.snapshot, camera) {
+    if (snapshot.state === GUARD_STATES.BLOCK_HIT || snapshot.state === GUARD_STATES.PARRY) {
+      lastReport = sampleReaction(snapshot, camera);
+      return lastReport;
+    }
+    if (snapshot.state === GUARD_STATES.COUNTER) {
+      lastReport = sampleCounter(snapshot, camera);
+      return lastReport;
+    }
+    if (snapshot.state === GUARD_STATES.ENTER
+      || snapshot.state === GUARD_STATES.RECOVER
+      || snapshot.state === GUARD_STATES.EXIT) {
+      lastReport = sampleTransition(snapshot, camera);
+      return lastReport;
+    }
+    if (snapshot.state === GUARD_STATES.HOLD) {
+      lastReport = sampleStableGuard(snapshot, camera);
+      return lastReport;
+    }
+    if (snapshot.state === GUARD_STATES.NEUTRAL && lastStoppedSequence !== snapshot.sequence) {
+      character.stopAnimation?.();
+      lastStoppedSequence = snapshot.sequence;
+    }
+    lastReport = defaultReport(snapshot);
+    return lastReport;
+  }
+
+  function autoCompleteCurrent(snapshot, report, camera) {
+    if (!autoComplete || !report.complete || !report.completionEvent) return { snapshot, report };
+    if (lastAutoCompletionSequence === snapshot.sequence) return { snapshot, report };
+    lastAutoCompletionSequence = snapshot.sequence;
+    let payload = Object.freeze({ source: 'guard-presentation-runtime' });
+    if (report.reactionProfileId) payload = reactionCompletionPayload(report);
+    else if (report.counterProfileId) payload = counterCompletionPayload(report);
+    const result = machine.send(report.completionEvent, payload);
+    if (!result.accepted) return { snapshot, report };
+    const nextSnapshot = result.snapshot;
+    const nextReport = sampleSnapshot(nextSnapshot, camera);
+    return { snapshot: nextSnapshot, report: nextReport };
+  }
+
+  function update(deltaMs, camera) {
+    let snapshot = machine.update(Math.max(0, Number(deltaMs) || 0));
+    let report = sampleSnapshot(snapshot, camera);
+    ({ snapshot, report } = autoCompleteCurrent(snapshot, report, camera));
+    return Object.freeze({ snapshot, report });
+  }
+
+  function sync(camera) {
+    const snapshot = machine.snapshot;
+    const report = sampleSnapshot(snapshot, camera);
+    return Object.freeze({ snapshot, report });
+  }
+
+  return Object.freeze({
+    update,
+    sync,
+    get report() { return lastReport; },
+    get counterWindowOpen() { return Boolean(lastReport.counterWindowOpen); },
+  });
+}
+return Object.freeze({ createGuardPresentationRuntime });
+})();
+
+// src/combat/guard-weapon-mount-runtime.js
+const __actionStudioModule54 = (() => {
+const { applyMountCalibration } = __actionStudioModule3;
+
+function createGuardWeaponMountRuntime(options = {}) {
+  const weaponObject3d = options.weaponObject3d || options.weapon?.object3d || null;
+  const profiles = options.profiles || {};
+  if (!weaponObject3d) throw new Error('Guard weapon mount runtime requires a weapon Object3D');
+
+  let currentProfileId = null;
+  let applicationCount = 0;
+
+  function apply(profileId) {
+    const id = String(profileId || '');
+    if (!id) return Object.freeze({ applied: false, reason: 'no-profile', profileId: currentProfileId });
+    if (id === currentProfileId) {
+      return Object.freeze({ applied: false, reason: 'already-active', profileId: currentProfileId });
+    }
+    const calibration = profiles[id];
+    if (!calibration) throw new Error(`Unknown Guard weapon mount profile: ${id}`);
+    const normalized = applyMountCalibration(weaponObject3d, calibration);
+    currentProfileId = id;
+    applicationCount += 1;
+    return Object.freeze({
+      applied: true,
+      profileId: id,
+      calibration: normalized,
+      applicationCount,
+    });
+  }
+
+  return Object.freeze({
+    apply,
+    get currentProfileId() { return currentProfileId; },
+    get applicationCount() { return applicationCount; },
+  });
+}
+return Object.freeze({ createGuardWeaponMountRuntime });
+})();
+
+// tools/action-studio/studio-guard-runtime-controller.js
+const __actionStudioModule46 = (() => {
+const { DEFAULT_KAYKIT_SWORD_MOUNT } = __actionStudioModule15;
+const { applyMountCalibration } = __actionStudioModule3;
+const { loadKayKitAnimationLibrary } = __actionStudioModule11;
+const { loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
+const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
+const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule47;
+const { createGuardPresentationRuntime } = __actionStudioModule52;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule51;
+const { createGuardWeaponMountRuntime } = __actionStudioModule54;
+
+const MODE_LABELS = Object.freeze({
+  hold: 'Guard Hold',
+  block: 'Block Hit',
+  parry: 'Parry',
+  perfect: 'Perfect Parry',
+  counter: 'Counter',
+});
+
+function captureMountCalibration(object3d) {
+  return {
+    position: {
+      x: Number(object3d?.position?.x) || 0,
+      y: Number(object3d?.position?.y) || 0,
+      z: Number(object3d?.position?.z) || 0,
+    },
+    rotation: {
+      x: Number(object3d?.rotation?.x) || 0,
+      y: Number(object3d?.rotation?.y) || 0,
+      z: Number(object3d?.rotation?.z) || 0,
+    },
+    scale: {
+      x: Number(object3d?.scale?.x) || 1,
+      y: Number(object3d?.scale?.y) || 1,
+      z: Number(object3d?.scale?.z) || 1,
+    },
+  };
+}
+
+function installGuardPanel() {
+  if (document.getElementById('guardRuntimePanel')) return document.getElementById('guardRuntimePanel');
+  const quickActions = document.querySelector('.quick-actions');
+  if (!quickActions) return null;
+
+  const legacyGuardRow = quickActions.querySelector('.secondary-row');
+  legacyGuardRow?.remove();
+
+  quickActions.insertAdjacentHTML('afterend', `
+    <section id="guardRuntimePanel" class="panel guard-runtime-panel" data-stage="G3.4">
+      <div class="panel-title"><span>Guard Runtime · G3.4</span><small>Skyrim Guard ↔ KayKit Counter</small></div>
+      <p class="blocking-intro">真正 Guard FSM 預覽。Block / Parry 使用 Skyrim Guard family；Counter 只會在預覽送出 authoritative <b>COUNTER_CONFIRMED</b> 後進入 KayKit <b>Melee_Block_Attack</b>，完成後回到 Skyrim Recover / Hold。</p>
+      <div class="button-grid three">
+        <button data-guard-runtime="hold">Guard Hold</button>
+        <button data-guard-runtime="block">Block Hit</button>
+        <button data-guard-runtime="parry">Parry</button>
+      </div>
+      <div class="button-grid two secondary-row">
+        <button data-guard-runtime="perfect">Perfect Parry</button>
+        <button data-guard-runtime="counter" class="primary">▶ Counter</button>
+      </div>
+      <div id="guardRuntimeStatus" class="status-line">G3.4 · assets load on first preview</div>
+      <div id="guardRuntimeDetail" class="status-line">Counter = Melee_Block_Attack · presentation never self-confirms combat authority</div>
+    </section>
+  `);
+  return document.getElementById('guardRuntimePanel');
+}
+
+function createStudioGuardRuntimeController(THREE, options = {}) {
+  const {
+    character,
+    pausePlayer = () => {},
+    clearWeaponTrail = () => {},
+    updatePlaybackButtons = () => {},
+    setAnimationSource = () => {},
+    applyCurrentEvaluation = () => {},
+  } = options;
+  if (!character?.sampleAnimation || !character?.registerAnimations) {
+    throw new Error('Action Studio Guard Runtime requires an animation-capable character');
+  }
+
+  const panel = installGuardPanel();
+  const status = document.getElementById('guardRuntimeStatus');
+  const detail = document.getElementById('guardRuntimeDetail');
+  const weaponObject3d = character.sockets?.HAND_R?.children?.[0] || null;
+  let machine = null;
+  let runtime = null;
+  let mountRuntime = null;
+  let loadPromise = null;
+  let loaded = false;
+  let active = false;
+  let activeMode = null;
+  let lastFrameAt = performance.now();
+  let restoreMountCalibration = null;
+  let lastResult = null;
+
+  function setStatus(message, isError = false) {
+    if (status) {
+      status.textContent = message;
+      status.classList.toggle('error', isError);
+    }
+  }
+
+  function setActiveButton(mode) {
+    document.querySelectorAll('[data-guard-runtime]').forEach((button) => {
+      button.classList.toggle('on', Boolean(mode) && button.dataset.guardRuntime === mode);
+    });
+  }
+
+  function updateReadout(result) {
+    if (!result) return;
+    const { snapshot, report } = result;
+    panel?.setAttribute('data-guard-state', snapshot.state);
+    panel?.setAttribute('data-guard-clip', report.clipId || '');
+    panel?.setAttribute('data-guard-mount', report.weaponMountProfileId || '');
+    if (report.counterProfileId) panel?.setAttribute('data-counter-profile', report.counterProfileId);
+    const clipLabel = String(report.clipId || snapshot.presentation?.clipId || '—').replace(/^SKYRIM_GUARD\//, '');
+    const sourceSeconds = Number(report.sourceTimeSeconds) || 0;
+    document.getElementById('clipNow').textContent = clipLabel.toUpperCase();
+    document.getElementById('phaseNow').textContent = `GUARD RUNTIME · ${snapshot.state.toUpperCase()}`;
+    if (detail) {
+      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${report.counterProfileId ? ` · ${report.counterProfileId}` : ''}`;
+    }
+  }
+
+  async function ensureLoaded() {
+    if (loaded) return;
+    if (loadPromise) return loadPromise;
+    if (!THREE?.GLTFLoader) throw new Error('Action Studio Guard Runtime requires Three.js GLTFLoader');
+    if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
+    if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
+
+    setStatus('G3.4 · loading Skyrim Guard + KayKit melee…');
+    loadPromise = (async () => {
+      const loader = new THREE.GLTFLoader();
+      const [skyrim, kaykit] = await Promise.all([
+        loadSkyrimConvertedAnimationLibrary(loader, {
+          THREE,
+          rig: character.rig,
+          baseUrl: '../../assets/skyrim/guard/converted/',
+          fps: 30,
+        }),
+        loadKayKitAnimationLibrary(loader, {
+          baseUrl: '../../assets/kaykit/animations/',
+          packIds: ['melee'],
+        }),
+      ]);
+      character.registerAnimations(skyrim);
+      character.registerAnimations(kaykit);
+
+      const counterClip = kaykit.clips.get('Melee_Block_Attack');
+      if (!counterClip) throw new Error('G3.4 requires KayKit Melee_Block_Attack');
+      const bind = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle')?.userData?.weaponBindCalibration;
+      if (!bind?.correctionQuaternion) {
+        throw new Error('G3.4 requires the accepted Skyrim Guard weapon-bind calibration');
+      }
+      const skyrimMount = composeSkyrimWeaponMountCalibration(
+        THREE,
+        DEFAULT_KAYKIT_SWORD_MOUNT,
+        bind,
+      );
+      mountRuntime = createGuardWeaponMountRuntime({
+        weaponObject3d,
+        profiles: {
+          [GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD]: skyrimMount,
+          [GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT]: DEFAULT_KAYKIT_SWORD_MOUNT,
+        },
+      });
+      machine = createGuardStateMachine();
+      runtime = createGuardPresentationRuntime(THREE, {
+        machine,
+        character,
+        applyWeaponMountProfile(profileId) {
+          const result = mountRuntime.apply(profileId);
+          if (result.applied) weaponObject3d.updateMatrixWorld?.(true);
+        },
+      });
+      loaded = true;
+      setStatus(`G3.4 ready · Counter Melee_Block_Attack ${Number(counterClip.duration).toFixed(3)}s`);
+      panel?.setAttribute('data-g34-ready', 'true');
+    })().catch((error) => {
+      loadPromise = null;
+      setStatus(`G3.4 load failed · ${error.message}`, true);
+      panel?.setAttribute('data-g34-ready', 'false');
+      throw error;
+    });
+    return loadPromise;
+  }
+
+  function resetMachine() {
+    machine.send(GUARD_EVENTS.RESET, { source: 'action-studio-guard-runtime' });
+    return runtime.sync();
+  }
+
+  function forceHold() {
+    resetMachine();
+    machine.send(GUARD_EVENTS.GUARD_PRESS, { source: 'action-studio-guard-runtime' });
+    runtime.sync();
+    let result = runtime.update(180);
+    if (result.snapshot.state !== GUARD_STATES.HOLD) result = runtime.update(180);
+    if (result.snapshot.state !== GUARD_STATES.HOLD) {
+      throw new Error(`Action Studio Guard Enter did not settle to Hold: ${result.snapshot.state}`);
+    }
+    return result;
+  }
+
+  function dispatchPreviewMode(mode) {
+    if (mode === 'hold') {
+      resetMachine();
+      machine.send(GUARD_EVENTS.GUARD_PRESS, { source: 'action-studio-guard-runtime' });
+      return runtime.sync();
+    }
+
+    forceHold();
+    if (mode === 'block') {
+      machine.send(GUARD_EVENTS.BLOCK_CONFIRMED, {
+        source: 'action-studio-preview-authority',
+        verification: 'action-studio-block-hit',
+      });
+    } else if (mode === 'parry' || mode === 'perfect') {
+      machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
+        source: 'action-studio-preview-authority',
+        perfect: mode === 'perfect',
+        verification: `action-studio-${mode}`,
+      });
+    } else if (mode === 'counter') {
+      machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
+        source: 'action-studio-preview-authority',
+        perfect: false,
+        verification: 'action-studio-counter-entry-parry',
+      });
+      runtime.sync();
+      const confirmed = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, {
+        source: 'action-studio-preview-authority',
+        verification: 'action-studio-g34-counter',
+      });
+      if (!confirmed.accepted || confirmed.snapshot.state !== GUARD_STATES.COUNTER) {
+        throw new Error(`Action Studio COUNTER_CONFIRMED rejected: ${confirmed.snapshot.state}`);
+      }
+    } else {
+      throw new Error(`Unknown Guard Runtime preview mode: ${mode}`);
+    }
+    return runtime.sync();
+  }
+
+  async function start(mode) {
+    if (!(mode in MODE_LABELS)) throw new Error(`Unknown Guard Runtime mode: ${mode}`);
+    await ensureLoaded();
+    pausePlayer();
+    clearWeaponTrail();
+    character.stopAnimation?.();
+    restoreMountCalibration = captureMountCalibration(weaponObject3d);
+    active = true;
+    activeMode = mode;
+    lastFrameAt = performance.now();
+    setAnimationSource('guard-runtime');
+    setActiveButton(mode);
+    lastResult = dispatchPreviewMode(mode);
+    updateReadout(lastResult);
+    setStatus(`${MODE_LABELS[mode]} · real Guard FSM${mode === 'counter' ? ' · preview authority sent COUNTER_CONFIRMED' : ''}`);
+    updatePlaybackButtons();
+    return lastResult;
+  }
+
+  function deactivate(options = {}) {
+    if (!active && !options.force) return;
+    active = false;
+    activeMode = null;
+    setActiveButton(null);
+    if (machine && runtime) resetMachine();
+    character.stopAnimation?.();
+    if (restoreMountCalibration && weaponObject3d) {
+      applyMountCalibration(weaponObject3d, restoreMountCalibration);
+      weaponObject3d.updateMatrixWorld?.(true);
+    }
+    restoreMountCalibration = null;
+    if (options.restoreEvaluation !== false) applyCurrentEvaluation();
+    if (!options.quiet) setStatus('G3.4 ready · choose a Guard runtime preview');
+  }
+
+  document.querySelectorAll('[data-guard-runtime]').forEach((button) => {
+    button.addEventListener('click', () => {
+      start(button.dataset.guardRuntime).catch((error) => setStatus(error.message, true));
+    });
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!active) return;
+    if (event.target.closest?.('[data-guard-runtime], #guardRuntimePanel, .stage-shell')) return;
+    deactivate({ quiet: true });
+  }, true);
+
+  function frame(now) {
+    const deltaMs = Math.min(50, Math.max(0, now - lastFrameAt));
+    lastFrameAt = now;
+    if (active && runtime) {
+      try {
+        lastResult = runtime.update(deltaMs);
+        updateReadout(lastResult);
+      } catch (error) {
+        setStatus(`Guard Runtime stopped · ${error.message}`, true);
+        deactivate({ quiet: true });
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  if (typeof window !== 'undefined') {
+    window.__ACTION_STUDIO_GUARD_RUNTIME__ = {
+      start,
+      deactivate,
+      get active() { return active; },
+      get mode() { return activeMode; },
+      get snapshot() { return machine?.snapshot || null; },
+      get report() { return lastResult?.report || null; },
+      get ready() { return loaded; },
+    };
+  }
+
+  return Object.freeze({
+    start,
+    deactivate,
+    get active() { return active; },
+    get mode() { return activeMode; },
+    get snapshot() { return machine?.snapshot || null; },
+    get report() { return lastResult?.report || null; },
+    get ready() { return loaded; },
+  });
+}
+return Object.freeze({ createStudioGuardRuntimeController });
+})();
+
 // tools/action-studio/studio-external-animation-controller.js
 const __actionStudioModule36 = (() => {
 const { createFittedAnimationBinding } = __actionStudioModule19;
@@ -9576,6 +11182,7 @@ const { SKYRIM_GUARD_CONVERTED_FILES, importSkyrimConvertedAnimationFile, loadSk
 const { getCanonicalMotionContactSeconds, getLongswordMotionMetadata } = __actionStudioModule43;
 const { readAnimationBindingView } = __actionStudioModule44;
 const { installStudioSkyrimBridgeControls } = __actionStudioModule45;
+const { createStudioGuardRuntimeController } = __actionStudioModule46;
 
 const SOURCE_INFO = Object.freeze({
   ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
@@ -9644,6 +11251,15 @@ function createStudioExternalAnimationController(options) {
   let hitstopReleaseTimer = null;
   let naturalPreviewAction = null;
   let naturalPreviewToken = 0;
+
+  const guardRuntime = createStudioGuardRuntimeController(THREE, {
+    character,
+    pausePlayer,
+    clearWeaponTrail,
+    updatePlaybackButtons,
+    setAnimationSource,
+    applyCurrentEvaluation,
+  });
 
   function setStatus(message, isError = false) {
     status.textContent = message;
@@ -9982,6 +11598,7 @@ function createStudioExternalAnimationController(options) {
 
   return {
     get libraries() { return libraries; },
+    get guardRuntime() { return guardRuntime; },
     hasLoaded: (source) => libraries.has(source),
     isAvailable,
     ensureBinding,
