@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   classifySkyrimPoseEquivalence,
+  classifySkyrimWeaponSocketEquivalence,
   classifyTriangleGuardSample,
   decideSkyrimGuardAdoption,
 } from '../src/combat/skyrim-guard-adoption-review.js';
@@ -11,6 +12,12 @@ test('pose equivalence separates good, warning, and bad retarget fidelity', () =
   assert.equal(classifySkyrimPoseEquivalence({ meanDegrees: 4, p95Degrees: 8, maxDegrees: 12 }).status, 'good');
   assert.equal(classifySkyrimPoseEquivalence({ meanDegrees: 11, p95Degrees: 20, maxDegrees: 32 }).status, 'warning');
   assert.equal(classifySkyrimPoseEquivalence({ meanDegrees: 18, p95Degrees: 36, maxDegrees: 58 }).status, 'bad');
+});
+
+test('weapon socket equivalence blocks large helper-axis mismatch', () => {
+  assert.equal(classifySkyrimWeaponSocketEquivalence({ maxDegrees: 8 }).status, 'good');
+  assert.equal(classifySkyrimWeaponSocketEquivalence({ maxDegrees: 24 }).status, 'warning');
+  assert.equal(classifySkyrimWeaponSocketEquivalence({ maxDegrees: 77 }).status, 'bad');
 });
 
 test('triangle guard sample accepts compact forward threatening geometry', () => {
@@ -53,9 +60,20 @@ test('adoption stays pending when technical source-target equivalence is bad', (
   assert.equal(result.reason, 'technical-equivalence-not-accepted');
 });
 
+test('adoption stays pending when weapon helper and sword socket are not equivalent', () => {
+  const result = decideSkyrimGuardAdoption({
+    equivalenceStatus: 'warning',
+    weaponSocketStatus: 'bad',
+    suitabilityStatuses: ['bad', 'bad'],
+  });
+  assert.equal(result.decision, 'PENDING');
+  assert.equal(result.reason, 'weapon-socket-equivalence-not-accepted');
+});
+
 test('usable equivalent source with local guard corrections becomes ADOPT WITH CORRECTIONS', () => {
   const result = decideSkyrimGuardAdoption({
     equivalenceStatus: 'good',
+    weaponSocketStatus: 'good',
     suitabilityStatuses: ['warning', 'warning', 'warning'],
   });
   assert.equal(result.decision, 'ADOPT WITH CORRECTIONS');
