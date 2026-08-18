@@ -14,6 +14,10 @@ import {
   GUARD_REACTION_PROFILE_IDS,
   GUARD_REACTION_VARIANTS,
 } from '../src/combat/guard-reaction-presentation.js';
+import {
+  GUARD_COUNTER_PROFILE_IDS,
+  GUARD_WEAPON_MOUNT_PROFILE_IDS,
+} from '../src/combat/guard-counter-presentation.js';
 
 test('G3.1 enters and exits the canonical Skyrim guard hold', () => {
   const machine = createGuardStateMachine();
@@ -28,6 +32,7 @@ test('G3.1 enters and exits the canonical Skyrim guard hold', () => {
   assert.equal(hold.authored, true);
   assert.equal(hold.loop, true);
   assert.equal(hold.inPlace, true);
+  assert.equal(hold.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD);
 
   assert.equal(machine.send(GUARD_EVENTS.GUARD_RELEASE).snapshot.state, GUARD_STATES.EXIT);
   assert.equal(machine.send(GUARD_EVENTS.EXIT_COMPLETE).snapshot.state, GUARD_STATES.NEUTRAL);
@@ -61,7 +66,12 @@ test('G3.1 authoritative parry may chain into authoritative counter then return 
   machine.send(GUARD_EVENTS.ENTER_COMPLETE);
 
   assert.equal(machine.send(GUARD_EVENTS.PARRY_CONFIRMED).snapshot.state, GUARD_STATES.PARRY);
-  assert.equal(machine.send(GUARD_EVENTS.COUNTER_CONFIRMED).snapshot.state, GUARD_STATES.COUNTER);
+  const counter = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, { authorityTick: 77 });
+  assert.equal(counter.snapshot.state, GUARD_STATES.COUNTER);
+  assert.equal(counter.snapshot.presentation.clipId, 'Melee_Block_Attack');
+  assert.equal(counter.snapshot.presentation.counterProfileId, GUARD_COUNTER_PROFILE_IDS.LONGSWORD);
+  assert.equal(counter.snapshot.presentation.authoredStage, 'G3.4');
+  assert.equal(counter.snapshot.lastTransition.authority, 'authoritative-combat');
   assert.equal(machine.send(GUARD_EVENTS.COUNTER_COMPLETE).snapshot.state, GUARD_STATES.RECOVER);
   assert.equal(machine.send(GUARD_EVENTS.RECOVER_COMPLETE).snapshot.state, GUARD_STATES.HOLD);
   assert.equal(machine.snapshot.lastOutcome, 'counter');
@@ -83,6 +93,7 @@ test('G3.1 accepts a delayed authoritative counter after local reaction already 
   assert.equal(counter.snapshot.state, GUARD_STATES.COUNTER);
   assert.equal(counter.snapshot.lastOutcome, 'counter');
   assert.equal(counter.snapshot.lastTransition.payload.authorityTick, 912);
+  assert.equal(counter.snapshot.presentation.clipId, 'Melee_Block_Attack');
 });
 
 test('G3.1 rejects combat outcomes outside valid guard reaction states', () => {
@@ -109,11 +120,12 @@ test('G3.1 re-press during exit re-enters guard without transient neutral', () =
   assert.equal(machine.guardHeld, true);
 });
 
-test('G3.2 authors enter/recover/exit while G3.3.2 promotes Block and Parry reactions', () => {
+test('G3.4 authors Counter while preserving G3.2 transitions and G3.3.2 reactions', () => {
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.GUARD_PRESS], 'local-intent');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.BLOCK_CONFIRMED], 'authoritative-combat');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.PARRY_CONFIRMED], 'authoritative-combat');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.COUNTER_CONFIRMED], 'authoritative-combat');
+  assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.COUNTER_COMPLETE], 'presentation');
 
   const enter = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.ENTER];
   const recover = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.RECOVER];
@@ -125,6 +137,7 @@ test('G3.2 authors enter/recover/exit while G3.3.2 promotes Block and Parry reac
     assert.equal(presentation.correctionLayerId, LONGSWORD_GUARD_BASE.correctionLayerId);
     assert.equal(presentation.inPlace, true);
     assert.equal(presentation.loop, true);
+    assert.equal(presentation.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD);
   }
   assert.equal(enter.transitionProfileId, GUARD_TRANSITION_PROFILE_IDS.ENTER);
   assert.equal(recover.transitionProfileId, GUARD_TRANSITION_PROFILE_IDS.RECOVER);
@@ -137,6 +150,7 @@ test('G3.2 authors enter/recover/exit while G3.3.2 promotes Block and Parry reac
   assert.equal(block.reactionProfileId, GUARD_REACTION_PROFILE_IDS.BLOCK_HIT);
   assert.equal(block.reactionVariant, GUARD_REACTION_VARIANTS.BLOCK_HIT);
   assert.equal(block.loop, false);
+  assert.equal(block.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD);
 
   const parry = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.PARRY];
   assert.equal(parry.authored, true);
@@ -150,7 +164,15 @@ test('G3.2 authors enter/recover/exit while G3.3.2 promotes Block and Parry reac
   assert.equal(perfect.reactionProfileId, GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY);
   assert.equal(perfect.reactionVariant, GUARD_REACTION_VARIANTS.PERFECT_PARRY);
 
-  assert.equal(LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.COUNTER].plannedStage, 'G3.4');
+  const counter = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.COUNTER];
+  assert.equal(counter.authored, true);
+  assert.equal(counter.authoredStage, 'G3.4');
+  assert.equal(counter.clipId, 'Melee_Block_Attack');
+  assert.equal(counter.counterProfileId, GUARD_COUNTER_PROFILE_IDS.LONGSWORD);
+  assert.equal(counter.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT);
+  assert.equal(counter.correctionWeight, 0);
+  assert.equal(counter.loop, false);
+  assert.equal(counter.inPlace, true);
 });
 
 test('G3.3.2 preserves the authoritative Perfect Parry payload in the active PARRY snapshot', () => {

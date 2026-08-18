@@ -7,12 +7,21 @@ import {
   sampleGuardTransitionProfile,
 } from './guard-transition-presentation.js';
 import { sampleGuardReactionProfile } from './guard-reaction-presentation.js';
+import { sampleGuardCounterProfile } from './guard-counter-presentation.js';
 import { LONGSWORD_GUARD_AUTHORING_STATE } from './longsword-guard-metadata.js';
 import { applyGuardQuaternionOffsetsWeighted } from './longsword-guard-correction.js';
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function requiredDuration(character, clipId, role) {
+  const value = Number(character?.getAnimationDuration?.(clipId));
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${role} requires registered animation ${clipId}`);
+  }
+  return value;
 }
 
 function wrappedTime(elapsedMs, durationSeconds) {
@@ -25,13 +34,22 @@ function reactionPayload(snapshot) {
   return snapshot?.lastTransition?.payload || {};
 }
 
-function completionPayload(sample) {
+function reactionCompletionPayload(report) {
   return Object.freeze({
     source: 'guard-presentation-runtime',
-    reactionProfileId: sample?.profile?.id || null,
-    reactionVariant: sample?.profile?.variant || null,
-    sourceTimeSeconds: Number(sample?.sourceTimeSeconds) || 0,
-    counterWindowOpen: Boolean(sample?.counterWindowOpen),
+    reactionProfileId: report?.reactionProfileId || null,
+    reactionVariant: report?.reactionVariant || null,
+    sourceTimeSeconds: Number(report?.sourceTimeSeconds) || 0,
+    counterWindowOpen: Boolean(report?.counterWindowOpen),
+  });
+}
+
+function counterCompletionPayload(report) {
+  return Object.freeze({
+    source: 'guard-presentation-runtime',
+    counterProfileId: report?.counterProfileId || null,
+    clipId: report?.clipId || null,
+    sourceTimeSeconds: Number(report?.sourceTimeSeconds) || 0,
   });
 }
 
@@ -45,7 +63,9 @@ function defaultReport(snapshot) {
     reactionOverlayWeight: 0,
     reactionProfileId: null,
     reactionVariant: null,
+    counterProfileId: null,
     counterWindowOpen: false,
+    weaponMountProfileId: snapshot?.presentation?.weaponMountProfileId || null,
     complete: false,
     completionEvent: null,
   });
@@ -63,13 +83,22 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
   const applyCorrection = options.applyCorrection || ((weight) => (
     applyGuardQuaternionOffsetsWeighted(THREE, character.rig, guardOffsets, weight)
   ));
+  const applyWeaponMountProfile = typeof options.applyWeaponMountProfile === 'function'
+    ? options.applyWeaponMountProfile
+    : () => {};
   const autoComplete = options.autoComplete !== false;
   let lastAutoCompletionSequence = -1;
   let lastStoppedSequence = -1;
   let lastReport = defaultReport(machine.snapshot);
 
+  function preparePresentation(snapshot) {
+    const presentation = snapshot?.presentation || {};
+    applyWeaponMountProfile(presentation.weaponMountProfileId || null, snapshot);
+    return presentation;
+  }
+
   function sampleStableGuard(snapshot, camera) {
-    const presentation = snapshot.presentation;
+    const presentation = preparePresentation(snapshot);
     const weights = sampleGuardPresentationWeights(snapshot.state, snapshot.elapsedMs);
     const duration = positiveDuration(character, presentation.clipId, 1);
     const sourceTimeSeconds = wrappedTime(snapshot.elapsedMs, duration);
@@ -88,14 +117,16 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       reactionOverlayWeight: weights.reactionOverlayWeight,
       reactionProfileId: null,
       reactionVariant: null,
+      counterProfileId: null,
       counterWindowOpen: false,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: false,
       completionEvent: null,
     });
   }
 
   function sampleTransition(snapshot, camera) {
-    const presentation = snapshot.presentation;
+    const presentation = preparePresentation(snapshot);
     const transition = sampleGuardTransitionProfile(snapshot.state, snapshot.elapsedMs);
     if (!transition) return sampleStableGuard(snapshot, camera);
     const duration = positiveDuration(character, presentation.clipId, 1);
@@ -115,7 +146,9 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       reactionOverlayWeight: transition.weights.reactionOverlayWeight,
       reactionProfileId: null,
       reactionVariant: null,
+      counterProfileId: null,
       counterWindowOpen: false,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: transition.complete,
       completionEvent: transition.completionEvent,
     });
@@ -125,7 +158,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     const payload = reactionPayload(snapshot);
     const reaction = sampleGuardReactionProfile(snapshot.state, snapshot.elapsedMs, payload);
     if (!reaction) return defaultReport(snapshot);
-    const presentation = snapshot.presentation;
+    const presentation = preparePresentation(snapshot);
     const clipId = reaction.profile.clipId;
     const registeredDuration = positiveDuration(character, clipId, reaction.profile.sourceDurationSeconds);
     if (registeredDuration + 1e-4 < reaction.profile.sourceWindow.endSeconds) {
@@ -146,15 +179,50 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       reactionOverlayWeight: 1,
       reactionProfileId: reaction.profile.id,
       reactionVariant: reaction.profile.variant,
+      counterProfileId: null,
       counterWindowOpen: reaction.counterWindowOpen,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: reaction.complete,
       completionEvent: reaction.completionEvent,
+    });
+  }
+
+  function sampleCounter(snapshot, camera) {
+    const presentation = preparePresentation(snapshot);
+    const clipId = presentation.clipId;
+    const registeredDuration = requiredDuration(character, clipId, 'G3.4 Guard Counter');
+    const counter = sampleGuardCounterProfile(snapshot.elapsedMs, registeredDuration);
+    if (!counter) throw new Error(`G3.4 Guard Counter cannot sample ${clipId}`);
+    character.sampleAnimation(clipId, counter.sourceTimeSeconds, {
+      loop: false,
+      inPlace: true,
+    });
+    applyCorrection(counter.profile.correctionWeight);
+    character.update?.(0, camera);
+    return Object.freeze({
+      managed: true,
+      state: snapshot.state,
+      clipId,
+      sourceTimeSeconds: counter.sourceTimeSeconds,
+      correctionWeight: counter.profile.correctionWeight,
+      reactionOverlayWeight: 0,
+      reactionProfileId: null,
+      reactionVariant: null,
+      counterProfileId: counter.profile.id,
+      counterWindowOpen: false,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
+      complete: counter.complete,
+      completionEvent: counter.completionEvent,
     });
   }
 
   function sampleSnapshot(snapshot = machine.snapshot, camera) {
     if (snapshot.state === GUARD_STATES.BLOCK_HIT || snapshot.state === GUARD_STATES.PARRY) {
       lastReport = sampleReaction(snapshot, camera);
+      return lastReport;
+    }
+    if (snapshot.state === GUARD_STATES.COUNTER) {
+      lastReport = sampleCounter(snapshot, camera);
       return lastReport;
     }
     if (snapshot.state === GUARD_STATES.ENTER
@@ -167,8 +235,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       lastReport = sampleStableGuard(snapshot, camera);
       return lastReport;
     }
-    if ((snapshot.state === GUARD_STATES.NEUTRAL || snapshot.state === GUARD_STATES.COUNTER)
-      && lastStoppedSequence !== snapshot.sequence) {
+    if (snapshot.state === GUARD_STATES.NEUTRAL && lastStoppedSequence !== snapshot.sequence) {
       character.stopAnimation?.();
       lastStoppedSequence = snapshot.sequence;
     }
@@ -180,14 +247,9 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     if (!autoComplete || !report.complete || !report.completionEvent) return { snapshot, report };
     if (lastAutoCompletionSequence === snapshot.sequence) return { snapshot, report };
     lastAutoCompletionSequence = snapshot.sequence;
-    const payload = report.reactionProfileId ? completionPayload({
-      profile: {
-        id: report.reactionProfileId,
-        variant: report.reactionVariant,
-      },
-      sourceTimeSeconds: report.sourceTimeSeconds,
-      counterWindowOpen: report.counterWindowOpen,
-    }) : Object.freeze({ source: 'guard-presentation-runtime' });
+    let payload = Object.freeze({ source: 'guard-presentation-runtime' });
+    if (report.reactionProfileId) payload = reactionCompletionPayload(report);
+    else if (report.counterProfileId) payload = counterCompletionPayload(report);
     const result = machine.send(report.completionEvent, payload);
     if (!result.accepted) return { snapshot, report };
     const nextSnapshot = result.snapshot;

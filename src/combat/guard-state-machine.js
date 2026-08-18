@@ -8,6 +8,10 @@ import {
   LONGSWORD_GUARD_REACTION_PROFILES,
   getGuardReactionProfile,
 } from './guard-reaction-presentation.js';
+import {
+  GUARD_WEAPON_MOUNT_PROFILE_IDS,
+  LONGSWORD_GUARD_COUNTER_PROFILE,
+} from './guard-counter-presentation.js';
 
 export const GUARD_STATE_AUTHORITY_NOTE =
   'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
@@ -51,13 +55,6 @@ export const GUARD_EVENT_AUTHORITY = Object.freeze({
   [GUARD_EVENTS.RESET]: 'system',
 });
 
-const UNAUTHORED_PRESENTATION = Object.freeze({
-  clipId: null,
-  authored: false,
-  inPlace: true,
-  loop: false,
-});
-
 function authoredGuardTransition(role, transitionProfileId) {
   return Object.freeze({
     role,
@@ -65,6 +62,7 @@ function authoredGuardTransition(role, transitionProfileId) {
     correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
     correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
     transitionProfileId,
+    weaponMountProfileId: GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD,
     authored: true,
     authoredStage: 'G3.2',
     inPlace: true,
@@ -83,11 +81,29 @@ function authoredGuardReaction(role, profile, extra = {}) {
     sourceWindow: profile.sourceWindow,
     counterWindowSeconds: profile.counterWindowSeconds,
     completionEvent: profile.completionEvent,
+    weaponMountProfileId: GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD,
     authored: true,
     authoredStage: 'G3.3.2',
     inPlace: true,
     loop: false,
     ...extra,
+  });
+}
+
+function authoredGuardCounter() {
+  const profile = LONGSWORD_GUARD_COUNTER_PROFILE;
+  return Object.freeze({
+    role: 'guard-counter',
+    clipId: profile.clipId,
+    counterProfileId: profile.id,
+    sourceFamily: profile.sourceFamily,
+    completionEvent: profile.completionEvent,
+    correctionWeight: profile.correctionWeight,
+    weaponMountProfileId: profile.weaponMountProfileId,
+    authored: true,
+    authoredStage: profile.authoredStage,
+    inPlace: profile.inPlace,
+    loop: profile.loop,
   });
 }
 
@@ -109,6 +125,7 @@ export const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
     clipId: LONGSWORD_GUARD_BASE.clipId,
     correctionLayerId: LONGSWORD_GUARD_BASE.correctionLayerId,
     correctionAuthoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
+    weaponMountProfileId: GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD,
     authored: LONGSWORD_GUARD_AUTHORING_STATE.authored === true,
     authoredStage: LONGSWORD_GUARD_AUTHORING_STATE.authoredStage,
     inPlace: true,
@@ -127,11 +144,7 @@ export const LONGSWORD_GUARD_PRESENTATION = Object.freeze({
       }),
     }),
   }),
-  [GUARD_STATES.COUNTER]: Object.freeze({
-    role: 'guard-counter',
-    ...UNAUTHORED_PRESENTATION,
-    plannedStage: 'G3.4',
-  }),
+  [GUARD_STATES.COUNTER]: authoredGuardCounter(),
   [GUARD_STATES.RECOVER]: authoredGuardTransition('guard-recover', GUARD_TRANSITION_PROFILE_IDS.RECOVER),
   [GUARD_STATES.EXIT]: authoredGuardTransition('guard-exit', GUARD_TRANSITION_PROFILE_IDS.EXIT),
 });
