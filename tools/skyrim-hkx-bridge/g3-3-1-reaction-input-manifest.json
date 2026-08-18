@@ -1,0 +1,55 @@
+{
+  "stage": "G3.3.1",
+  "family": "Skyrim shield block reactions",
+  "baseline": "SKYRIM_GUARD/shd_blockidle",
+  "inspection": {
+    "expectedHavokVersion": "hk_2010.2.0-r1",
+    "expectedAnimationClass": "hkaSplineCompressedAnimation",
+    "expectedBindingClass": "hkaAnimationBinding",
+    "expectedRootMarker": "NPC Root [Root]"
+  },
+  "inputs": [
+    {
+      "id": "shd_blockhit",
+      "byteLength": 22496,
+      "sha256": "139f0e90d25bd9be5657fecdb5912adbe6bce453949518769ee02f7ed01cfa04",
+      "markers": ["hk_2010.2.0-r1", "hkaSplineCompressedAnimation", "hkaAnimationBinding", "NPC Root [Root]", "FootScuffLeft", "FootScuffRight"],
+      "intendedReviewRole": "block-hit",
+      "stage1Decision": "ADOPT WITH CORRECTIONS"
+    },
+    {
+      "id": "shd_blockbashintro",
+      "byteLength": 6576,
+      "sha256": "78d4569e12a855264b4667667763381ad729796ae3d26ad8c42e8d7724e3583b",
+      "markers": ["hk_2010.2.0-r1", "hkaSplineCompressedAnimation", "hkaAnimationBinding", "NPC Root [Root]"],
+      "intendedReviewRole": "parry-intro",
+      "stage1Decision": "ADOPT WITH CORRECTIONS"
+    },
+    {
+      "id": "shd_blockbash",
+      "byteLength": 8064,
+      "sha256": "37bc83926597a65e7660cae7367a3dd0b0f23d812137907a7548b3754bf90bfd",
+      "markers": ["hk_2010.2.0-r1", "hkaSplineCompressedAnimation", "hkaAnimationBinding", "NPC Root [Root]"],
+      "intendedReviewRole": "parry-deflect-or-counter",
+      "stage1Decision": "ADOPT WITH CORRECTIONS"
+    },
+    {
+      "id": "shd_blockbashpower",
+      "byteLength": 10544,
+      "sha256": "b5813d5877b2cf698913d3fbb228078d8e7384780db79957f133326f74c36168",
+      "markers": ["hk_2010.2.0-r1", "hkaSplineCompressedAnimation", "hkaAnimationBinding", "NPC Root [Root]"],
+      "intendedReviewRole": "perfect-parry-strong-deflect-or-counter",
+      "stage1Decision": "ADOPT WITH CORRECTIONS"
+    },
+    {
+      "id": "shd_blockanticipate",
+      "byteLength": 9584,
+      "sha256": "433396d9e20e7a63f1d17f51a3009244e3666d9c8c7d553c93e051a2e8152bb7",
+      "markers": ["hk_2010.2.0-r1", "hkaSplineCompressedAnimation", "hkaAnimationBinding", "NPC Root [Root]"],
+      "intendedReviewRole": "anticipation-or-brace",
+      "stage1Decision": "REJECT",
+      "rejectionScope": "reactive G3.3 Block/Parry reaction path",
+      "preserveAsOptionalReference": true
+    }
+  ]
+}
