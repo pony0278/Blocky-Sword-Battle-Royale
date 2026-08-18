@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   SKYRIM_BONE_RETARGETS,
+  classifySkyrimTranslationSafety,
+  computeSkyrimTranslationScale,
+  measureVectorSampleExcursion,
   resolveSkyrimSourceNodes,
   validateSkyrimTargetRig,
 } from '../src/animation/skyrim-animation-retarget.js';
@@ -65,10 +68,47 @@ test('Skyrim retarget map targets the canonical Action Studio humanoid rig', () 
   assert.ok(targets.includes('toes.r'));
 });
 
-test('Skyrim mapping keeps root and pelvis translation while limbs are rotation driven', () => {
-  const positional = SKYRIM_BONE_RETARGETS.filter((entry) => entry.position).map((entry) => entry.target);
-  assert.deepEqual(positional, ['root', 'hips']);
+test('Skyrim mapping isolates root motion from pelvis-relative body translation', () => {
+  const positional = SKYRIM_BONE_RETARGETS.filter((entry) => entry.position);
+  assert.deepEqual(positional.map((entry) => entry.target), ['root', 'hips']);
+  assert.equal(positional.find((entry) => entry.target === 'root').positionSpace, 'world-root');
+  assert.equal(positional.find((entry) => entry.target === 'hips').positionSpace, 'root-relative');
   assert.equal(SKYRIM_BONE_RETARGETS.find((entry) => entry.target === 'upperarm.r').position, undefined);
+});
+
+test('Skyrim translation scale preserves real cross-unit skeleton ratios instead of clamping to 0.5', () => {
+  const scale = computeSkyrimTranslationScale(120, 1.24);
+  assert.ok(scale > 0.01 && scale < 0.011);
+  assert.notEqual(scale, 0.5);
+  assert.equal(computeSkyrimTranslationScale(0, 1.24), 1);
+});
+
+test('translation excursion catches a mid-clip flight even when start and end positions match', () => {
+  const metrics = measureVectorSampleExcursion([
+    0, 0, 0,
+    0.02, 0.01, 0,
+    50, 0, 0,
+    0, 0, 0,
+  ]);
+  assert.equal(metrics.sampleCount, 4);
+  assert.ok(metrics.maxExcursion >= 50);
+  assert.ok(metrics.maxStep > 49);
+
+  const safety = classifySkyrimTranslationSafety({
+    root: metrics,
+    hips: measureVectorSampleExcursion([0, 0.4, 0, 0, 0.41, 0]),
+  }, 1.24);
+  assert.equal(safety.safe, false);
+  assert.ok(safety.excursionRatio > 40);
+});
+
+test('small guard body motion remains translation-safe', () => {
+  const safety = classifySkyrimTranslationSafety({
+    root: measureVectorSampleExcursion([0, 0, 0, 0.01, 0, 0, 0, 0, 0]),
+    hips: measureVectorSampleExcursion([0, 0.4, 0, 0.01, 0.42, 0, 0, 0.4, 0]),
+  }, 1.24);
+  assert.equal(safety.safe, true);
+  assert.ok(safety.excursionRatio < 0.1);
 });
 
 test('Skyrim source resolver accepts canonical Skyrim bone names', () => {
