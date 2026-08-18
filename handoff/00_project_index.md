@@ -203,7 +203,7 @@
 
 內容：
 - 修正 Skyrim / Action Studio 跨單位 translation scale，不再把約 `0.01` 的合理比例夾成 `0.5`
-- 將 root motion 與 pelvis root-relative body motion分離，避免 world-space 位移重複套用
+- 將 root motion 與 pelvis root-relative body motion 分離，避免 world-space 位移重複套用
 - 保留 `inPlace` 下的 pelvis 重心微移，同時只移除真正 root locomotion
 - 新增整段 max excursion / max step translation diagnostics
 - 新增「中途飛走但首尾相同」regression test
@@ -227,7 +227,7 @@
 內容：
 - 從 source / target rest pose 自動推導 humanoid Up / Right / Forward basis
 - 用 `C * q * C^-1` 校正 Skyrim rotation delta
-- root / pelvis motion vector 共用同一座標轉換
+- root / pelvis motion vector共用同一座標轉換
 - canonical GLB source 確認為 coherent Skyrim Z-up humanoid，排除 HKX → GLB bake 損壞
 - 0 / 25 / 50 / 75 / 99.8% standing-topology 自動 gate
 - G2.4.2 global coordinate-basis PASS
