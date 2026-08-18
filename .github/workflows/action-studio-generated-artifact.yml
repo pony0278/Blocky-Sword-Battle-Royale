@@ -1,0 +1,41 @@
+name: Action Studio Generated Artifact
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/action-studio/**'
+      - 'src/**'
+      - 'build/build-action-studio.mjs'
+      - 'package.json'
+      - '.github/workflows/action-studio-generated-artifact.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Action Studio
+        run: npm run build:action-studio
+
+      - name: Upload generated standalone files
+        uses: actions/upload-artifact@v4
+        with:
+          name: action-studio-generated
+          path: |
+            tools/action-studio/action-studio.bundle.js
+            tools/action-studio/index.html
