@@ -5,7 +5,7 @@
 **LOW-LEVEL RETARGET PIPELINE: ACCEPTED / FROZEN**  
 **CANONICAL GUARD SOURCE: ADOPT WITH CORRECTIONS**  
 **TRIANGLE CORRECTION CONTRACT: DEFINED**  
-**CANONICAL LOCAL QUATERNION OFFSETS: NOT YET AUTHORED**
+**G2.5.1 FOLLOW-UP: COMPLETED / CANONICAL OFFSETS AUTHORED**
 
 Canonical source:
 
@@ -18,6 +18,8 @@ Canonical runtime clip:
 Correction contract:
 
 `src/combat/longsword-guard-metadata.js`
+
+> Historical note: G2.5 intentionally defined the correction boundary before any quaternion values were authored. G2.5.1 has now completed that authoring step; see `21_skyrim_guard_g2_5_1_triangle_forward_authoring.md` for the accepted offsets and five-sample/four-view evidence.
 
 ---
 
@@ -83,9 +85,7 @@ This is the exact correction scope. G2.5 must not turn a three-variable silhouet
 
 ## 4. Canonical Triangle Forward target contract
 
-G2.5 introduces a tighter production target than the broad G2.4 suitability gate.
-
-All normalized values use the same torso-height convention as the existing Guard review.
+All normalized values use the same torso-height convention as the Guard review.
 
 | Metric | G2.5 target | Intent |
 | --- | ---: | --- |
@@ -95,24 +95,16 @@ All normalized values use the same torso-height convention as the existing Guard
 | off-hand center distance | `≤ 0.62` | avoid opening the left side |
 | sword-tip height | `0.70–1.10` | upper-chest to face threat region |
 | sword-forward dot | `≥ 0.65` | blade clearly threatens lock-on target |
-| triangle area | `0.035–0.20` | visible wedge without opening the torso |
+| triangle area | `≥ 0.035` | visible wedge; no maximum because blade length naturally enlarges area |
 | torso yaw | `20–38°` | preserve useful side-on body language |
 
-The important tightening is:
-
-- generic G2.4 sword-tip pass was only `≥ 0.55`; G2.5 raises it to `≥ 0.70`;
-- generic G2.4 forward-dot pass was only `≥ 0.20`; G2.5 raises it to `≥ 0.65`;
-- torso yaw is narrowed to the authored Triangle Guard target instead of allowing a very broad stance.
-
-A target `swordForwardDot ≥ 0.65` corresponds to the blade remaining within roughly `49°` of the lock-on threat vector. The desired authored result should preferably sit closer to `0.8+`, but `0.65` is the canonical minimum gate.
+G2.5.1 real authoring corrected one metric definition from the original planning draft: `triangleArea` has no production maximum. A long blade aimed upward/forward can create a large geometric triangle even while both hands remain compact. Chest openness is constrained by the two hand-center-distance gates, not by a triangle-area ceiling.
 
 ---
 
 ## 5. Correction layer architecture
 
 The G2.5 correction is an **additive local quaternion layer applied after Skyrim humanoid retargeting**.
-
-Execution order:
 
 ```text
 canonical Skyrim shd_blockidle
@@ -138,9 +130,7 @@ The correction must not be baked back into the raw source GLB and must not modif
 
 ## 6. Bone scope
 
-### Required correction bones
-
-Start with only:
+Required correction bones:
 
 ```text
 upperarm.r
@@ -148,11 +138,7 @@ lowerarm.r
 wrist.r
 ```
 
-These three bones should carry the main change because the actual failures are right-hand height and sword direction.
-
-### Optional bones
-
-Use only when the required chain cannot meet all gates cleanly:
+Optional bones:
 
 ```text
 chest
@@ -162,15 +148,7 @@ wrist.l
 handslot.r
 ```
 
-Policy:
-
-- `chest` is a small silhouette trim only; do not erase Skyrim torso weight.
-- left-arm bones are initially preserved because current off-hand geometry is already usable.
-- `handslot.r` is **fine trim only** after the arm/wrist pose is physically believable.
-
-### Forbidden bones
-
-G2.5 correction may not touch:
+Forbidden bones:
 
 ```text
 root
@@ -181,13 +159,11 @@ foot.l / foot.r
 toes.l / toes.r
 ```
 
-This is the hard boundary that protects the authored lower-body motion.
+`handslot.r` remains fine trim only after the arm/wrist pose is physically believable.
 
 ---
 
 ## 7. Correction magnitude budget
-
-These values are authoring safety budgets, not pre-authored offsets:
 
 | Bone | Max local correction budget |
 | --- | ---: |
@@ -200,19 +176,11 @@ These values are authoring safety budgets, not pre-authored offsets:
 | wrist.l | `30°` |
 | handslot.r | `15°` |
 
-Why `handslot.r` is capped at `15°`:
-
-A large equipment-only rotation could make the blade point correctly while the wrist / hand still visibly holds it incorrectly. That would pass a sword ray metric but fail the physical pose. The major direction change must therefore come from the right arm / wrist chain; the equipment socket is only a final alignment trim.
-
-If the authored pose requires more than these budgets to pass, G2.5.1 should report that fact rather than silently widening the budgets.
+A large equipment-only rotation is not allowed to hide an implausible wrist/arm pose.
 
 ---
 
 ## 8. Lock-on sword threat definition
-
-The authoring gate must be target-relative rather than camera-relative.
-
-Recommended geometry:
 
 ```text
 bladeDirection = normalize(swordTipWorld - swordGripWorld)
@@ -220,129 +188,53 @@ threatDirection = normalize(lockOnTargetAimWorld - swordGripWorld)
 swordForwardDot = dot(bladeDirection, threatDirection)
 ```
 
-For the static Guard Lab, use a fixed debug target in front of the character at upper-chest height.
-
-Do not aim toward camera forward, because camera yaw / orbit is presentation state and must not redefine the Guard pose.
-
-G2.5 base authoring remains a fixed additive pose. Continuous runtime aim correction / IK is explicitly deferred until the base Guard itself is accepted.
+The authoring gate is target-relative, not camera-relative.
 
 ---
 
-## 9. Authoring strategy
+## 9. G2.5.1 completion
 
-G2.5.1 should tune the base Guard in this order:
+G2.5.1 has now authored and accepted the Forward Base Guard.
 
-1. sample canonical `shd_blockidle` at `50%` as the primary authoring frame;
-2. raise and compact the right weapon hand using `upperarm.r / lowerarm.r`;
-3. rotate `wrist.r` to lift the blade while keeping the hand/blade relationship believable;
-4. solve sword-tip forward threat toward the static lock-on target;
-5. re-check right elbow / armpit openness;
-6. leave the off hand untouched unless triangle area or centerline gates fail;
-7. leave chest untouched unless a very small correction improves silhouette without destroying source weight;
-8. use `handslot.r` only for ≤ `15°` final equipment trim;
-9. export local quaternion offsets as canonical source-controlled metadata.
-
-No hand-authored quaternion numbers are invented in G2.5. They must come from the Action Studio authoring result.
-
----
-
-## 10. G2.5.1 acceptance gate — Base Guard Authoring
-
-The first authored correction is accepted only when the same fixed local offsets are evaluated at:
-
-- `0%`
-- `25%`
-- `50%`
-- `75%`
-- `99.8%`
-
-Required:
-
-- all eight G2.5 Triangle target gates pass at all five samples;
-- no root / hips / lower-body correction tracks exist;
-- no required bone exceeds its correction budget;
-- `handslot.r` correction, if present, remains ≤ `15°`;
-- G2.4.5 weapon bind frame equivalence remains GOOD;
-- original 40 s loop stability remains PASS;
-- no shoulder flip, elbow inversion, wrist snap, chest opening, or hand/blade disconnect appears in Front / 3-quarter / Side / Back review.
-
-If one fixed additive pose cannot pass all five samples cleanly, the next escalation is **not** to change retarget math. Instead evaluate whether the source clip needs a small time-aware Guard correction curve or a selected stable hold segment.
-
----
-
-## 11. Source-controlled implementation contract
-
-New file:
-
-`src/combat/longsword-guard-metadata.js`
-
-It records:
-
-- canonical source / runtime clip
-- final adoption decision
-- `lowLevelRetargetFrozen: true`
-- Triangle Forward target ranges
-- required / optional / forbidden bone scope
-- per-bone authoring budgets
-- equipment trim limit
-- correction execution order
-- current authoring state
-
-Current authoring state is intentionally:
+Canonical correction bones used:
 
 ```text
-authored = false
-offsets = {}
+chest
+upperarm.r
+lowerarm.r
+wrist.r
+handslot.r
 ```
 
-This prevents G2.5 from pretending that a correction pose has already been authored.
+No left-arm or lower-body correction was needed.
 
-Tests:
-
-`tests/longsword-guard-metadata.test.js`
-
-The test contract verifies that the representative pre-correction Guard fails exactly:
+The same fixed offsets pass all five canonical samples and the four-view visual review. Canonical values are stored in `LONGSWORD_GUARD_AUTHORING_STATE` with:
 
 ```text
-weaponHandHeight
-swordTipHeight
-swordForwardDot
+authored = true
+authoredStage = G2.5.1
 ```
 
-while the preserved off-hand / compactness / triangle / torso properties remain inside the new target contract.
+See handoff 21 for exact quaternion values and measurements.
 
 ---
 
-## 12. Validation
+## 10. G2.5 conclusion
 
-G2.5 contract validation:
+The engineering and authoring questions are now both closed for the Forward Base:
 
-- Build Action Studio: PASS
-- `tests/longsword-guard-metadata.test.js`: PASS as part of `npm test`
-- all existing G2.4 regression tests: PASS
+> Can Skyrim `shd_blockidle` serve as the Action Studio longsword Guard mother pose?
 
-G2.5 does not claim a corrected visual pose yet because `authored=false`; visual correction acceptance belongs to G2.5.1.
+**Yes.**
 
----
-
-## 13. G2.5 conclusion
-
-The engineering question is now closed:
-
-> Can the Skyrim `shd_blockidle` animation be used as the Action Studio longsword Guard base?
-
-**Yes — ADOPT WITH CORRECTIONS.**
-
-The remaining work is intentional animation authoring, not conversion debugging.
-
-The corrected base Guard should preserve Skyrim's body life while changing only enough of the right upper-body chain to produce the desired forward-facing sword triangle.
+The source is adopted with a source-controlled additive correction layer, while Skyrim body weight / lower-body motion remain preserved.
 
 ---
 
 ## Next stage
 
-**G2.5.1 — Triangle Forward Base Guard Authoring Lab**
+**G3 — Guard Family Foundation**
 
-Implement the additive correction layer in Action Studio, expose the allowed bones and target debug geometry, author the first real local quaternion offsets, export them into `longsword-guard-metadata.js`, and run the five-sample / four-view acceptance gate.
+Build Guard Enter / Hold / Block Hit / Counter presentation around the accepted Forward Base, then proceed to:
 
-Only after the corrected base Guard passes should the project proceed to TOP / RIGHT / LEFT directional Guard authoring.
+**G4 — TOP / RIGHT / LEFT Triangle Guard Authoring**
