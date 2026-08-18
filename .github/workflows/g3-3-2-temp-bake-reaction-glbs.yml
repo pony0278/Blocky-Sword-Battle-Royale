@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   bake:
@@ -69,8 +69,7 @@ jobs:
 
           def write_glb(path, doc, binary):
               doc['buffers'][0]['byteLength'] = len(binary)
-              json_blob = json.dumps(doc, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
-              json_blob = pad4(json_blob, b' ')
+              json_blob = pad4(json.dumps(doc, separators=(',', ':'), ensure_ascii=False).encode('utf-8'), b' ')
               bin_blob = pad4(binary, b'\x00')
               total = 12 + 8 + len(json_blob) + 8 + len(bin_blob)
               out = bytearray(struct.pack('<III', 0x46546C67, 2, total))
@@ -92,23 +91,14 @@ jobs:
                   result.extend(row)
               return result
 
-          def append_accessor(doc, binary, values, type_name, count, width, min_value=None, max_value=None):
+          def append_accessor(doc, binary, values, type_name, count, min_value=None, max_value=None):
               binary = pad4(binary, b'\x00')
               offset = len(binary)
               payload = struct.pack('<' + ('f' * len(values)), *values)
               binary += payload
               view_index = len(doc.setdefault('bufferViews', []))
-              doc['bufferViews'].append({
-                  'buffer': 0,
-                  'byteOffset': offset,
-                  'byteLength': len(payload),
-              })
-              accessor = {
-                  'bufferView': view_index,
-                  'componentType': FLOAT,
-                  'count': count,
-                  'type': type_name,
-              }
+              doc['bufferViews'].append({'buffer': 0, 'byteOffset': offset, 'byteLength': len(payload)})
+              accessor = {'bufferView': view_index, 'componentType': FLOAT, 'count': count, 'type': type_name}
               if min_value is not None: accessor['min'] = min_value
               if max_value is not None: accessor['max'] = max_value
               accessor_index = len(doc.setdefault('accessors', []))
@@ -118,10 +108,8 @@ jobs:
           canonical_doc, canonical_bin = read_glb('assets/skyrim/guard/converted/shd_blockidle.source.glb')
           skin = max(canonical_doc.get('skins', []), key=lambda value: len(value.get('joints', [])))
           joints = list(skin.get('joints', []))
-          if len(joints) != 99:
-              raise SystemExit(f'expected canonical 99-joint skin, got {len(joints)}')
-          if canonical_doc['nodes'][joints[0]].get('name') != 'NPC Root [Root]':
-              raise SystemExit('unexpected canonical root joint')
+          if len(joints) != 99: raise SystemExit(f'expected canonical 99-joint skin, got {len(joints)}')
+          if canonical_doc['nodes'][joints[0]].get('name') != 'NPC Root [Root]': raise SystemExit('unexpected canonical root joint')
 
           expected = {
               'shd_blockhit': (25, 0.7999999523162842),
@@ -131,55 +119,33 @@ jobs:
           summary = {}
           for ident, (expected_frames, expected_duration) in expected.items():
               anim = _parse_animation_hkx(pathlib.Path(f'.probe/reactions/{ident}.hkx').read_bytes())
-              if anim is None or anim.num_tracks != 99 or len(anim.tracks) != 99:
-                  raise SystemExit(f'{ident}: invalid 99-track decode')
-              if anim.num_frames != expected_frames or abs(float(anim.duration) - expected_duration) > 1e-5:
-                  raise SystemExit(f'{ident}: unexpected duration/frame count')
-              if anim.track_to_bone_indices and anim.track_to_bone_indices != list(range(99)):
-                  raise SystemExit(f'{ident}: non-identity binding requires explicit remap')
+              if anim is None or anim.num_tracks != 99 or len(anim.tracks) != 99: raise SystemExit(f'{ident}: invalid 99-track decode')
+              if anim.num_frames != expected_frames or abs(float(anim.duration) - expected_duration) > 1e-5: raise SystemExit(f'{ident}: unexpected duration/frame count')
+              if anim.track_to_bone_indices and anim.track_to_bone_indices != list(range(99)): raise SystemExit(f'{ident}: non-identity binding requires explicit remap')
 
               doc = copy.deepcopy(canonical_doc)
               binary = bytes(canonical_bin)
               frame_count = int(anim.num_frames)
               times = [min(float(anim.duration), i * float(anim.frame_duration)) for i in range(frame_count)]
-              time_accessor, binary = append_accessor(
-                  doc, binary, times, 'SCALAR', frame_count, 1,
-                  [min(times)], [max(times)],
-              )
+              time_accessor, binary = append_accessor(doc, binary, times, 'SCALAR', frame_count, [min(times)], [max(times)])
               animation = {'name': ident, 'samplers': [], 'channels': []}
 
               for track_index, track in enumerate(anim.tracks):
                   node_index = joints[track_index]
                   channels = []
-                  if track.translations:
-                      channels.append(('translation', vec(track.translations, 3, (0,0,0), frame_count), 'VEC3', 3))
-                  if track.rotations:
-                      channels.append(('rotation', vec(track.rotations, 4, (0,0,0,1), frame_count, True), 'VEC4', 4))
-                  if track.scales:
-                      channels.append(('scale', vec(track.scales, 3, (1,1,1), frame_count), 'VEC3', 3))
-                  for target_path, values, type_name, width in channels:
-                      output_accessor, binary = append_accessor(doc, binary, values, type_name, frame_count, width)
+                  if track.translations: channels.append(('translation', vec(track.translations, 3, (0,0,0), frame_count), 'VEC3'))
+                  if track.rotations: channels.append(('rotation', vec(track.rotations, 4, (0,0,0,1), frame_count, True), 'VEC4'))
+                  if track.scales: channels.append(('scale', vec(track.scales, 3, (1,1,1), frame_count), 'VEC3'))
+                  for target_path, values, type_name in channels:
+                      output_accessor, binary = append_accessor(doc, binary, values, type_name, frame_count)
                       sampler_index = len(animation['samplers'])
-                      animation['samplers'].append({
-                          'input': time_accessor,
-                          'output': output_accessor,
-                          'interpolation': 'LINEAR',
-                      })
-                      animation['channels'].append({
-                          'sampler': sampler_index,
-                          'target': {'node': node_index, 'path': target_path},
-                      })
+                      animation['samplers'].append({'input': time_accessor, 'output': output_accessor, 'interpolation': 'LINEAR'})
+                      animation['channels'].append({'sampler': sampler_index, 'target': {'node': node_index, 'path': target_path}})
 
               doc['animations'] = [animation]
               out = pathlib.Path(f'artifacts/g3-3-2/{ident}.source.glb')
               write_glb(out, doc, binary)
-              summary[ident] = {
-                  'duration': float(anim.duration),
-                  'frames': frame_count,
-                  'tracks': int(anim.num_tracks),
-                  'channels': len(animation['channels']),
-                  'bytes': out.stat().st_size,
-              }
+              summary[ident] = {'duration': float(anim.duration), 'frames': frame_count, 'tracks': int(anim.num_tracks), 'channels': len(animation['channels']), 'bytes': out.stat().st_size}
               print(ident, summary[ident])
 
           pathlib.Path('artifacts/g3-3-2/bake-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
@@ -190,12 +156,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, pathlib, struct
-          expected = {
-            'shd_blockhit.source.glb': 0.8,
-            'shd_blockbash.source.glb': 1/3,
-            'shd_blockbashpower.source.glb': 0.7,
-          }
-          for name, duration in expected.items():
+          for name in ['shd_blockhit.source.glb','shd_blockbash.source.glb','shd_blockbashpower.source.glb']:
               raw = pathlib.Path('artifacts/g3-3-2', name).read_bytes()
               magic, version, total = struct.unpack_from('<III', raw, 0)
               assert magic == 0x46546C67 and version == 2 and total == len(raw)
@@ -203,12 +164,26 @@ jobs:
               assert kind == 0x4E4F534A
               doc = json.loads(raw[20:20+length].decode('utf-8').rstrip('\x00 '))
               assert len(doc.get('animations', [])) == 1
-              animation = doc['animations'][0]
-              assert len(animation['channels']) >= 99
+              assert len(doc['animations'][0]['channels']) == 297
               assert len(max(doc['skins'], key=lambda s: len(s.get('joints', [])))['joints']) == 99
-              print(name, animation['name'], len(animation['channels']), len(raw))
+              print(name, doc['animations'][0]['name'], len(raw))
           PY
           sha256sum artifacts/g3-3-2/*.glb | tee artifacts/g3-3-2/glb-sha256.txt
+
+      - name: Publish baked sources to clean G3.3.2 branch
+        shell: bash
+        run: |
+          mkdir -p /tmp/g332-assets
+          cp artifacts/g3-3-2/*.source.glb /tmp/g332-assets/
+          git fetch origin main
+          git switch -C agent/g3-3-2-guard-reaction-runtime origin/main
+          mkdir -p assets/skyrim/guard/converted
+          cp /tmp/g332-assets/*.source.glb assets/skyrim/guard/converted/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/skyrim/guard/converted/shd_blockhit.source.glb assets/skyrim/guard/converted/shd_blockbash.source.glb assets/skyrim/guard/converted/shd_blockbashpower.source.glb
+          git commit -m "assets: add accepted G3.3.2 guard reaction sources"
+          git push --force origin HEAD:agent/g3-3-2-guard-reaction-runtime
 
       - name: Upload baked G3.3.2 reaction sources
         uses: actions/upload-artifact@v4
