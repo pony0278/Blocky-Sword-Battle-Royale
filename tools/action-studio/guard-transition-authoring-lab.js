@@ -125,14 +125,6 @@ function distance(a, b) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
-function ensureGuardAction() {
-  if (!guardAction) {
-    guardAction = character.playAnimation(CLIP_ID, { loop:true, inPlace:true, fadeSeconds:0 });
-    guardAction.setEffectiveTimeScale(0);
-  }
-  return guardAction;
-}
-
 function resetRigForBlend() {
   // This is intentionally the exact authored Action Studio neutral pose, not rig rest/T-pose.
   // Use the low-level adapter so we do not stop the active Skyrim AnimationMixer action.
@@ -141,6 +133,18 @@ function resetRigForBlend() {
   character.rig.motionRoot.rotation.set(0, 0, 0);
   character.rig.motionRoot.scale.set(1, 1, 1);
   character.object3d.updateMatrixWorld(true);
+}
+
+function ensureGuardAction() {
+  if (!guardAction) {
+    // AnimationAction.play() captures PropertyMixer original state immediately.
+    // Seed the exact Action Studio Idle first so weight=0 / Exit completion restores Idle,
+    // rather than the procedural rig rest/T-pose used by character.playAnimation().
+    resetRigForBlend();
+    guardAction = character.animation.play(CLIP_ID, { loop:true, inPlace:true, fadeSeconds:0 });
+    guardAction.setEffectiveTimeScale(0);
+  }
+  return guardAction;
 }
 
 function applyPresentation(state, elapsedMs = 0) {
