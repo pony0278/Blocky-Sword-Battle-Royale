@@ -36,5 +36,9 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Action Studio Guard Runtime browser surface
+        shell: bash
+        run: bash tools/action-studio/verify-guard-runtime-surface.sh
+
       - name: Run tests
         run: npm test
