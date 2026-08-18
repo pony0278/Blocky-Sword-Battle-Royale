@@ -33,7 +33,10 @@ const SOURCE_INFO = Object.freeze({
 const MOTION_CONTACT_STORAGE_KEY = 'ACTION_STUDIO_MOTION_CONTACTS_V1';
 
 function shouldLoopClip(name) {
-  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(name);
+  const clipId = String(name || '');
+  if (clipId === 'SKYRIM_GUARD/shd_blockidle') return true;
+  if (/^SKYRIM_GUARD\/shd_block(?:hit|bash|bashpower)$/i.test(clipId)) return false;
+  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(clipId);
 }
 
 function displayClipName(name) {

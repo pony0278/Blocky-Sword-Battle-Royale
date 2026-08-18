@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   SKYRIM_GUARD_CONVERTED_FILES,
+  SKYRIM_GUARD_HOLD_CONVERTED_FILE,
+  SKYRIM_GUARD_REACTION_CONVERTED_FILES,
   createSkyrimConvertedAnimationLibrary,
   importSkyrimConvertedAnimationFile,
   loadSkyrimConvertedAnimationLibrary,
@@ -34,13 +36,40 @@ function retargetStub(_THREE, decoded, _rig, options) {
   };
 }
 
-test('G2.2 converted source manifest starts with the canonical blockidle Guard Hold probe', () => {
-  assert.deepEqual(SKYRIM_GUARD_CONVERTED_FILES, [{
+test('G3.3.2 converted source manifest keeps blockidle first and adds only accepted reaction sources', () => {
+  assert.deepEqual(SKYRIM_GUARD_HOLD_CONVERTED_FILE, {
     id: 'shd_blockidle',
     file: 'shd_blockidle.source.glb',
     clipId: 'SKYRIM_GUARD/shd_blockidle',
     role: 'Guard Hold',
-  }]);
+  });
+  assert.equal(SKYRIM_GUARD_CONVERTED_FILES[0], SKYRIM_GUARD_HOLD_CONVERTED_FILE);
+  assert.equal(SKYRIM_GUARD_CONVERTED_FILES.length, 4);
+  assert.equal(SKYRIM_GUARD_REACTION_CONVERTED_FILES.length, 3);
+  assert.deepEqual(
+    SKYRIM_GUARD_REACTION_CONVERTED_FILES.map(({ id, clipId, role, visualDecision }) => ({ id, clipId, role, visualDecision })),
+    [
+      {
+        id: 'shd_blockhit',
+        clipId: 'SKYRIM_GUARD/shd_blockhit',
+        role: 'Block Hit',
+        visualDecision: 'ADOPT WITH CORRECTIONS',
+      },
+      {
+        id: 'shd_blockbash',
+        clipId: 'SKYRIM_GUARD/shd_blockbash',
+        role: 'Parry Deflect',
+        visualDecision: 'ADOPT',
+      },
+      {
+        id: 'shd_blockbashpower',
+        clipId: 'SKYRIM_GUARD/shd_blockbashpower',
+        role: 'Perfect Parry',
+        visualDecision: 'ADOPT WITH CORRECTIONS',
+      },
+    ],
+  );
+  assert.equal(SKYRIM_GUARD_CONVERTED_FILES.some(({ id }) => id === 'shd_blockbashintro'), false);
 });
 
 test('converted Skyrim GLB is retargeted to the canonical Action Studio clip id', () => {
@@ -50,9 +79,10 @@ test('converted Skyrim GLB is retargeted to the canonical Action Studio clip id'
   });
   assert.equal(clip.name, 'SKYRIM_GUARD/shd_blockidle');
   assert.equal(clip.duration, 1.25);
+  assert.equal(clip.userData.convertedSource.id, 'shd_blockidle');
 });
 
-test('converted Skyrim library loads the expected bridge asset and exposes a normal external clip map', async () => {
+test('converted Skyrim library loads Hold plus all accepted G3.3.2 reaction bridge assets', async () => {
   const loadedUrls = [];
   const loader = {
     load(url, resolve) {
@@ -66,11 +96,17 @@ test('converted Skyrim library loads the expected bridge asset and exposes a nor
     baseUrl: '/probe/',
     retargetClip: retargetStub,
   });
-  assert.deepEqual(loadedUrls, ['/probe/shd_blockidle.source.glb']);
+  assert.deepEqual(loadedUrls, [
+    '/probe/shd_blockidle.source.glb',
+    '/probe/shd_blockhit.source.glb',
+    '/probe/shd_blockbash.source.glb',
+    '/probe/shd_blockbashpower.source.glb',
+  ]);
   assert.equal(library.source, 'skyrim');
   assert.equal(library.bridge, 'converted-glb');
   assert.equal(library.retargetFps, 30);
-  assert.ok(library.clips.has('SKYRIM_GUARD/shd_blockidle'));
+  assert.equal(library.clips.size, 4);
+  for (const { clipId } of SKYRIM_GUARD_CONVERTED_FILES) assert.ok(library.clips.has(clipId));
 });
 
 test('a local self-contained GLB can be imported without committing the experimental source asset', async () => {

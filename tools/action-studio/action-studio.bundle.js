@@ -9089,13 +9089,40 @@ const __actionStudioModule40 = (() => {
 const { retargetSkyrimClip } = __actionStudioModule41;
 const { computeSkyrimWeaponBindCalibration } = __actionStudioModule42;
 
-const SKYRIM_GUARD_CONVERTED_FILES = Object.freeze([
+const SKYRIM_GUARD_HOLD_CONVERTED_FILE = Object.freeze({
+  id: 'shd_blockidle',
+  file: 'shd_blockidle.source.glb',
+  clipId: 'SKYRIM_GUARD/shd_blockidle',
+  role: 'Guard Hold',
+});
+
+const SKYRIM_GUARD_REACTION_CONVERTED_FILES = Object.freeze([
   Object.freeze({
-    id: 'shd_blockidle',
-    file: 'shd_blockidle.source.glb',
-    clipId: 'SKYRIM_GUARD/shd_blockidle',
-    role: 'Guard Hold',
+    id: 'shd_blockhit',
+    file: 'shd_blockhit.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockhit',
+    role: 'Block Hit',
+    visualDecision: 'ADOPT WITH CORRECTIONS',
   }),
+  Object.freeze({
+    id: 'shd_blockbash',
+    file: 'shd_blockbash.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockbash',
+    role: 'Parry Deflect',
+    visualDecision: 'ADOPT',
+  }),
+  Object.freeze({
+    id: 'shd_blockbashpower',
+    file: 'shd_blockbashpower.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockbashpower',
+    role: 'Perfect Parry',
+    visualDecision: 'ADOPT WITH CORRECTIONS',
+  }),
+]);
+
+const SKYRIM_GUARD_CONVERTED_FILES = Object.freeze([
+  SKYRIM_GUARD_HOLD_CONVERTED_FILE,
+  ...SKYRIM_GUARD_REACTION_CONVERTED_FILES,
 ]);
 
 const DEFAULT_BASE_URL = '../../assets/skyrim/guard/converted/';
@@ -9159,6 +9186,12 @@ function retargetConvertedSkyrimGltf(THREE, gltf, rig, entry = SKYRIM_GUARD_CONV
       retargetedClip,
     );
   }
+  retargetedClip.userData.convertedSource = Object.freeze({
+    id: entry.id,
+    file: entry.file,
+    role: entry.role,
+    visualDecision: entry.visualDecision || 'ADOPT',
+  });
   return retargetedClip;
 }
 
@@ -9229,7 +9262,7 @@ const importSkyrimConvertedAnimationFile = async (loader, file, options = {}) =>
     disposeSourceScene(gltf?.scene);
   }
 };
-return Object.freeze({ SKYRIM_GUARD_CONVERTED_FILES, retargetConvertedSkyrimGltf, createSkyrimConvertedAnimationLibrary, loadSkyrimConvertedAnimationLibrary, importSkyrimConvertedAnimationFile });
+return Object.freeze({ SKYRIM_GUARD_HOLD_CONVERTED_FILE, SKYRIM_GUARD_REACTION_CONVERTED_FILES, SKYRIM_GUARD_CONVERTED_FILES, retargetConvertedSkyrimGltf, createSkyrimConvertedAnimationLibrary, loadSkyrimConvertedAnimationLibrary, importSkyrimConvertedAnimationFile });
 })();
 
 // src/combat/longsword-directional-metadata.js
@@ -9554,7 +9587,10 @@ const SOURCE_INFO = Object.freeze({
 const MOTION_CONTACT_STORAGE_KEY = 'ACTION_STUDIO_MOTION_CONTACTS_V1';
 
 function shouldLoopClip(name) {
-  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(name);
+  const clipId = String(name || '');
+  if (clipId === 'SKYRIM_GUARD/shd_blockidle') return true;
+  if (/^SKYRIM_GUARD\/shd_block(?:hit|bash|bashpower)$/i.test(clipId)) return false;
+  return /Idle|Walking|Running|Block|Crouching|Sneaking|Crawling/i.test(clipId);
 }
 
 function displayClipName(name) {

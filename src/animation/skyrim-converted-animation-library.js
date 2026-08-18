@@ -1,13 +1,40 @@
 import { retargetSkyrimClip } from './skyrim-animation-retarget.js';
 import { computeSkyrimWeaponBindCalibration } from './skyrim-weapon-bind-calibration.js';
 
-export const SKYRIM_GUARD_CONVERTED_FILES = Object.freeze([
+export const SKYRIM_GUARD_HOLD_CONVERTED_FILE = Object.freeze({
+  id: 'shd_blockidle',
+  file: 'shd_blockidle.source.glb',
+  clipId: 'SKYRIM_GUARD/shd_blockidle',
+  role: 'Guard Hold',
+});
+
+export const SKYRIM_GUARD_REACTION_CONVERTED_FILES = Object.freeze([
   Object.freeze({
-    id: 'shd_blockidle',
-    file: 'shd_blockidle.source.glb',
-    clipId: 'SKYRIM_GUARD/shd_blockidle',
-    role: 'Guard Hold',
+    id: 'shd_blockhit',
+    file: 'shd_blockhit.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockhit',
+    role: 'Block Hit',
+    visualDecision: 'ADOPT WITH CORRECTIONS',
   }),
+  Object.freeze({
+    id: 'shd_blockbash',
+    file: 'shd_blockbash.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockbash',
+    role: 'Parry Deflect',
+    visualDecision: 'ADOPT',
+  }),
+  Object.freeze({
+    id: 'shd_blockbashpower',
+    file: 'shd_blockbashpower.source.glb',
+    clipId: 'SKYRIM_GUARD/shd_blockbashpower',
+    role: 'Perfect Parry',
+    visualDecision: 'ADOPT WITH CORRECTIONS',
+  }),
+]);
+
+export const SKYRIM_GUARD_CONVERTED_FILES = Object.freeze([
+  SKYRIM_GUARD_HOLD_CONVERTED_FILE,
+  ...SKYRIM_GUARD_REACTION_CONVERTED_FILES,
 ]);
 
 const DEFAULT_BASE_URL = '../../assets/skyrim/guard/converted/';
@@ -71,6 +98,12 @@ export function retargetConvertedSkyrimGltf(THREE, gltf, rig, entry = SKYRIM_GUA
       retargetedClip,
     );
   }
+  retargetedClip.userData.convertedSource = Object.freeze({
+    id: entry.id,
+    file: entry.file,
+    role: entry.role,
+    visualDecision: entry.visualDecision || 'ADOPT',
+  });
   return retargetedClip;
 }
 
