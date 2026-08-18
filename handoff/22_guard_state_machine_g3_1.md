@@ -37,6 +37,10 @@ guard_hold
   |  | reaction_complete                    | counter_complete
   |  v                                      v
   | guard_recover <--------------------------
+  |  |   \
+  |  |    \ counter_confirmed (late authoritative result;
+  |  |     \ allowed only after block/parry)
+  |  |      -------------------------------> guard_counter
   |  |
   |  | recover_complete + guard held
   |  +-------------------------------> guard_hold
@@ -86,6 +90,8 @@ These represent local controller intent only. They must not claim a successful b
 - `counter_confirmed`
 
 These events must come from the authoritative combat layer. The presentation machine only reacts after the outcome is already confirmed.
+
+`counter_confirmed` is intentionally tolerated one presentation step late: if a local Block/Parry reaction already emitted `reaction_complete` and entered `guard_recover`, a later authoritative counter confirmation may still enter `guard_counter` **only when the last accepted outcome was block or parry**. This protects valid server results from normal network delay without accepting arbitrary stale counters.
 
 ### Presentation completion
 
@@ -145,7 +151,7 @@ G3.1 is complete when the following are true:
 1. Neutral → Enter → Hold → Exit → Neutral is deterministic.
 2. `guard_hold` directly references the accepted Skyrim Guard clip/correction layer.
 3. Block and Parry can only enter reaction states from Guard Hold.
-4. Counter presentation only starts after `counter_confirmed` from a valid Guard reaction state.
+4. Counter presentation only starts after authoritative `counter_confirmed`; a delayed confirmation may be accepted from Recover only when Recover came from an accepted Block/Parry outcome.
 5. Guard release during reaction is latched until recovery.
 6. Re-press during Exit re-enters without transient Neutral.
 7. Invalid authoritative outcomes are rejected without mutating machine outcome state.
