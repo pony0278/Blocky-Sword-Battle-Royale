@@ -41,6 +41,15 @@ function validateBridgeInput(THREE, rig, entry) {
   if (!entry?.clipId) throw new Error('Skyrim converted-source bridge requires a canonical clipId');
 }
 
+function canComputeWeaponBindMetadata(THREE, retargetedClip) {
+  return Boolean(
+    THREE?.Quaternion
+    && THREE?.Object3D
+    && THREE?.Euler
+    && Array.isArray(retargetedClip?.userData?.basisCalibration?.quaternion)
+  );
+}
+
 export function retargetConvertedSkyrimGltf(THREE, gltf, rig, entry = SKYRIM_GUARD_CONVERTED_FILES[0], options = {}) {
   validateBridgeInput(THREE, rig, entry);
   const retarget = options.retargetClip || retargetSkyrimClip;
@@ -54,13 +63,14 @@ export function retargetConvertedSkyrimGltf(THREE, gltf, rig, entry = SKYRIM_GUA
     clipId: entry.clipId,
     boneRetargets: options.boneRetargets,
   });
-  retargetedClip.userData = retargetedClip.userData || {};
-  retargetedClip.userData.weaponBindCalibration = computeSkyrimWeaponBindCalibration(
-    THREE,
-    scene,
-    rig,
-    retargetedClip,
-  );
+  if (canComputeWeaponBindMetadata(THREE, retargetedClip)) {
+    retargetedClip.userData.weaponBindCalibration = computeSkyrimWeaponBindCalibration(
+      THREE,
+      scene,
+      rig,
+      retargetedClip,
+    );
+  }
   return retargetedClip;
 }
 
