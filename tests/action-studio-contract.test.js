@@ -99,21 +99,34 @@ test('G1 KayKit Guard Source Review exposes the four source clips and hold compa
   assert.doesNotMatch(`${html}\n${app}`, /attackDirection|incomingDirection|guardDirection/);
 });
 
-test('Action Studio exposes the real G3.4 Guard FSM and Counter in its Guard runtime panel', async () => {
+test('Action Studio authors Guard Runtime statically and binds the real G3.4 controller', async () => {
+  const template = await readFile(new URL('../tools/action-studio/index.template.html', import.meta.url), 'utf8');
+  const html = await readFile(new URL('../tools/action-studio/index.html', import.meta.url), 'utf8');
   const externalController = await readFile(new URL('../tools/action-studio/studio-external-animation-controller.js', import.meta.url), 'utf8');
   const guardController = await readFile(new URL('../tools/action-studio/studio-guard-runtime-controller.js', import.meta.url), 'utf8');
+
   assert.match(externalController, /createStudioGuardRuntimeController/);
-  assert.match(guardController, /Guard Runtime · G3\.4/);
-  assert.match(guardController, /data-guard-runtime="hold"/);
-  assert.match(guardController, /data-guard-runtime="block"/);
-  assert.match(guardController, /data-guard-runtime="parry"/);
-  assert.match(guardController, /data-guard-runtime="perfect"/);
-  assert.match(guardController, /data-guard-runtime="counter"/);
+  for (const surface of [template, html]) {
+    assert.equal((surface.match(/id="guardRuntimePanel"/g) || []).length, 1);
+    assert.match(surface, /Guard Runtime · G3\.4/);
+    assert.match(surface, /data-guard-runtime-static="true"/);
+    assert.match(surface, /data-controller-bound="false"/);
+    assert.match(surface, /data-guard-runtime="hold"/);
+    assert.match(surface, /data-guard-runtime="block"/);
+    assert.match(surface, /data-guard-runtime="parry"/);
+    assert.match(surface, /data-guard-runtime="perfect"/);
+    assert.match(surface, /data-guard-runtime="counter"/);
+    assert.doesNotMatch(surface, /data-template="(?:guard|parry|counter)"/);
+  }
+
+  assert.match(guardController, /resolveGuardPanel/);
+  assert.match(guardController, /data-controller-bound/);
+  assert.match(guardController, /data-guard-runtime-button-count/);
+  assert.doesNotMatch(guardController, /insertAdjacentHTML|legacyGuardRow|quickActions\.querySelector/);
   assert.match(guardController, /Melee_Block_Attack/);
   assert.match(guardController, /GUARD_EVENTS\.COUNTER_CONFIRMED/);
   assert.match(guardController, /GUARD_WEAPON_MOUNT_PROFILE_IDS\.KAYKIT_DEFAULT/);
   assert.match(guardController, /GUARD_WEAPON_MOUNT_PROFILE_IDS\.SKYRIM_GUARD/);
-  assert.match(guardController, /presentation never self-confirms combat authority/);
   assert.doesNotMatch(guardController, /machine\.send\(GUARD_EVENTS\.COUNTER_COMPLETE/);
 });
 

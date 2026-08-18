@@ -43,11 +43,22 @@
           <button id="showIdle">Idle</button>
           <button id="playSlash" class="primary">▶ Slash Test</button>
         </div>
-        <div class="button-grid three secondary-row">
-          <button data-template="guard">Guard</button>
-          <button data-template="parry">Parry</button>
-          <button data-template="counter">Counter</button>
+      </section>
+
+      <section id="guardRuntimePanel" class="panel guard-runtime-panel" data-stage="G3.4" data-guard-runtime-static="true" data-controller-bound="false" data-guard-runtime-button-count="5">
+        <div class="panel-title"><span>Guard Runtime · G3.4</span><small>Skyrim Guard ↔ KayKit Counter</small></div>
+        <p class="blocking-intro">真正 Guard FSM 預覽。Block / Parry 使用 Skyrim Guard family；Counter 只會在預覽送出 authoritative <b>COUNTER_CONFIRMED</b> 後進入 KayKit <b>Melee_Block_Attack</b>，完成後回到 Skyrim Recover / Hold。</p>
+        <div class="button-grid three">
+          <button data-guard-runtime="hold">Guard Hold</button>
+          <button data-guard-runtime="block">Block Hit</button>
+          <button data-guard-runtime="parry">Parry</button>
         </div>
+        <div class="button-grid two secondary-row">
+          <button data-guard-runtime="perfect">Perfect Parry</button>
+          <button data-guard-runtime="counter" class="primary">▶ Counter</button>
+        </div>
+        <div id="guardRuntimeStatus" class="status-line">G3.4 · assets load on first preview</div>
+        <div id="guardRuntimeDetail" class="status-line">Counter = Melee_Block_Attack · presentation never self-confirms combat authority</div>
       </section>
 
       <section class="panel pose-drag-panel">
