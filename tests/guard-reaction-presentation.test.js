@@ -9,18 +9,19 @@ import {
   sampleGuardReactionProfile,
 } from '../src/combat/guard-reaction-presentation.js';
 
-test('G3.4.0 preserves the full Skyrim Block / Parry / Perfect Parry source motions', () => {
+test('G3.4.2R restores the validated Block Hit window and locks reaction root rotation', () => {
   const block = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
   const parry = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PARRY];
   const perfect = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PERFECT_PARRY];
 
   assert.equal(block.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(block.sourceDurationSeconds, 0.8);
-  assert.equal(block.sourceWindow.endSeconds, 0.8);
-  assert.equal(block.durationMs, 800);
+  assert.equal(block.sourceWindow.endSeconds, 0.6);
+  assert.equal(block.durationMs, 600);
   assert.deepEqual(block.counterWindowSeconds, [0.24, 0.6]);
   assert.equal(block.id, GUARD_REACTION_PROFILE_IDS.BLOCK_HIT);
-  assert.equal(block.authoredStage, 'G3.4.0');
+  assert.equal(block.rootRotationPolicy, 'lock');
+  assert.equal(block.rootRotationSafetyStage, 'G3.4.2R');
 
   assert.equal(parry.clipId, 'SKYRIM_GUARD/shd_blockbash');
   assert.ok(Math.abs(parry.sourceDurationSeconds - (1 / 3)) < 1e-9);
@@ -28,6 +29,7 @@ test('G3.4.0 preserves the full Skyrim Block / Parry / Perfect Parry source moti
   assert.ok(Math.abs(parry.durationMs - (1000 / 3)) < 1e-6);
   assert.equal(parry.id, GUARD_REACTION_PROFILE_IDS.PARRY);
   assert.equal(parry.authoredStage, 'G3.4.0');
+  assert.equal(parry.rootRotationPolicy, 'lock');
 
   assert.equal(perfect.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
   assert.equal(perfect.sourceDurationSeconds, 0.7);
@@ -36,14 +38,15 @@ test('G3.4.0 preserves the full Skyrim Block / Parry / Perfect Parry source moti
   assert.deepEqual(perfect.counterWindowSeconds, [0.1, 0.48]);
   assert.equal(perfect.id, GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY);
   assert.equal(perfect.authoredStage, 'G3.4.0');
+  assert.equal(perfect.rootRotationPolicy, 'lock');
 });
 
-test('G3.4.0 does not adopt the rejected blockbashintro into the runtime family', () => {
+test('G3.4.2R does not adopt the rejected blockbashintro into the runtime family', () => {
   const serialized = JSON.stringify(LONGSWORD_GUARD_REACTION_PROFILES);
   assert.doesNotMatch(serialized, /blockbashintro/i);
 });
 
-test('G3.4.0 selects Perfect Parry from authoritative PARRY_CONFIRMED payload metadata', () => {
+test('G3.4.2R preserves authoritative Perfect Parry selection metadata', () => {
   assert.equal(isPerfectParryPayload({ perfect: true }), true);
   assert.equal(isPerfectParryPayload({ perfectParry: true }), true);
   assert.equal(isPerfectParryPayload({ grade: 'PERFECT' }), true);
@@ -59,21 +62,16 @@ test('G3.4.0 selects Perfect Parry from authoritative PARRY_CONFIRMED payload me
   assert.equal(getGuardReactionProfile('guard_hold', {}), null);
 });
 
-test('G3.4.0 keeps counter windows unchanged while allowing the authored settle to finish', () => {
-  const blockWindowEnd = sampleGuardReactionProfile('guard_block_hit', 600, {});
-  assert.equal(blockWindowEnd.complete, false);
-  assert.equal(blockWindowEnd.counterWindowOpen, true);
-  assert.equal(blockWindowEnd.sourceTimeSeconds, 0.6);
+test('G3.4.2R completes Block Hit at the validated 0.60s boundary while leaving other reaction windows intact', () => {
+  const blockBefore = sampleGuardReactionProfile('guard_block_hit', 599, {});
+  assert.equal(blockBefore.complete, false);
+  assert.equal(blockBefore.counterWindowOpen, true);
+  assert.ok(blockBefore.sourceTimeSeconds < 0.6);
 
-  const blockSettle = sampleGuardReactionProfile('guard_block_hit', 700, {});
-  assert.equal(blockSettle.complete, false);
-  assert.equal(blockSettle.counterWindowOpen, false);
-  assert.equal(blockSettle.sourceTimeSeconds, 0.7);
-
-  const blockEnd = sampleGuardReactionProfile('guard_block_hit', 800, {});
+  const blockEnd = sampleGuardReactionProfile('guard_block_hit', 600, {});
   assert.equal(blockEnd.complete, true);
-  assert.equal(blockEnd.counterWindowOpen, false);
-  assert.equal(blockEnd.sourceTimeSeconds, 0.8);
+  assert.equal(blockEnd.counterWindowOpen, true);
+  assert.equal(blockEnd.sourceTimeSeconds, 0.6);
   assert.equal(blockEnd.completionEvent, 'reaction_complete');
 
   const parryEnd = sampleGuardReactionProfile('guard_parry', 1000 / 3, {});
