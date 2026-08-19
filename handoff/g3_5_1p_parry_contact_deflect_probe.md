@@ -136,6 +136,30 @@ Controls:
 
 The lab loads the real converted Skyrim Guard GLBs and uses the accepted Skyrim weapon-bind calibration.
 
+## HAND_L shield movement instrumentation
+
+The first artifact review exposed a visual-testing flaw: the probe mounted the sword but did not have a real shield mesh, so reading “redirect versus bash” from the left-arm rig alone was too ambiguous.
+
+The T1 lab now adds **probe-only shield instrumentation** driven by the existing `HAND_L` socket:
+
+- a live wireframe octagonal shield marker at the current `HAND_L` world position;
+- a faint shield ghost frozen at the Block Hit contact position;
+- a line from contact position to current position;
+- HUD readout of shield-center displacement (`shield Δ`).
+
+This marker is not production shield art and does not change character equipment. It exists only to make the motion path visible during tuning.
+
+### Current visual finding with shield marker
+
+- **Normal T1 is promising:** after clear contact, the shield center moves strongly upward / laterally and the source is trimmed before the late P0 follow-through. This reads closer to a redirect than a second initiated bash.
+- **Perfect T1 is improved but not signed off:** the shorter power-bash trim avoids the obvious late P0 body-check, but the side view still suggests a meaningful depth / forward component.
+- therefore no production mapping is changed yet.
+
+A sensible next Perfect-Parry comparison is either:
+
+1. reuse the accepted Normal compact deflect and distinguish Perfect through stronger stagger / hitstop / FX; or
+2. test one narrower `shd_blockbashpower` trim only if a clean lateral redirect segment can be isolated.
+
 ## T1 acceptance criteria
 
 T1 is visually better than P0 only if:
@@ -167,11 +191,11 @@ T1 evidence includes:
 - Normal contact;
 - Normal hold;
 - Normal mid-blend;
-- Normal deflect;
+- Normal deflect and end pose;
 - Perfect deflect in 3/4;
-- Perfect deflect from the side.
+- Perfect deflect from the side and end pose.
 
-P0 comparison frames are retained for Normal and Perfect so the visual decision is not made from memory.
+P0 comparison frames include later Normal and Perfect source poses so the Shield Bash tail can be compared directly rather than from memory.
 
 ## Relationship to G3.5.1
 
@@ -187,6 +211,7 @@ No dedicated Counter animation is reintroduced.
 
 After T1 visual review:
 
-- if T1 clearly reads as **contact → redirect**, promote the accepted timing into a production Parry presentation stage;
-- if T1 still reads as Shield Bash, try one narrower trim only if the source still contains an obvious lateral redirect;
-- if no trim reads correctly, keep production `shd_blockhit` only and stop forcing the bash sources into Parry.
+- if Normal T1 continues to read as **contact → redirect**, promote only that accepted timing into a later production Parry presentation stage;
+- keep Perfect under review rather than forcing `shd_blockbashpower` into production;
+- if no narrower power trim improves the side-view motion, let Perfect reuse Normal Parry motion and differentiate it through gameplay / presentation accents;
+- production remains `shd_blockhit` until this visual decision is explicitly accepted.
