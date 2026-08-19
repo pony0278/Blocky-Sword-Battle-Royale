@@ -89,22 +89,22 @@ jobs:
             --screenshot="artifacts/g3-4/perfect-counter-220ms-side.png" \
             "${BASE}?variant=perfect&elapsed=220&view=side"
 
-          # G3.4.2 source silhouette review. Melee_Block_Attack is ~1066.67ms.
-          # 15/25/40/55/70/85% => 160/267/427/587/747/907ms.
-          for SPEC in '15:160' '25:267' '40:427' '55:587' '70:747' '85:907'; do
+          # G3.4.2 tuned presentation checkpoints for the ~1066.67 ms Counter.
+          # Presentation anchors 18/30/38/50/76/94% => ~192/320/405/533/811/1003 ms.
+          for SPEC in '18:192' '30:320' '38:405' '50:533' '76:811' '94:1003'; do
             PCT="${SPEC%%:*}"
             MS="${SPEC##*:}"
             "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
               --window-size=1500,1000 --virtual-time-budget=25000 \
-              --screenshot="artifacts/g3-4/silhouette/source-${PCT}pct-three.png" \
+              --screenshot="artifacts/g3-4/silhouette/tuned-${PCT}pct-three.png" \
               "${BASE}?variant=normal&elapsed=${MS}&view=three"
           done
-          for SPEC in '25:267' '40:427' '55:587' '70:747'; do
+          for SPEC in '30:320' '38:405' '50:533' '76:811'; do
             PCT="${SPEC%%:*}"
             MS="${SPEC##*:}"
             "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
               --window-size=1500,1000 --virtual-time-budget=25000 \
-              --screenshot="artifacts/g3-4/silhouette/source-${PCT}pct-side.png" \
+              --screenshot="artifacts/g3-4/silhouette/tuned-${PCT}pct-side.png" \
               "${BASE}?variant=normal&elapsed=${MS}&view=side"
           done
 
