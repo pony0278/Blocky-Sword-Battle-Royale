@@ -254,7 +254,7 @@
 
   <script>
     window.__ACTION_STUDIO_RUNTIME_STAGE = 'G2.5.2';
-    window.__ACTION_STUDIO_BUNDLE_VERSION = 'b683697b0442';
+    window.__ACTION_STUDIO_BUNDLE_VERSION = '4dbc9014ced0';
     const actionStudioParams = new URLSearchParams(location.search);
     if (location.protocol === 'file:') {
       window.__ACTION_STUDIO_ENTRY_MODE = 'bundle-file';
@@ -272,7 +272,7 @@
       window.__ACTION_STUDIO_ENTRY_MODE = 'bundle-http';
       document.documentElement.dataset.actionStudioEntry = 'bundle-http';
       const script = document.createElement('script');
-      script.src = './action-studio.bundle.js?v=b683697b0442';
+      script.src = './action-studio.bundle.js?v=4dbc9014ced0';
       script.dataset.actionStudioVersion = window.__ACTION_STUDIO_BUNDLE_VERSION;
       script.onload = async () => {
         document.documentElement.dataset.actionStudioBoot = 'pass';
@@ -280,17 +280,19 @@
         const root = document.documentElement;
         try {
           const runtime = window.__ACTION_STUDIO_GUARD_RUNTIME__;
-          if (!runtime?.start) throw new Error('Guard Runtime controller unavailable after bundle boot');
-          await runtime.start('parry');
-          await new Promise((resolve) => setTimeout(resolve, 380));
-          const report = runtime.report || {};
+          if (!runtime?.sampleAt) throw new Error('Guard Runtime deterministic sampler unavailable after bundle boot');
+          const result = await runtime.sampleAt('parry', 360);
+          const report = result?.report || runtime.report || {};
+          const state = String(result?.snapshot?.state || runtime.snapshot?.state || '');
           const clipId = String(report.clipId || '');
           const sourceMs = Math.round((Number(report.sourceTimeSeconds) || 0) * 1000);
-          const pass = runtime.mode === 'parry'
+          const pass = state === 'guard_parry'
+            && runtime.mode === 'parry'
             && clipId === 'SKYRIM_GUARD/parry_contact_deflect_t3'
-            && sourceMs >= 320
-            && sourceMs <= 520;
+            && sourceMs >= 350
+            && sourceMs <= 370;
           root.dataset.pagesGuardGate = pass ? 'pass' : 'fail';
+          root.dataset.pagesGuardState = state;
           root.dataset.pagesGuardClip = clipId;
           root.dataset.pagesGuardSourceMs = String(sourceMs);
         } catch (error) {
