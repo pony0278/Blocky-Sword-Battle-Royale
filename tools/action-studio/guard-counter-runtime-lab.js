@@ -71,6 +71,18 @@ function resetToHold(){
   lastCanonicalGuardWorldQuaternion=worldQuaternionSnapshot(); lastCanonicalGuardRig=rigSnapshot(); lastCanonicalGuardMount=mountSnapshot();
   return r;
 }
+function probeHoldRepeatability(){
+  resetToHold();
+  const first={rig:rigSnapshot(),mount:mountSnapshot(),world:worldQuaternionSnapshot()};
+  runtime.sync(camera);
+  const second={rig:rigSnapshot(),mount:mountSnapshot(),world:worldQuaternionSnapshot()};
+  runtime.sync(camera);
+  const third={rig:rigSnapshot(),mount:mountSnapshot(),world:worldQuaternionSnapshot()};
+  const firstToSecond={rig:rigDiffDegrees(first.rig,second.rig),mount:mountDelta(first.mount,second.mount),worldDeg:quaternionAngleDegrees(first.world,second.world)};
+  const secondToThird={rig:rigDiffDegrees(second.rig,third.rig),mount:mountDelta(second.mount,third.mount),worldDeg:quaternionAngleDegrees(second.world,third.world)};
+  const maxRig=Math.max(...Object.values(firstToSecond.rig),...Object.values(secondToThird.rig));
+  return {pass:maxRig<.01&&firstToSecond.mount<1e-6&&secondToThird.mount<1e-6&&firstToSecond.worldDeg<.01&&secondToThird.worldDeg<.01,firstToSecond,secondToThird};
+}
 function openCounterWindow(variant){
   resetToHold(); const perfect=variant==='perfect';
   machine.send(GUARD_EVENTS.PARRY_CONFIRMED,{perfect,verification:`g34-${variant}-parry`}); runtime.sync(camera);
@@ -141,15 +153,17 @@ function verifyScenario(variant){
 function runVerification(kaykit,skyrim){
   const clip=kaykit.clips.get('Melee_Block_Attack'),guardClip=skyrim.clips.get('SKYRIM_GUARD/shd_blockidle'); counterDurationMs=Math.max(.001,Number(clip?.duration)||0)*1000;
   const diagnostics=character.animation.getPreparedClipDiagnostics('Melee_Block_Attack',true);
+  const holdRepeatability=probeHoldRepeatability();
   const normal=verifyScenario('normal'),perfect=verifyScenario('perfect');
   const gates={skyrimGuardFamilyLoaded:skyrim.clips.size===4,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
-    inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
+    inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,guardHoldRepeatable:holdRepeatability.pass,
+    normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
     poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends,
     canonicalGuardTargetStable:normal.canonicalToFinalGuardDeg<.25&&perfect.canonicalToFinalGuardDeg<.25,
     worldSpaceSwordOrientationStabilized:normal.recoveryWorldSwordStabilized&&normal.worldSwordOrientationMonotonic
       &&perfect.recoveryWorldSwordStabilized&&perfect.worldSwordOrientationMonotonic};
   const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1.1',pass:failures.length===0,
-    counterClip:{name:clip?.name||null,durationSeconds:Number(clip?.duration)||0,diagnostics},
+    counterClip:{name:clip?.name||null,durationSeconds:Number(clip?.duration)||0,diagnostics},holdRepeatability,
     trackCoverage:{guard:clipTargetSummary(guardClip),counter:clipTargetSummary(clip)},scenarios:{normal,perfect},mountHistory:[...mountHistory],gates,failures};
   document.documentElement.dataset.g34=report.pass?'pass':'fail'; document.documentElement.dataset.g34Normal=normal.pass?'pass':'fail';
   document.documentElement.dataset.g34Perfect=perfect.pass?'pass':'fail'; document.documentElement.dataset.g34CounterClip=clip?'pass':'fail';
