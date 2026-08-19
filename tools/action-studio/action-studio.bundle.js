@@ -10586,6 +10586,13 @@ function inverseQuat(value) {
   return { x: -value.x, y: -value.y, z: -value.z, w: value.w };
 }
 
+function quaternionAngleRadians(aInput, bInput) {
+  const a = quat(aInput);
+  const b = quat(bInput);
+  const dot = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+  return 2 * Math.acos(Math.max(-1, Math.min(1, dot)));
+}
+
 function slerpQuat(fromInput, toInput, tInput) {
   const t = clamp01(tInput);
   const from = quat(fromInput);
@@ -10716,13 +10723,36 @@ function sampleRecoveryWorldQuaternion(sourceWorldInput, targetWorldInput, progr
   return Object.freeze(slerpQuat(sourceWorldInput, targetWorldInput, smoothstep(progress)));
 }
 
-function applyObjectWorldQuaternion(object3d, desiredWorldInput) {
+function applyObjectWorldQuaternion(object3d, desiredWorldInput, options = {}) {
   if (!object3d?.quaternion || !desiredWorldInput) return null;
-  const parentWorld = object3d.parent ? captureObjectWorldQuaternion(object3d.parent) : null;
-  const local = resolveLocalQuaternionForWorld(parentWorld, desiredWorldInput);
+  const desiredWorld = quat(desiredWorldInput);
+  const maxIterations = Math.max(1, Math.min(8, Math.trunc(finite(options.maxIterations, 4))));
+  const toleranceRadians = Math.max(1e-8, finite(options.toleranceRadians, 1e-5));
+
+  let parentWorld = object3d.parent ? captureObjectWorldQuaternion(object3d.parent) : null;
+  let local = resolveLocalQuaternionForWorld(parentWorld, desiredWorld);
   applyQuaternion(object3d.quaternion, local);
   object3d.updateWorldMatrix?.(false, false);
   object3d.updateMatrixWorld?.(true);
+
+  // A chain of slightly non-uniformly scaled bones can introduce small affine shear.
+  // In that case inverse(parentWorldQuaternion) * desiredWorldQuaternion is only an
+  // approximation of the final decomposed Object3D world rotation. Measure the actual
+  // result and iteratively pre-correct the local quaternion until the visible world
+  // orientation converges on the authored recovery path.
+  for (let iteration = 1; iteration < maxIterations; iteration += 1) {
+    const actualWorld = captureObjectWorldQuaternion(object3d);
+    if (!actualWorld || quaternionAngleRadians(actualWorld, desiredWorld) <= toleranceRadians) break;
+    const worldCorrection = multiplyQuat(desiredWorld, inverseQuat(actualWorld));
+    parentWorld = object3d.parent ? captureObjectWorldQuaternion(object3d.parent) : null;
+    const localCorrection = parentWorld
+      ? multiplyQuat(multiplyQuat(inverseQuat(parentWorld), worldCorrection), parentWorld)
+      : worldCorrection;
+    local = multiplyQuat(localCorrection, quat(object3d.quaternion));
+    applyQuaternion(object3d.quaternion, local);
+    object3d.updateWorldMatrix?.(false, false);
+    object3d.updateMatrixWorld?.(true);
+  }
   return local;
 }
 
