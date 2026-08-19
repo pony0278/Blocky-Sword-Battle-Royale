@@ -75,19 +75,48 @@ function captureWorldQuaternion(THREE, object3d) {
 }
 
 function applyWorldQuaternion(THREE, object3d, desiredWorld) {
-  if (!object3d?.quaternion || !desiredWorld) return false;
+  if (!object3d?.quaternion || !desiredWorld || !THREE?.Quaternion) return false;
   const parent = object3d.parent;
-  if (!parent?.getWorldQuaternion || !THREE?.Quaternion) return false;
+  if (!parent?.getWorldQuaternion) return false;
+
   parent.updateWorldMatrix?.(true, false);
   const parentWorld = new THREE.Quaternion();
   parent.getWorldQuaternion(parentWorld);
+
+  // Start from the analytic parent^-1 * desired solution. Bone-local non-uniform
+  // scaling can make matrixWorld decomposition differ from pure quaternion
+  // composition, so refine against Three.js' actual world quaternion below.
   const local = solveLocalQuaternionForWorld(parentWorld, desiredWorld);
   if (typeof object3d.quaternion.set === 'function') {
     object3d.quaternion.set(local.x, local.y, local.z, local.w);
   } else {
     Object.assign(object3d.quaternion, local);
   }
-  object3d.updateMatrixWorld?.(true);
+
+  const desired = new THREE.Quaternion(desiredWorld.x, desiredWorld.y, desiredWorld.z, desiredWorld.w).normalize();
+  const actual = new THREE.Quaternion();
+  const worldError = new THREE.Quaternion();
+  const parentInverse = new THREE.Quaternion();
+  const localError = new THREE.Quaternion();
+  const scratch = new THREE.Quaternion();
+
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    object3d.updateWorldMatrix?.(true, false);
+    object3d.getWorldQuaternion(actual);
+    if (actual.angleTo(desired) <= 1e-5) break;
+
+    parent.updateWorldMatrix?.(true, false);
+    parent.getWorldQuaternion(parentWorld);
+    // desired = worldError * actual
+    worldError.copy(desired).multiply(scratch.copy(actual).invert()).normalize();
+    // Convert the world-space correction into the current parent-local frame:
+    // localError = parent^-1 * worldError * parent.
+    parentInverse.copy(parentWorld).invert();
+    localError.copy(parentInverse).multiply(worldError).multiply(parentWorld).normalize();
+    object3d.quaternion.premultiply(localError).normalize();
+  }
+
+  object3d.updateWorldMatrix?.(true, false);
   return true;
 }
 
@@ -247,9 +276,6 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       : beginRecoveryBridge(snapshot, camera);
     const presentation = preparePresentation(snapshot);
 
-    // Sample the exact Guard Hold target pose every frame, then overwrite it with the
-    // inertial bridge. This keeps the target deterministic while preserving the source
-    // pose at t=0 and landing exactly on Hold at t=1.
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
     applyCorrection(1);
 
@@ -274,6 +300,8 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       applyObjectTransform(weaponObject3d, mount);
     }
 
+    character.update?.(0, camera);
+
     const stabilizeCounterSword = bridge.sourceState === GUARD_STATES.COUNTER
       && bridge.sourceWorldQuaternion
       && bridge.targetWorldQuaternion;
@@ -286,8 +314,6 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       );
       worldSwordOrientationStabilized = applyWorldQuaternion(THREE, weaponObject3d, desiredWorld);
     }
-
-    character.update?.(0, camera);
 
     return Object.freeze({
       ...defaultReport(snapshot),
