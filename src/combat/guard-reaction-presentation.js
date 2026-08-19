@@ -1,8 +1,6 @@
 import {
   GUARD_ACTION_SEMANTIC_FIT,
   GUARD_ACTION_SEMANTIC_ROLES,
-  PARRY_MOTION_ACQUISITION_CRITERIA,
-  PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA,
   guardActionSemanticAssessment,
 } from './guard-action-semantics.js';
 
@@ -67,63 +65,55 @@ function reactionProfile({
   });
 }
 
+const SHARED_BLOCK_CONTACT = Object.freeze({
+  sourceId: 'shd_blockhit',
+  file: 'shd_blockhit.source.glb',
+  clipId: 'SKYRIM_GUARD/shd_blockhit',
+  sourceDurationSeconds: 0.8,
+  sourceEndSeconds: 0.6,
+});
+
 export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
   [GUARD_REACTION_VARIANTS.BLOCK_HIT]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.BLOCK_HIT,
     variant: GUARD_REACTION_VARIANTS.BLOCK_HIT,
     state: 'guard_block_hit',
-    sourceId: 'shd_blockhit',
-    file: 'shd_blockhit.source.glb',
-    clipId: 'SKYRIM_GUARD/shd_blockhit',
-    sourceDurationSeconds: 0.8,
-    sourceEndSeconds: 0.6,
+    ...SHARED_BLOCK_CONTACT,
     counterWindowSeconds: [0.24, 0.6],
     visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; do not expose the unverified 0.60–0.80s tail while root-rotation safety is enforced',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Block Hit still reads as a defensive impact reaction and remains approved for production use.',
+      note: 'Block Hit reads as a defensive contact/recoil reaction and remains approved for production use.',
     }),
   }),
   [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
     variant: GUARD_REACTION_VARIANTS.PARRY,
     state: 'guard_parry',
-    sourceId: 'shd_blockbash',
-    file: 'shd_blockbash.source.glb',
-    clipId: 'SKYRIM_GUARD/shd_blockbash',
-    sourceDurationSeconds: 1 / 3,
-    sourceEndSeconds: 1 / 3,
+    ...SHARED_BLOCK_CONTACT,
     counterWindowSeconds: [0.08, 1 / 3],
-    visualDecision: 'G3.5 PROVISIONAL ONLY — technically valid playback, but the source reads as a shield bash rather than a defensive parry deflection; replace before semantic sign-off',
+    visualDecision: 'G3.5 SHARED DEFENSIVE CONTACT — Parry is a timing-qualified successful block, so reuse the validated Block Hit motion; the semantic difference comes from combat outcome and Counter Window rather than a shield-bash animation',
     semanticAssessment: guardActionSemanticAssessment({
-      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_DEFLECT,
-      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.SHIELD_BASH,
-      fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
-      replacementRequired: true,
-      acquisitionCriteria: PARRY_MOTION_ACQUISITION_CRITERIA,
-      note: 'Keep shd_blockbash as a future Shield Bash candidate. Do not treat it as the final Parry animation.',
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_SUCCESS,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
+      note: 'Parry is not a separate attack. It is a successful timed block, so sharing shd_blockhit is semantically approved.',
     }),
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY,
     variant: GUARD_REACTION_VARIANTS.PERFECT_PARRY,
     state: 'guard_parry',
-    sourceId: 'shd_blockbashpower',
-    file: 'shd_blockbashpower.source.glb',
-    clipId: 'SKYRIM_GUARD/shd_blockbashpower',
-    sourceDurationSeconds: 0.7,
-    sourceEndSeconds: 0.7,
+    ...SHARED_BLOCK_CONTACT,
     counterWindowSeconds: [0.1, 0.48],
-    visualDecision: 'G3.5 PROVISIONAL ONLY — strong authored motion remains technically usable, but it reads as a power shield bash instead of a high-quality parry deflection; replace before semantic sign-off',
+    visualDecision: 'G3.5 SHARED DEFENSIVE CONTACT — Perfect Parry also reuses the validated Block Hit motion; perfect quality should be communicated by authoritative grade, Counter opportunity, enemy response and presentation accents rather than a shield-bash attack',
     semanticAssessment: guardActionSemanticAssessment({
-      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_DEFLECT,
-      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.SHIELD_POWER_BASH,
-      fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
-      replacementRequired: true,
-      acquisitionCriteria: PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA,
-      note: 'Keep shd_blockbashpower as a future powered Shield Bash candidate rather than discarding the asset.',
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_SUCCESS,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
+      note: 'Perfect Parry shares the defensive contact motion. Its stronger reward belongs in timing, enemy stagger, FX/audio and Counter access.',
     }),
   }),
 });
