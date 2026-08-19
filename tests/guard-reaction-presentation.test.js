@@ -8,18 +8,29 @@ import {
   isPerfectParryPayload,
   sampleGuardReactionProfile,
 } from '../src/combat/guard-reaction-presentation.js';
+import { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } from '../src/animation/parry-contact-deflect-runtime-clip.js';
 
-test('G3.5 shares the validated Block Hit contact motion across Block, Parry and Perfect Parry', () => {
+test('G3.5.1P-T3 keeps Block Hit unchanged and promotes Shared T1 virtual clips for Parry outcomes', () => {
   const block = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
   const parry = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PARRY];
   const perfect = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PERFECT_PARRY];
 
+  assert.equal(block.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(block.sourceId, 'shd_blockhit');
+  assert.equal(block.sourceDurationSeconds, 0.8);
+  assert.equal(block.sourceWindow.endSeconds, 0.6);
+  assert.equal(block.durationMs, 600);
+
+  assert.equal(parry.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY);
+  assert.equal(perfect.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY);
+  assert.equal(parry.sourceDurationSeconds, 0.6);
+  assert.equal(perfect.sourceDurationSeconds, 0.6);
+  assert.equal(parry.sourceWindow.endSeconds, 0.6);
+  assert.equal(perfect.sourceWindow.endSeconds, 0.6);
+  assert.equal(parry.durationMs, 600);
+  assert.equal(perfect.durationMs, 600);
+
   for (const profile of [block, parry, perfect]) {
-    assert.equal(profile.clipId, 'SKYRIM_GUARD/shd_blockhit');
-    assert.equal(profile.sourceId, 'shd_blockhit');
-    assert.equal(profile.sourceDurationSeconds, 0.8);
-    assert.equal(profile.sourceWindow.endSeconds, 0.6);
-    assert.equal(profile.durationMs, 600);
     assert.equal(profile.rootRotationPolicy, 'lock');
     assert.equal(profile.rootRotationSafetyStage, 'G3.4.2R');
   }
@@ -32,10 +43,19 @@ test('G3.5 shares the validated Block Hit contact motion across Block, Parry and
   assert.equal(perfect.id, GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY);
 });
 
-test('G3.5 removes shield-bash clips from Parry runtime mapping while keeping the rejected intro absent', () => {
-  const serialized = JSON.stringify(LONGSWORD_GUARD_REACTION_PROFILES);
-  assert.doesNotMatch(serialized, /shd_blockbash/i);
-  assert.doesNotMatch(serialized, /blockbashintro/i);
+test('G3.5.1P-T3 production Parry mapping uses shared blockbash deflect and rejects power-bash mapping', () => {
+  const parry = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PARRY];
+  const perfect = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PERFECT_PARRY];
+  for (const profile of [parry, perfect]) {
+    assert.equal(profile.productionPresentationStage, 'G3.5.1P-T3');
+    assert.deepEqual(profile.productionSourceChain, [
+      'SKYRIM_GUARD/shd_blockhit',
+      'SKYRIM_GUARD/shd_blockbash',
+    ]);
+    assert.notEqual(profile.clipId, 'SKYRIM_GUARD/shd_blockbash');
+    assert.notEqual(profile.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
+    assert.equal(profile.productionSourceChain.includes('SKYRIM_GUARD/shd_blockbashpower'), false);
+  }
 });
 
 test('G3.5 preserves authoritative Perfect Parry selection metadata', () => {
@@ -54,7 +74,7 @@ test('G3.5 preserves authoritative Perfect Parry selection metadata', () => {
   assert.equal(getGuardReactionProfile('guard_hold', {}), null);
 });
 
-test('G3.5 completes all shared defensive contact reactions at the validated 0.60s boundary', () => {
+test('G3.5.1P-T3 preserves the existing 0.60s reaction completion boundary', () => {
   const blockBefore = sampleGuardReactionProfile('guard_block_hit', 599, {});
   assert.equal(blockBefore.complete, false);
   assert.equal(blockBefore.counterWindowOpen, true);

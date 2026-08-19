@@ -1,6 +1,7 @@
 import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
 import { applyMountCalibration } from '../../src/character/character-sockets.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
+import { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } from '../../src/animation/parry-contact-deflect-runtime-clip.js';
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
 import {
   GUARD_EVENTS,
@@ -11,16 +12,21 @@ import { createGuardPresentationRuntime } from '../../src/combat/guard-presentat
 import { GUARD_WEAPON_MOUNT_PROFILE_IDS } from '../../src/combat/guard-counter-presentation.js';
 import { createGuardWeaponMountRuntime } from '../../src/combat/guard-weapon-mount-runtime.js';
 
+const GUARD_RUNTIME_STAGE = 'G3.5.1P-T3';
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
   block: 'Block Hit',
   parry: 'Parry',
   perfect: 'Perfect Parry',
-  // Compatibility DOM key. G3.5.1 relabels this button to Parry Advantage.
+  // Compatibility DOM key. Production semantics are Parry Advantage, not a dedicated Counter action.
   counter: 'Parry Advantage',
 });
 
 const REQUIRED_GUARD_RUNTIME_MODES = Object.freeze(['hold', 'block', 'parry', 'perfect', 'counter']);
+const REQUIRED_T3_PARRY_CLIPS = Object.freeze([
+  PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
+  PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
+]);
 
 function captureMountCalibration(object3d) {
   return {
@@ -42,17 +48,18 @@ function captureMountCalibration(object3d) {
   };
 }
 
-function relabelG351Surface(panel) {
-  panel.setAttribute('data-stage', 'G3.5.1');
+function relabelT3Surface(panel) {
+  panel.setAttribute('data-stage', GUARD_RUNTIME_STAGE);
+  panel.setAttribute('data-parry-presentation', 'contact-deflect');
   panel.setAttribute('data-followup-model', 'free-directional-attack');
   const title = panel.querySelector('.panel-title span');
   const subtitle = panel.querySelector('.panel-title small');
   const intro = panel.querySelector('.blocking-intro');
   const compatibilityButton = panel.querySelector('[data-guard-runtime="counter"]');
-  if (title) title.textContent = 'Guard Runtime · G3.5.1';
-  if (subtitle) subtitle.textContent = 'Parry Advantage → free directional attack';
+  if (title) title.textContent = `Guard Runtime · ${GUARD_RUNTIME_STAGE}`;
+  if (subtitle) subtitle.textContent = 'Contact → Deflect → Parry Advantage';
   if (intro) {
-    intro.textContent = 'Block / Parry 共用 Skyrim defensive contact。Parry 成功後由 authoritative combat 讓對手失衡；玩家直接使用既有 Top / Left / Right 攻擊，不再播放專用 Counter 動畫。';
+    intro.textContent = 'Block 保留 Skyrim Block Hit；Parry / Perfect Parry 先接住攻擊，再以 T2 Shared blockbash compact segment 往上／側向撥開。成功後仍由 authoritative combat 讓對手失衡，玩家直接使用既有 Top / Left / Right 攻擊。';
   }
   if (compatibilityButton) {
     compatibilityButton.textContent = '▶ Parry Advantage';
@@ -74,7 +81,7 @@ function resolveGuardPanel() {
   panel.setAttribute('data-guard-runtime-static', 'true');
   panel.setAttribute('data-controller-bound', 'true');
   panel.setAttribute('data-guard-runtime-button-count', String(buttons.length));
-  relabelG351Surface(panel);
+  relabelT3Surface(panel);
   return panel;
 }
 
@@ -168,7 +175,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus('G3.5.1 · loading Skyrim Guard defensive contact…');
+    setStatus(`${GUARD_RUNTIME_STAGE} · loading Skyrim Guard + production contact → deflect…`);
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
       const skyrim = await loadSkyrimConvertedAnimationLibrary(loader, {
@@ -177,11 +184,15 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         baseUrl: '../../assets/skyrim/guard/converted/',
         fps: 30,
       });
+      const missingT3Clips = REQUIRED_T3_PARRY_CLIPS.filter((clipId) => !skyrim.clips.has(clipId));
+      if (missingT3Clips.length) {
+        throw new Error(`${GUARD_RUNTIME_STAGE} missing production Parry clips: ${missingT3Clips.join(', ')}`);
+      }
       character.registerAnimations(skyrim);
 
       const bind = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle')?.userData?.weaponBindCalibration;
       if (!bind?.correctionQuaternion) {
-        throw new Error('G3.5.1 requires the accepted Skyrim Guard weapon-bind calibration');
+        throw new Error(`${GUARD_RUNTIME_STAGE} requires the accepted Skyrim Guard weapon-bind calibration`);
       }
       const skyrimMount = composeSkyrimWeaponMountCalibration(
         THREE,
@@ -205,12 +216,14 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         },
       });
       loaded = true;
-      setStatus('G3.5.1 ready · Parry Advantage uses existing directional attacks');
+      setStatus(`${GUARD_RUNTIME_STAGE} ready · Parry = contact → deflect → free directional attack`);
       panel?.setAttribute('data-g351-ready', 'true');
+      panel?.setAttribute('data-g351pt3-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
-      setStatus(`G3.5.1 load failed · ${error.message}`, true);
+      setStatus(`${GUARD_RUNTIME_STAGE} load failed · ${error.message}`, true);
       panel?.setAttribute('data-g351-ready', 'false');
+      panel?.setAttribute('data-g351pt3-ready', 'false');
       throw error;
     });
     return loadPromise;
@@ -274,7 +287,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · G3.5.1${mode === 'counter' ? ' · no dedicated Counter state or animation' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE}${mode === 'counter' ? ' · no dedicated Counter state or animation' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -292,7 +305,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus('G3.5.1 ready · choose Guard / Parry Advantage preview');
+    if (!options.quiet) setStatus(`${GUARD_RUNTIME_STAGE} ready · choose Guard / Parry Advantage preview`);
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {

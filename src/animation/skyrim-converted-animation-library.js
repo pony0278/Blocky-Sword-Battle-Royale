@@ -1,5 +1,9 @@
 import { retargetSkyrimClip } from './skyrim-animation-retarget.js';
 import { computeSkyrimWeaponBindCalibration } from './skyrim-weapon-bind-calibration.js';
+import {
+  canCreateProductionParryDeflectClips,
+  createProductionParryDeflectClips,
+} from './parry-contact-deflect-runtime-clip.js';
 
 export const SKYRIM_GUARD_HOLD_CONVERTED_FILE = Object.freeze({
   id: 'shd_blockidle',
@@ -116,6 +120,7 @@ export function createSkyrimConvertedAnimationLibrary(clip, options = {}) {
     retargetFps: Math.max(1, Number(options.fps) || 30),
     duplicates: [],
     bridge: 'converted-glb',
+    virtualClips: [],
   };
 }
 
@@ -143,6 +148,14 @@ export const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) 
     }
   }
 
+  const sourceClipMap = new Map(clips.map((clip) => [clip.name, clip]));
+  const virtualClips = canCreateProductionParryDeflectClips(THREE, sourceClipMap)
+    ? createProductionParryDeflectClips(THREE, sourceClipMap, {
+      fps: Math.max(60, Number(options.productionParryFps) || 60),
+    })
+    : [];
+  clips.push(...virtualClips);
+
   return {
     clips: new Map(clips.map((clip) => [clip.name, clip])),
     files,
@@ -150,6 +163,7 @@ export const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) 
     retargetFps: Math.max(1, Number(options.fps) || 30),
     duplicates: [],
     bridge: 'converted-glb',
+    virtualClips: virtualClips.map((clip) => clip.name),
   };
 };
 
