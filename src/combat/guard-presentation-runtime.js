@@ -105,9 +105,6 @@ function applyWorldQuaternion(THREE, object3d, desiredWorld) {
     .invert()
     .multiply(desiredWorldMatrix);
 
-  // A scaled bone hierarchy can require a local counter-shear to realize an exact
-  // world-space sword rotation. Preserve that matrix only for this recovery frame;
-  // the next runtime sample restores normal authored TRS before applying its mount.
   object3d.matrixAutoUpdate = false;
   object3d.matrix.copy(localMatrix);
   object3d.matrixWorld.copy(parent.matrixWorld).multiply(object3d.matrix);
@@ -164,6 +161,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
   let previousPoseSample = null;
   let sourcePoseSample = null;
   let recoveryBridge = null;
+  let stableGuardBasePose = null;
   let stableGuardWorldQuaternion = null;
 
   function preparePresentation(snapshot) {
@@ -171,6 +169,12 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     const presentation = snapshot?.presentation || {};
     applyWeaponMountProfile(presentation.weaponMountProfileId || null, snapshot);
     return presentation;
+  }
+
+  function restoreStableGuardBase() {
+    if (!stableGuardBasePose) return false;
+    applyRigPose(character.rig, stableGuardBasePose);
+    return true;
   }
 
   function rememberSourcePose(snapshot) {
@@ -193,6 +197,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
   function sampleStableGuard(snapshot, camera) {
     clearRecoveryBridge();
     const presentation = preparePresentation(snapshot);
+    restoreStableGuardBase();
     const weights = sampleGuardPresentationWeights(snapshot.state, snapshot.elapsedMs);
     const duration = positiveDuration(character, presentation.clipId, 1);
     const sourceTimeSeconds = wrappedTime(snapshot.elapsedMs, duration);
@@ -200,6 +205,9 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       loop: presentation.loop !== false,
       inPlace: presentation.inPlace !== false,
     });
+    if (!stableGuardBasePose && snapshot.state === GUARD_STATES.HOLD) {
+      stableGuardBasePose = captureRigPose(character.rig);
+    }
     applyCorrection(weights.correctionWeight);
     character.update?.(0, camera);
     if (snapshot.state === GUARD_STATES.HOLD && weaponObject3d) {
@@ -222,12 +230,18 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     const presentation = preparePresentation(snapshot);
     const transition = sampleGuardTransitionProfile(snapshot.state, snapshot.elapsedMs);
     if (!transition) return sampleStableGuard(snapshot, camera);
+    if (snapshot.state === GUARD_STATES.ENTER || snapshot.state === GUARD_STATES.EXIT) {
+      restoreStableGuardBase();
+    }
     const duration = positiveDuration(character, presentation.clipId, 1);
     const sourceTimeSeconds = wrappedTime(snapshot.elapsedMs, duration);
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
       loop: true,
       inPlace: true,
     });
+    if (!stableGuardBasePose && snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0) {
+      stableGuardBasePose = captureRigPose(character.rig);
+    }
     applyCorrection(transition.weights.correctionWeight);
     character.update?.(0, camera);
     return Object.freeze({
@@ -249,7 +263,9 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     const sourceWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
     const presentation = preparePresentation(snapshot);
     const duration = positiveDuration(character, presentation.clipId, 1);
+    restoreStableGuardBase();
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    if (!stableGuardBasePose) stableGuardBasePose = captureRigPose(character.rig);
     applyCorrection(1);
     character.update?.(0, camera);
     const sampledTargetWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
@@ -279,6 +295,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       : beginRecoveryBridge(snapshot, camera);
     const presentation = preparePresentation(snapshot);
 
+    restoreStableGuardBase();
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
     applyCorrection(1);
 
