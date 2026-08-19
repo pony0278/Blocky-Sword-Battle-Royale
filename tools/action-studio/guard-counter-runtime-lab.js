@@ -36,6 +36,21 @@ function resize(){ const w=Math.max(1,canvas.clientWidth),h=Math.max(1,canvas.cl
 function applyMount(profileId,snapshot){ const r=mountRuntime?.apply(profileId); if(r?.applied){ mountHistory.push({profileId,state:snapshot?.state||null,sequence:snapshot?.sequence??null}); sword?.update(); } }
 function mountSnapshot(){ const o=sword?.object3d; return o?{p:[o.position.x,o.position.y,o.position.z],q:[o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w],s:[o.scale.x,o.scale.y,o.scale.z]}:null; }
 function mountDelta(a,b){ if(!a||!b)return Infinity; return Math.max(...a.p.map((v,i)=>Math.abs(v-b.p[i])),...a.q.map((v,i)=>Math.abs(v-b.q[i])),...a.s.map((v,i)=>Math.abs(v-b.s[i]))); }
+function worldQuaternionSnapshot(){
+  const o=sword?.object3d; if(!o)return null; o.updateWorldMatrix?.(true,false);
+  const q=new THREE.Quaternion(); o.getWorldQuaternion(q); return [q.x,q.y,q.z,q.w];
+}
+function quaternionAngleDegrees(a,b){
+  if(!a||!b)return Infinity;
+  const dot=Math.abs(a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3]);
+  return 2*Math.acos(Math.max(-1,Math.min(1,dot)))*180/Math.PI;
+}
+function analyzeWorldOrientation(samples,target){
+  const rows=samples.map(sample=>({progress:sample.progress,angleToGuardDeg:quaternionAngleDegrees(sample.quaternion,target),stabilized:sample.stabilized}));
+  const monotonic=rows.every((row,index)=>index===0||row.angleToGuardDeg<=rows[index-1].angleToGuardDeg+.25);
+  const activeBeforeFinish=rows.filter(row=>row.progress<1).every(row=>row.stabilized);
+  return {rows,monotonic,activeBeforeFinish};
+}
 function resetToHold(){
   machine.send(GUARD_EVENTS.RESET); runtime.sync(camera); machine.send(GUARD_EVENTS.GUARD_PRESS); runtime.sync(camera);
   const r=runtime.update(180,camera); if(r.snapshot.state!==GUARD_STATES.HOLD) throw new Error(`Guard Enter failed: ${r.snapshot.state}`); return r;
@@ -69,9 +84,17 @@ function verifyScenario(variant){
   const recoveryDurationMs=Number(ended.report.recoveryDurationMs)||0;
   const recoveryProfileId=ended.report.recoveryProfileId||null;
   const startMountContinuous=mountDelta(sourceMount,recoverStartMount)<1e-5;
-  const mid=recoveryDurationMs>0?runtime.update(recoveryDurationMs*.5,camera):ended, midMount=mountSnapshot();
-  const finish=recoveryDurationMs>0?runtime.update(recoveryDurationMs*.5,camera):mid;
-  const targetMount=mountSnapshot();
+  const progressPoints=[0,.05,.10,.25,.50,.75,1];
+  const worldSamples=[{progress:0,quaternion:worldQuaternionSnapshot(),stabilized:Boolean(ended.report.recoveryWorldSwordStabilized)}];
+  let current=ended,lastProgress=0,midMount=null;
+  for(const progress of progressPoints.slice(1)){
+    current=recoveryDurationMs>0?runtime.update(recoveryDurationMs*(progress-lastProgress),camera):current;
+    if(Math.abs(progress-.5)<1e-6)midMount=mountSnapshot();
+    worldSamples.push({progress,quaternion:worldQuaternionSnapshot(),stabilized:progress>=1||Boolean(current.report.recoveryWorldSwordStabilized)});
+    lastProgress=progress;
+  }
+  const finish=current,targetMount=mountSnapshot(),targetWorldQuaternion=worldQuaternionSnapshot();
+  const worldOrientation=analyzeWorldOrientation(worldSamples,targetWorldQuaternion);
   const mountActuallyBlends=startMountContinuous&&mountDelta(recoverStartMount,midMount)>1e-5&&mountDelta(midMount,targetMount)>1e-5;
   const history=mountHistory.slice(historyStart);
   const sawKayKit=history.some(x=>x.profileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT);
@@ -81,13 +104,15 @@ function verifyScenario(variant){
     &&start.report.correctionWeight===0&&before.snapshot.state===GUARD_STATES.COUNTER&&completion?.event===GUARD_EVENTS.COUNTER_COMPLETE
     &&completion?.authority==='presentation'&&completion?.payload?.counterProfileId===GUARD_COUNTER_PROFILE_IDS.LONGSWORD
     &&ended.snapshot.state===GUARD_STATES.RECOVER&&ended.report.weaponMountProfileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD
-    &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&startMountContinuous&&mountActuallyBlends&&finish.snapshot.state===GUARD_STATES.HOLD
+    &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&startMountContinuous&&mountActuallyBlends
+    &&worldOrientation.activeBeforeFinish&&worldOrientation.monotonic&&finish.snapshot.state===GUARD_STATES.HOLD
     &&sawKayKit&&sawSkyrimRecover;
   return {variant,noAutoCounter:noAuto,confirmAuthority:confirmed.snapshot.lastTransition?.authority||null,counterClip:start.report.clipId,
     counterProfileId:start.report.counterProfileId,counterMount:start.report.weaponMountProfileId,counterCorrectionWeight:start.report.correctionWeight,
     beforeEndState:before.snapshot.state,completionEvent:completion?.event||null,completionAuthority:completion?.authority||null,
     completionProfileId:completion?.payload?.counterProfileId||null,afterCounterState:ended.snapshot.state,afterCounterMount:ended.report.weaponMountProfileId,
-    recoveryProfileId,recoveryDurationMs,startMountContinuous,mountActuallyBlends,afterRecoveryState:finish.snapshot.state,
+    recoveryProfileId,recoveryDurationMs,startMountContinuous,mountActuallyBlends,recoveryWorldSwordStabilized:worldOrientation.activeBeforeFinish,
+    worldSwordOrientationMonotonic:worldOrientation.monotonic,worldSwordOrientation:worldOrientation.rows,afterRecoveryState:finish.snapshot.state,
     sawKayKitMount:sawKayKit,sawSkyrimRecoverMount:sawSkyrimRecover,pass};
 }
 function runVerification(kaykit,skyrim){
@@ -96,13 +121,16 @@ function runVerification(kaykit,skyrim){
   const normal=verifyScenario('normal'),perfect=verifyScenario('perfect');
   const gates={skyrimGuardFamilyLoaded:skyrim.clips.size===4,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
     inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
-    poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends};
-  const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1',pass:failures.length===0,
+    poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends,
+    worldSpaceSwordOrientationStabilized:normal.recoveryWorldSwordStabilized&&normal.worldSwordOrientationMonotonic
+      &&perfect.recoveryWorldSwordStabilized&&perfect.worldSwordOrientationMonotonic};
+  const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1.1',pass:failures.length===0,
     counterClip:{name:clip?.name||null,durationSeconds:Number(clip?.duration)||0,diagnostics},scenarios:{normal,perfect},mountHistory:[...mountHistory],gates,failures};
   document.documentElement.dataset.g34=report.pass?'pass':'fail'; document.documentElement.dataset.g34Normal=normal.pass?'pass':'fail';
   document.documentElement.dataset.g34Perfect=perfect.pass?'pass':'fail'; document.documentElement.dataset.g34CounterClip=clip?'pass':'fail';
   document.documentElement.dataset.g341Recovery=gates.poseMatchedMountRecovery?'pass':'fail';
-  reportNode.textContent=JSON.stringify(report,null,2); window.__G34_RESULT__=report; status.textContent=`G3.4.1 ${report.pass?'PASS':'FAIL'} · authoritative Counter + inertial recovery`; status.className=report.pass?'good':'bad'; return report;
+  document.documentElement.dataset.g3411WorldSword=gates.worldSpaceSwordOrientationStabilized?'pass':'fail';
+  reportNode.textContent=JSON.stringify(report,null,2); window.__G34_RESULT__=report; status.textContent=`G3.4.1.1 ${report.pass?'PASS':'FAIL'} · Counter world-space sword stabilization`; status.className=report.pass?'good':'bad'; return report;
 }
 async function main(){
   const loader=new THREE.GLTFLoader();
@@ -123,5 +151,5 @@ document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',(
 timeline.addEventListener('input',()=>displayCounter(activeVariant,Number(timeline.value)));
 setView(new URLSearchParams(location.search).get('view')||'three'); resize(); addEventListener('resize',resize);
 (function frame(){if(sword)sword.update();renderer.render(scene,camera);requestAnimationFrame(frame)})();
-main().catch(error=>{document.documentElement.dataset.g34='fail';status.textContent=`G3.4.1 FAIL · ${error?.message||error}`;status.className='bad';reportNode.textContent=error?.stack||String(error);window.__G34_RESULT__={stage:'G3.4.1',pass:false,error:error?.stack||String(error)}});
+main().catch(error=>{document.documentElement.dataset.g34='fail';status.textContent=`G3.4.1.1 FAIL · ${error?.message||error}`;status.className='bad';reportNode.textContent=error?.stack||String(error);window.__G34_RESULT__={stage:'G3.4.1.1',pass:false,error:error?.stack||String(error)}});
 window.__G34_LAB__={displayCounter};
