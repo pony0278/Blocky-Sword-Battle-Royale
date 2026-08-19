@@ -85,12 +85,16 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
     },
     sampleAnimation(name, timeSeconds, sampleOptions = {}) {
       prepareAnimation(name, sampleOptions);
-      // Presentation layers such as Guard correction are applied after sampling. When a
-      // caller repeatedly samples the same clip/time, AnimationMixer may leave untracked
-      // helper bones at the previously corrected pose. An explicit deterministic sample
-      // restores the rig baseline first so post-sample corrections are absolute, not
-      // cumulative. This opt-in keeps existing animation playback semantics unchanged.
-      if (sampleOptions.resetPose === true) resetForAnimation();
+      // Guard correction layers are multiplicative local quaternion offsets. Converted
+      // Skyrim Guard clips intentionally leave some helper/right-arm targets untracked,
+      // so repeatedly sampling the same clip/time can otherwise preserve the previous
+      // corrected value and apply the correction a second time. Rebuild the deterministic
+      // rig baseline before every Skyrim Guard sample. The explicit resetPose option keeps
+      // the same capability available to other presentation layers without changing their
+      // default sampling semantics.
+      const deterministicSample = sampleOptions.resetPose === true
+        || String(name || '').startsWith('SKYRIM_GUARD/');
+      if (deterministicSample) resetForAnimation();
       mode = 'kaykit';
       externalAnimationClock = true;
       return animation.sample(name, timeSeconds, sampleOptions);
