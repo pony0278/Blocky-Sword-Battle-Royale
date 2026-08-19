@@ -9881,8 +9881,70 @@ function sampleGuardPresentationWeights(state, elapsedMs = 0) {
 return Object.freeze({ GUARD_TRANSITION_PROFILE_IDS, LONGSWORD_GUARD_TRANSITION_PROFILES, sampleGuardTransitionCurve, getGuardTransitionProfile, sampleGuardTransitionProfile, getStableGuardPresentationWeights, sampleGuardPresentationWeights });
 })();
 
+// src/combat/guard-action-semantics.js
+const __actionStudioModule51 = (() => {
+const GUARD_ACTION_SEMANTIC_FIT = Object.freeze({
+  MATCH: 'match',
+  PROVISIONAL: 'provisional',
+  MISMATCH: 'mismatch',
+});
+
+const GUARD_ACTION_SEMANTIC_ROLES = Object.freeze({
+  BLOCK_REACTION: 'block-reaction',
+  PARRY_DEFLECT: 'parry-deflect',
+  PERFECT_PARRY_DEFLECT: 'perfect-parry-deflect',
+  COUNTER_STRIKE: 'counter-strike',
+  SHIELD_BASH: 'shield-bash',
+  SHIELD_POWER_BASH: 'shield-power-bash',
+  BLOCK_ATTACK_PUSH: 'block-attack-push',
+});
+
+const GUARD_ACTION_SEMANTIC_STAGE = 'G3.5';
+
+function guardActionSemanticAssessment({
+  intendedRole,
+  sourceRole,
+  fit = GUARD_ACTION_SEMANTIC_FIT.MATCH,
+  replacementRequired = false,
+  acquisitionCriteria = [],
+  note = '',
+}) {
+  return Object.freeze({
+    semanticStage: GUARD_ACTION_SEMANTIC_STAGE,
+    intendedRole,
+    sourceRole,
+    semanticFit: fit,
+    replacementRequired: Boolean(replacementRequired),
+    acquisitionCriteria: Object.freeze([...acquisitionCriteria]),
+    semanticNote: note,
+  });
+}
+
+const PARRY_MOTION_ACQUISITION_CRITERIA = Object.freeze([
+  'Short defensive deflection rather than a forward body-check or shield shove',
+  'Shield or weapon redirects the incoming attack line laterally/upward with limited forward displacement',
+  'Ends in a weapon-ready posture that can flow immediately into Counter',
+]);
+
+const PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA = Object.freeze([
+  'Same defensive deflection language as normal Parry, but with a clearer contact accent',
+  'May use stronger torso/arm commitment, but must not read as a standalone shield bash attack',
+  'Leaves a readable opening for the follow-up Counter',
+]);
+
+const COUNTER_MOTION_ACQUISITION_CRITERIA = Object.freeze([
+  'Right-hand longsword is the primary attacking tool',
+  'Contains a clear strike or thrust contact silhouette shortly after launch',
+  'Shield remains secondary and must not be the only forward-driving action',
+  'Can recover cleanly back into Triangle Guard after the authored follow-through',
+]);
+return Object.freeze({ GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, GUARD_ACTION_SEMANTIC_STAGE, guardActionSemanticAssessment, PARRY_MOTION_ACQUISITION_CRITERIA, PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA, COUNTER_MOTION_ACQUISITION_CRITERIA });
+})();
+
 // src/combat/guard-reaction-presentation.js
 const __actionStudioModule50 = (() => {
+const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, PARRY_MOTION_ACQUISITION_CRITERIA, PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA, guardActionSemanticAssessment } = __actionStudioModule51;
+
 const GUARD_REACTION_VARIANTS = Object.freeze({
   BLOCK_HIT: 'block-hit',
   PARRY: 'parry',
@@ -9911,6 +9973,7 @@ function reactionProfile({
   sourceEndSeconds,
   counterWindowSeconds,
   visualDecision,
+  semanticAssessment,
 }) {
   const start = Math.max(0, Number(sourceStartSeconds) || 0);
   const sourceDuration = Math.max(start, Number(sourceDurationSeconds) || start);
@@ -9939,6 +10002,7 @@ function reactionProfile({
     authored: true,
     authoredStage: 'G3.4.0',
     visualDecision,
+    ...semanticAssessment,
   });
 }
 
@@ -9954,6 +10018,12 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     sourceEndSeconds: 0.6,
     counterWindowSeconds: [0.24, 0.6],
     visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; do not expose the unverified 0.60–0.80s tail while root-rotation safety is enforced',
+    semanticAssessment: guardActionSemanticAssessment({
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
+      note: 'Block Hit still reads as a defensive impact reaction and remains approved for production use.',
+    }),
   }),
   [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
@@ -9965,7 +10035,15 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     sourceDurationSeconds: 1 / 3,
     sourceEndSeconds: 1 / 3,
     counterWindowSeconds: [0.08, 1 / 3],
-    visualDecision: 'ADOPT FULL SOURCE — compact active longsword deflect; preserve the complete authored motion',
+    visualDecision: 'G3.5 PROVISIONAL ONLY — technically valid playback, but the source reads as a shield bash rather than a defensive parry deflection; replace before semantic sign-off',
+    semanticAssessment: guardActionSemanticAssessment({
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_DEFLECT,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.SHIELD_BASH,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
+      replacementRequired: true,
+      acquisitionCriteria: PARRY_MOTION_ACQUISITION_CRITERIA,
+      note: 'Keep shd_blockbash as a future Shield Bash candidate. Do not treat it as the final Parry animation.',
+    }),
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY,
@@ -9977,7 +10055,15 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     sourceDurationSeconds: 0.7,
     sourceEndSeconds: 0.7,
     counterWindowSeconds: [0.1, 0.48],
-    visualDecision: 'ADOPT FULL SOURCE — preserve strong displacement + authored settle; keep the existing 0.10–0.48s presentation counter window',
+    visualDecision: 'G3.5 PROVISIONAL ONLY — strong authored motion remains technically usable, but it reads as a power shield bash instead of a high-quality parry deflection; replace before semantic sign-off',
+    semanticAssessment: guardActionSemanticAssessment({
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_DEFLECT,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.SHIELD_POWER_BASH,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
+      replacementRequired: true,
+      acquisitionCriteria: PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA,
+      note: 'Keep shd_blockbashpower as a future powered Shield Bash candidate rather than discarding the asset.',
+    }),
   }),
 });
 
@@ -10026,7 +10112,9 @@ return Object.freeze({ GUARD_REACTION_VARIANTS, GUARD_REACTION_PROFILE_IDS, LONG
 })();
 
 // src/combat/guard-counter-presentation.js
-const __actionStudioModule51 = (() => {
+const __actionStudioModule52 = (() => {
+const { COUNTER_MOTION_ACQUISITION_CRITERIA, GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule51;
+
 const GUARD_COUNTER_PROFILE_IDS = Object.freeze({
   LONGSWORD: 'longsword_guard_counter_melee_block_attack_v1',
 });
@@ -10064,7 +10152,15 @@ const LONGSWORD_GUARD_COUNTER_PROFILE = Object.freeze({
   timingStage: 'G3.4.2',
   sourceWindow: Object.freeze({ startProgress: 0, endProgress: 1 }),
   timingAnchors: LONGSWORD_COUNTER_TIMING_ANCHORS,
-  visualDecision: 'ADOPT + TIME-REMAP — preserve the complete Melee_Block_Attack motion arc, bring the strong ~40% contact silhouette forward, accent contact briefly, and protect the authored settle',
+  visualDecision: 'G3.5 PROVISIONAL ONLY — preserve technical runtime timing for now, but Melee_Block_Attack reads primarily as a block/shield push instead of a longsword counter-strike; replace before semantic sign-off',
+  ...guardActionSemanticAssessment({
+    intendedRole: GUARD_ACTION_SEMANTIC_ROLES.COUNTER_STRIKE,
+    sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_ATTACK_PUSH,
+    fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
+    replacementRequired: true,
+    acquisitionCriteria: COUNTER_MOTION_ACQUISITION_CRITERIA,
+    note: 'Keep Melee_Block_Attack as a possible Shield Bash / Guard Push candidate. The final Counter must visibly attack with the right-hand longsword.',
+  }),
 });
 
 function clamp(value, min, max) {
@@ -10121,7 +10217,7 @@ const __actionStudioModule47 = (() => {
 const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
 const { GUARD_TRANSITION_PROFILE_IDS } = __actionStudioModule49;
 const { GUARD_REACTION_VARIANTS, LONGSWORD_GUARD_REACTION_PROFILES, getGuardReactionProfile } = __actionStudioModule50;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule51;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule52;
 
 const GUARD_STATE_AUTHORITY_NOTE =
   'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
@@ -10452,7 +10548,7 @@ return Object.freeze({ GUARD_STATE_AUTHORITY_NOTE, GUARD_STATES, GUARD_EVENTS, G
 })();
 
 // src/combat/longsword-guard-correction.js
-const __actionStudioModule53 = (() => {
+const __actionStudioModule54 = (() => {
 const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = __actionStudioModule48;
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -10609,7 +10705,7 @@ return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quatern
 })();
 
 // src/combat/guard-recovery-bridge.js
-const __actionStudioModule54 = (() => {
+const __actionStudioModule55 = (() => {
 const EPSILON = 1e-8;
 const COUNTER_CONTINUITY_HOLD_MS = 1000 / 60;
 
@@ -10899,7 +10995,7 @@ return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, capt
 })();
 
 // src/combat/guard-world-sword-orientation.js
-const __actionStudioModule55 = (() => {
+const __actionStudioModule56 = (() => {
 const EPSILON = 1e-8;
 
 function clamp01(value) {
@@ -10999,15 +11095,15 @@ return Object.freeze({ quaternionAngleDegrees, slerpShortestQuaternion, sampleWo
 })();
 
 // src/combat/guard-presentation-runtime.js
-const __actionStudioModule52 = (() => {
+const __actionStudioModule53 = (() => {
 const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule47;
 const { sampleGuardPresentationWeights, sampleGuardTransitionProfile } = __actionStudioModule49;
 const { sampleGuardReactionProfile } = __actionStudioModule50;
-const { sampleGuardCounterProfile } = __actionStudioModule51;
+const { sampleGuardCounterProfile } = __actionStudioModule52;
 const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
-const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule53;
-const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule54;
-const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule55;
+const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule54;
+const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule55;
+const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule56;
 
 const GUARD_ROOT_ROTATION_POLICY = 'lock';
 
@@ -11505,7 +11601,7 @@ return Object.freeze({ createGuardPresentationRuntime });
 })();
 
 // src/combat/guard-weapon-mount-runtime.js
-const __actionStudioModule56 = (() => {
+const __actionStudioModule57 = (() => {
 const { applyMountCalibration } = __actionStudioModule3;
 
 function createGuardWeaponMountRuntime(options = {}) {
@@ -11552,9 +11648,9 @@ const { loadKayKitAnimationLibrary } = __actionStudioModule11;
 const { loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
 const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
 const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule47;
-const { createGuardPresentationRuntime } = __actionStudioModule52;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule51;
-const { createGuardWeaponMountRuntime } = __actionStudioModule56;
+const { createGuardPresentationRuntime } = __actionStudioModule53;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule52;
+const { createGuardWeaponMountRuntime } = __actionStudioModule57;
 
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
