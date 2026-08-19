@@ -77,8 +77,16 @@ jobs:
             "${BASE}?variant=parry&preset=compact-t1&elapsed=360&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-normal-end-400ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=400&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
             --screenshot="artifacts/g3-5-1p/p0-normal-deflect-390ms.png" \
             "${BASE}?variant=parry&preset=baseline-p0&elapsed=390&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/p0-normal-late-500ms.png" \
+            "${BASE}?variant=parry&preset=baseline-p0&elapsed=500&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
             --screenshot="artifacts/g3-5-1p/t1-perfect-deflect-400ms.png" \
@@ -89,8 +97,16 @@ jobs:
             "${BASE}?variant=perfect&preset=compact-t1&elapsed=430&view=side"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-perfect-end-440ms.png" \
+            "${BASE}?variant=perfect&preset=compact-t1&elapsed=440&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
             --screenshot="artifacts/g3-5-1p/p0-perfect-deflect-470ms.png" \
             "${BASE}?variant=perfect&preset=baseline-p0&elapsed=470&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/p0-perfect-late-600ms.png" \
+            "${BASE}?variant=perfect&preset=baseline-p0&elapsed=600&view=three"
 
       - name: Upload G3.5.1P visual evidence
         uses: actions/upload-artifact@v4
