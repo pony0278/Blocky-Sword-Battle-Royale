@@ -10795,6 +10795,106 @@ function samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, targe
 return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, captureRigPose, applyRigPose, captureObjectTransform, applyObjectTransform, blendRecoveryTransform, blendRecoveryPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery });
 })();
 
+// src/combat/guard-world-sword-orientation.js
+const __actionStudioModule55 = (() => {
+const EPSILON = 1e-8;
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function finite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeQuat(value) {
+  const out = {
+    x: finite(value?.x),
+    y: finite(value?.y),
+    z: finite(value?.z),
+    w: finite(value?.w, 1),
+  };
+  const length = Math.hypot(out.x, out.y, out.z, out.w) || 1;
+  return Object.freeze({
+    x: out.x / length,
+    y: out.y / length,
+    z: out.z / length,
+    w: out.w / length,
+  });
+}
+
+function multiplyQuat(aInput, bInput) {
+  const a = normalizeQuat(aInput);
+  const b = normalizeQuat(bInput);
+  return normalizeQuat({
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  });
+}
+
+function inverseQuat(valueInput) {
+  const value = normalizeQuat(valueInput);
+  return Object.freeze({ x: -value.x, y: -value.y, z: -value.z, w: value.w });
+}
+
+function smoothstep(value) {
+  const t = clamp01(value);
+  return t * t * (3 - 2 * t);
+}
+
+function quaternionAngleDegrees(aInput, bInput) {
+  const a = normalizeQuat(aInput);
+  const b = normalizeQuat(bInput);
+  const dot = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+  return (2 * Math.acos(Math.max(-1, Math.min(1, dot)))) * 180 / Math.PI;
+}
+
+function slerpShortestQuaternion(fromInput, toInput, progressInput) {
+  const progress = clamp01(progressInput);
+  const from = normalizeQuat(fromInput);
+  let to = normalizeQuat(toInput);
+  let dot = from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w;
+
+  if (dot < 0) {
+    dot = -dot;
+    to = { x: -to.x, y: -to.y, z: -to.z, w: -to.w };
+  }
+
+  if (dot > 0.9995) {
+    return normalizeQuat({
+      x: from.x + (to.x - from.x) * progress,
+      y: from.y + (to.y - from.y) * progress,
+      z: from.z + (to.z - from.z) * progress,
+      w: from.w + (to.w - from.w) * progress,
+    });
+  }
+
+  const theta = Math.acos(Math.max(-1, Math.min(1, dot)));
+  const sinTheta = Math.sin(theta);
+  if (Math.abs(sinTheta) < EPSILON) return from;
+  const a = Math.sin((1 - progress) * theta) / sinTheta;
+  const b = Math.sin(progress * theta) / sinTheta;
+  return normalizeQuat({
+    x: from.x * a + to.x * b,
+    y: from.y * a + to.y * b,
+    z: from.z * a + to.z * b,
+    w: from.w * a + to.w * b,
+  });
+}
+
+function sampleWorldSwordRecoveryOrientation(sourceWorld, targetWorld, progress) {
+  return slerpShortestQuaternion(sourceWorld, targetWorld, smoothstep(progress));
+}
+
+function solveLocalQuaternionForWorld(parentWorld, desiredWorld) {
+  return multiplyQuat(inverseQuat(parentWorld), desiredWorld);
+}
+return Object.freeze({ quaternionAngleDegrees, slerpShortestQuaternion, sampleWorldSwordRecoveryOrientation, solveLocalQuaternionForWorld });
+})();
+
 // src/combat/guard-presentation-runtime.js
 const __actionStudioModule52 = (() => {
 const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule47;
@@ -10804,6 +10904,7 @@ const { sampleGuardCounterProfile } = __actionStudioModule51;
 const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
 const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule53;
 const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule54;
+const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule55;
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
@@ -10847,6 +10948,55 @@ function counterCompletionPayload(report) {
   });
 }
 
+function captureWorldQuaternion(THREE, object3d) {
+  if (!object3d?.getWorldQuaternion || !THREE?.Quaternion) return null;
+  object3d.updateWorldMatrix?.(true, false);
+  const value = new THREE.Quaternion();
+  object3d.getWorldQuaternion(value);
+  return Object.freeze({ x: value.x, y: value.y, z: value.z, w: value.w });
+}
+
+function releaseWorldMatrixOverride(object3d) {
+  if (!object3d || object3d.matrixAutoUpdate !== false) return;
+  object3d.matrixAutoUpdate = true;
+}
+
+function applyWorldQuaternion(THREE, object3d, desiredWorld) {
+  if (!object3d || !desiredWorld || !THREE?.Matrix4 || !THREE?.Vector3 || !THREE?.Quaternion) return false;
+  const parent = object3d.parent;
+  if (!parent?.matrixWorld) return false;
+
+  parent.updateWorldMatrix?.(true, false);
+  object3d.updateWorldMatrix?.(true, false);
+
+  const worldPosition = new THREE.Vector3();
+  const currentWorldQuaternion = new THREE.Quaternion();
+  const worldScale = new THREE.Vector3();
+  object3d.matrixWorld.decompose(worldPosition, currentWorldQuaternion, worldScale);
+
+  const desiredQuaternion = new THREE.Quaternion(
+    desiredWorld.x,
+    desiredWorld.y,
+    desiredWorld.z,
+    desiredWorld.w,
+  ).normalize();
+  const desiredWorldMatrix = new THREE.Matrix4().compose(
+    worldPosition,
+    desiredQuaternion,
+    worldScale,
+  );
+  const localMatrix = new THREE.Matrix4()
+    .copy(parent.matrixWorld)
+    .invert()
+    .multiply(desiredWorldMatrix);
+
+  object3d.matrixAutoUpdate = false;
+  object3d.matrix.copy(localMatrix);
+  object3d.matrixWorld.copy(parent.matrixWorld).multiply(object3d.matrix);
+  object3d.matrixWorldNeedsUpdate = false;
+  return true;
+}
+
 function defaultReport(snapshot) {
   return Object.freeze({
     managed: false,
@@ -10865,6 +11015,7 @@ function defaultReport(snapshot) {
     recoveryDurationMs: 0,
     recoveryMomentumActive: false,
     recoverySourceState: null,
+    worldSwordOrientationStabilized: false,
     complete: false,
     completionEvent: null,
   });
@@ -10895,11 +11046,20 @@ function createGuardPresentationRuntime(THREE, options = {}) {
   let previousPoseSample = null;
   let sourcePoseSample = null;
   let recoveryBridge = null;
+  let stableGuardBasePose = null;
+  let stableGuardWorldQuaternion = null;
 
   function preparePresentation(snapshot) {
+    releaseWorldMatrixOverride(weaponObject3d);
     const presentation = snapshot?.presentation || {};
     applyWeaponMountProfile(presentation.weaponMountProfileId || null, snapshot);
     return presentation;
+  }
+
+  function restoreStableGuardBase() {
+    if (!stableGuardBasePose) return false;
+    applyRigPose(character.rig, stableGuardBasePose);
+    return true;
   }
 
   function rememberSourcePose(snapshot) {
@@ -10922,6 +11082,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
   function sampleStableGuard(snapshot, camera) {
     clearRecoveryBridge();
     const presentation = preparePresentation(snapshot);
+    restoreStableGuardBase();
     const weights = sampleGuardPresentationWeights(snapshot.state, snapshot.elapsedMs);
     const duration = positiveDuration(character, presentation.clipId, 1);
     const sourceTimeSeconds = wrappedTime(snapshot.elapsedMs, duration);
@@ -10929,8 +11090,14 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       loop: presentation.loop !== false,
       inPlace: presentation.inPlace !== false,
     });
+    if (!stableGuardBasePose && snapshot.state === GUARD_STATES.HOLD) {
+      stableGuardBasePose = captureRigPose(character.rig);
+    }
     applyCorrection(weights.correctionWeight);
     character.update?.(0, camera);
+    if (snapshot.state === GUARD_STATES.HOLD && weaponObject3d) {
+      stableGuardWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
+    }
     return Object.freeze({
       ...defaultReport(snapshot),
       managed: true,
@@ -10948,12 +11115,18 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     const presentation = preparePresentation(snapshot);
     const transition = sampleGuardTransitionProfile(snapshot.state, snapshot.elapsedMs);
     if (!transition) return sampleStableGuard(snapshot, camera);
+    if (snapshot.state === GUARD_STATES.ENTER || snapshot.state === GUARD_STATES.EXIT) {
+      restoreStableGuardBase();
+    }
     const duration = positiveDuration(character, presentation.clipId, 1);
     const sourceTimeSeconds = wrappedTime(snapshot.elapsedMs, duration);
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
       loop: true,
       inPlace: true,
     });
+    if (!stableGuardBasePose && snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0) {
+      stableGuardBasePose = captureRigPose(character.rig);
+    }
     applyCorrection(transition.weights.correctionWeight);
     character.update?.(0, camera);
     return Object.freeze({
@@ -10972,11 +11145,15 @@ function createGuardPresentationRuntime(THREE, options = {}) {
 
   function beginRecoveryBridge(snapshot, camera) {
     const sourceMount = captureObjectTransform(weaponObject3d);
+    const sourceWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
     const presentation = preparePresentation(snapshot);
     const duration = positiveDuration(character, presentation.clipId, 1);
+    restoreStableGuardBase();
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    if (!stableGuardBasePose) stableGuardBasePose = captureRigPose(character.rig);
     applyCorrection(1);
     character.update?.(0, camera);
+    const sampledTargetWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
     recoveryBridge = Object.freeze({
       sequence: snapshot.sequence,
       presentation,
@@ -10986,6 +11163,10 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       targetPose: captureRigPose(character.rig),
       sourceMount,
       targetMount: captureObjectTransform(weaponObject3d),
+      sourceWorldQuaternion,
+      targetWorldQuaternion: sourcePoseSample?.state === GUARD_STATES.COUNTER
+        ? (stableGuardWorldQuaternion || sampledTargetWorldQuaternion)
+        : sampledTargetWorldQuaternion,
       profile: resolveGuardRecoveryProfile(snapshot),
       targetClipDuration: duration,
     });
@@ -10999,9 +11180,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       : beginRecoveryBridge(snapshot, camera);
     const presentation = preparePresentation(snapshot);
 
-    // Sample the exact Guard Hold target pose every frame, then overwrite it with the
-    // inertial bridge. This keeps the target deterministic while preserving the source
-    // pose at t=0 and landing exactly on Hold at t=1.
+    restoreStableGuardBase();
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
     applyCorrection(1);
 
@@ -11025,7 +11204,21 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       );
       applyObjectTransform(weaponObject3d, mount);
     }
+
     character.update?.(0, camera);
+
+    const stabilizeCounterSword = bridge.sourceState === GUARD_STATES.COUNTER
+      && bridge.sourceWorldQuaternion
+      && bridge.targetWorldQuaternion;
+    let worldSwordOrientationStabilized = false;
+    if (stabilizeCounterSword) {
+      const desiredWorld = sampleWorldSwordRecoveryOrientation(
+        bridge.sourceWorldQuaternion,
+        bridge.targetWorldQuaternion,
+        recovery.progress,
+      );
+      worldSwordOrientationStabilized = applyWorldQuaternion(THREE, weaponObject3d, desiredWorld);
+    }
 
     return Object.freeze({
       ...defaultReport(snapshot),
@@ -11041,6 +11234,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       recoveryDurationMs: recovery.durationMs,
       recoveryMomentumActive: recovery.momentumActive,
       recoverySourceState: bridge.sourceState,
+      worldSwordOrientationStabilized,
       complete: recovery.complete,
       completionEvent: GUARD_EVENTS.RECOVER_COMPLETE,
     });
@@ -11132,6 +11326,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     }
     if (snapshot.state === GUARD_STATES.NEUTRAL && lastStoppedSequence !== snapshot.sequence) {
       clearRecoveryBridge();
+      releaseWorldMatrixOverride(weaponObject3d);
       sourcePoseSample = null;
       previousPoseSample = null;
       character.stopAnimation?.();
@@ -11186,7 +11381,7 @@ return Object.freeze({ createGuardPresentationRuntime });
 })();
 
 // src/combat/guard-weapon-mount-runtime.js
-const __actionStudioModule55 = (() => {
+const __actionStudioModule56 = (() => {
 const { applyMountCalibration } = __actionStudioModule3;
 
 function createGuardWeaponMountRuntime(options = {}) {
@@ -11235,7 +11430,7 @@ const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
 const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule47;
 const { createGuardPresentationRuntime } = __actionStudioModule52;
 const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule51;
-const { createGuardWeaponMountRuntime } = __actionStudioModule55;
+const { createGuardWeaponMountRuntime } = __actionStudioModule56;
 
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
