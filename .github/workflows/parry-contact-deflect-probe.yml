@@ -39,7 +39,7 @@ jobs:
           echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
           "$BROWSER" --version
 
-      - name: Verify contact then deflect visual runtime
+      - name: Verify P0 versus T1 contact then deflect visual runtime
         shell: bash
         env:
           BROWSER: ${{ steps.browser.outputs.browser }}
@@ -53,31 +53,44 @@ jobs:
 
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=30000 --dump-dom \
-            "${BASE}?variant=parry&elapsed=275&view=three" > artifacts/g3-5-1p/g351p-dom.html
-          grep -q 'data-g351p="pass"' artifacts/g3-5-1p/g351p-dom.html
-          grep -q 'data-g351p-normal="pass"' artifacts/g3-5-1p/g351p-dom.html
-          grep -q 'data-g351p-perfect="pass"' artifacts/g3-5-1p/g351p-dom.html
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=280&view=three" > artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p-normal="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p-perfect="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p-tuning="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
 
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-5-1p/normal-contact-160ms.png" \
-            "${BASE}?variant=parry&elapsed=160&view=three"
+            --screenshot="artifacts/g3-5-1p/t1-normal-contact-150ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=150&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-5-1p/normal-blend-275ms.png" \
-            "${BASE}?variant=parry&elapsed=275&view=three"
+            --screenshot="artifacts/g3-5-1p/t1-normal-hold-210ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=210&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-5-1p/normal-deflect-390ms.png" \
-            "${BASE}?variant=parry&elapsed=390&view=three"
+            --screenshot="artifacts/g3-5-1p/t1-normal-blend-280ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=280&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-5-1p/perfect-deflect-470ms.png" \
-            "${BASE}?variant=perfect&elapsed=470&view=three"
+            --screenshot="artifacts/g3-5-1p/t1-normal-deflect-360ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=360&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-5-1p/perfect-deflect-side-470ms.png" \
-            "${BASE}?variant=perfect&elapsed=470&view=side"
+            --screenshot="artifacts/g3-5-1p/p0-normal-deflect-390ms.png" \
+            "${BASE}?variant=parry&preset=baseline-p0&elapsed=390&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-perfect-deflect-400ms.png" \
+            "${BASE}?variant=perfect&preset=compact-t1&elapsed=400&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-perfect-deflect-side-430ms.png" \
+            "${BASE}?variant=perfect&preset=compact-t1&elapsed=430&view=side"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/p0-perfect-deflect-470ms.png" \
+            "${BASE}?variant=perfect&preset=baseline-p0&elapsed=470&view=three"
 
       - name: Upload G3.5.1P visual evidence
         uses: actions/upload-artifact@v4
