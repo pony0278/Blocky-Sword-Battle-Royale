@@ -12,12 +12,15 @@ import { LONGSWORD_GUARD_AUTHORING_STATE } from './longsword-guard-metadata.js';
 import { applyGuardQuaternionOffsetsWeighted } from './longsword-guard-correction.js';
 import {
   applyObjectTransform,
+  applyObjectWorldQuaternion,
   applyRigPose,
   blendRecoveryTransform,
   captureObjectTransform,
+  captureObjectWorldQuaternion,
   captureRigPose,
   resolveGuardRecoveryProfile,
   samplePoseMatchedRecovery,
+  sampleRecoveryWorldQuaternion,
 } from './guard-recovery-bridge.js';
 
 function positiveDuration(character, clipId, fallback = 1) {
@@ -80,6 +83,7 @@ function defaultReport(snapshot) {
     recoveryDurationMs: 0,
     recoveryMomentumActive: false,
     recoverySourceState: null,
+    recoveryWorldSwordStabilized: false,
     complete: false,
     completionEvent: null,
   });
@@ -187,6 +191,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
 
   function beginRecoveryBridge(snapshot, camera) {
     const sourceMount = captureObjectTransform(weaponObject3d);
+    const sourceWeaponWorldQuaternion = captureObjectWorldQuaternion(weaponObject3d);
     const presentation = preparePresentation(snapshot);
     const duration = positiveDuration(character, presentation.clipId, 1);
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
@@ -201,6 +206,8 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       targetPose: captureRigPose(character.rig),
       sourceMount,
       targetMount: captureObjectTransform(weaponObject3d),
+      sourceWeaponWorldQuaternion,
+      targetWeaponWorldQuaternion: captureObjectWorldQuaternion(weaponObject3d),
       profile: resolveGuardRecoveryProfile(snapshot),
       targetClipDuration: duration,
     });
@@ -230,6 +237,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     );
     applyRigPose(character.rig, recovery.pose);
 
+    let recoveryWorldSwordStabilized = false;
     if (weaponObject3d && bridge.sourceMount && bridge.targetMount) {
       const mount = blendRecoveryTransform(
         bridge.sourceMount,
@@ -239,6 +247,19 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
         { durationMs: recovery.durationMs, sampleDeltaMs: 0, momentumScale: 0 },
       );
       applyObjectTransform(weaponObject3d, mount);
+
+      // G3.4.1.1: local shortest-path blends on every arm bone plus the sword mount do
+      // not guarantee a shortest path after hierarchy composition. Preserve the existing
+      // position/scale recovery, but stabilize the final sword orientation in world space.
+      if (bridge.sourceWeaponWorldQuaternion && bridge.targetWeaponWorldQuaternion) {
+        const desiredWorldQuaternion = sampleRecoveryWorldQuaternion(
+          bridge.sourceWeaponWorldQuaternion,
+          bridge.targetWeaponWorldQuaternion,
+          recovery.progress,
+        );
+        applyObjectWorldQuaternion(weaponObject3d, desiredWorldQuaternion);
+        recoveryWorldSwordStabilized = true;
+      }
     }
     character.update?.(0, camera);
 
@@ -256,6 +277,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       recoveryDurationMs: recovery.durationMs,
       recoveryMomentumActive: recovery.momentumActive,
       recoverySourceState: bridge.sourceState,
+      recoveryWorldSwordStabilized,
       complete: recovery.complete,
       completionEvent: GUARD_EVENTS.RECOVER_COMPLETE,
     });
