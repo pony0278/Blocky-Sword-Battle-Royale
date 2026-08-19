@@ -31,5 +31,8 @@ jobs:
             --window-size=1000,700 --virtual-time-budget=30000 --dump-dom \
             'http://127.0.0.1:4173/tools/action-studio/guard-hold-source-time-probe.html' \
             > /tmp/guard-source-time-dom.html
-          grep -q 'data-guard-source-time-probe="pass"' /tmp/guard-source-time-dom.html
-          sed -n '/<pre id="report"/,/<\/pre>/p' /tmp/guard-source-time-dom.html
+          sed -n '/<pre id="report"/,/<\/pre>/p' /tmp/guard-source-time-dom.html || true
+          if ! grep -q 'data-guard-source-time-probe="pass"' /tmp/guard-source-time-dom.html; then
+            cat /tmp/guard-source-time-http.log || true
+            exit 1
+          fi
