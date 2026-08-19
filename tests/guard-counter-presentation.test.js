@@ -23,7 +23,8 @@ test('G3.4.2 authors full-source Melee_Block_Attack timing without clipping the 
   assert.equal(profile.inPlace, true);
   assert.equal(profile.loop, false);
   assert.equal(profile.authored, true);
-  assert.equal(profile.authoredStage, 'G3.4.2');
+  assert.equal(profile.authoredStage, 'G3.4');
+  assert.equal(profile.timingStage, 'G3.4.2');
   assert.equal(profile.completionEvent, 'counter_complete');
   assert.deepEqual(profile.sourceWindow, { startProgress: 0, endProgress: 1 });
   assert.equal(LONGSWORD_COUNTER_TIMING_ANCHORS[0].source, 0);
