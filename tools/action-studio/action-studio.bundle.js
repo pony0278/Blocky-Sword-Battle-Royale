@@ -9893,13 +9893,16 @@ const GUARD_ACTION_SEMANTIC_ROLES = Object.freeze({
   BLOCK_REACTION: 'block-reaction',
   PARRY_SUCCESS: 'parry-success',
   PERFECT_PARRY_SUCCESS: 'perfect-parry-success',
+  PARRY_ADVANTAGE: 'parry-advantage',
+  FREE_DIRECTIONAL_ATTACK_FOLLOWUP: 'free-directional-attack-followup',
+  LEGACY_COUNTER_PRESENTATION: 'legacy-counter-presentation',
   COUNTER_STRIKE: 'counter-strike',
   SHIELD_BASH: 'shield-bash',
   SHIELD_POWER_BASH: 'shield-power-bash',
   BLOCK_ATTACK_PUSH: 'block-attack-push',
 });
 
-const GUARD_ACTION_SEMANTIC_STAGE = 'G3.5';
+const GUARD_ACTION_SEMANTIC_STAGE = 'G3.5.1';
 
 function guardActionSemanticAssessment({
   intendedRole,
@@ -9920,18 +9923,57 @@ function guardActionSemanticAssessment({
   });
 }
 
-const COUNTER_MOTION_ACQUISITION_CRITERIA = Object.freeze([
-  'Right-hand longsword is the primary attacking tool',
-  'Contains a clear strike or thrust contact silhouette shortly after launch',
-  'Shield remains secondary and must not be the only forward-driving action',
-  'Can recover cleanly back into Triangle Guard after the authored follow-through',
-]);
+// Compatibility constant for old G3.5 consumers. G3.5.1 no longer requires a
+// dedicated Counter animation; production follow-up uses the existing attack system.
+const COUNTER_MOTION_ACQUISITION_CRITERIA = Object.freeze([]);
 return Object.freeze({ GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, GUARD_ACTION_SEMANTIC_STAGE, guardActionSemanticAssessment, COUNTER_MOTION_ACQUISITION_CRITERIA });
+})();
+
+// src/combat/parry-advantage.js
+const __actionStudioModule52 = (() => {
+const PARRY_ADVANTAGE_STAGE = 'G3.5.1';
+const PARRY_ADVANTAGE_FOLLOWUP_MODE = 'normal-directional-attack';
+const PARRY_ADVANTAGE_ENEMY_RESPONSE = 'authoritative-stagger';
+const PARRY_ADVANTAGE_DIRECTIONS = Object.freeze(['top', 'left', 'right']);
+
+function normalizeFollowupWindow(input) {
+  if (!Array.isArray(input) || input.length < 2) return null;
+  const start = Math.max(0, Number(input[0]) || 0);
+  const end = Math.max(start, Number(input[1]) || start);
+  return Object.freeze([start, end]);
+}
+
+function createParryAdvantageContract({
+  grade = 'parry',
+  followupWindowSeconds = null,
+} = {}) {
+  return Object.freeze({
+    stage: PARRY_ADVANTAGE_STAGE,
+    grade: String(grade || 'parry'),
+    enemyResponse: PARRY_ADVANTAGE_ENEMY_RESPONSE,
+    enemyStaggerDurationAuthority: 'authoritative-combat-balance',
+    followupMode: PARRY_ADVANTAGE_FOLLOWUP_MODE,
+    followupWindowSeconds: normalizeFollowupWindow(followupWindowSeconds),
+    allowedDirections: PARRY_ADVANTAGE_DIRECTIONS,
+    attackSystem: 'existing-directional-action-system',
+    dedicatedCounterState: false,
+    dedicatedCounterAnimation: false,
+  });
+}
+
+function isFreeAttackFollowupOpen(contract, elapsedSeconds = 0) {
+  const window = contract?.followupWindowSeconds;
+  if (!window) return false;
+  const elapsed = Math.max(0, Number(elapsedSeconds) || 0);
+  return elapsed >= window[0] && elapsed <= window[1];
+}
+return Object.freeze({ PARRY_ADVANTAGE_STAGE, PARRY_ADVANTAGE_FOLLOWUP_MODE, PARRY_ADVANTAGE_ENEMY_RESPONSE, PARRY_ADVANTAGE_DIRECTIONS, createParryAdvantageContract, isFreeAttackFollowupOpen });
 })();
 
 // src/combat/guard-reaction-presentation.js
 const __actionStudioModule50 = (() => {
 const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule51;
+const { createParryAdvantageContract, isFreeAttackFollowupOpen } = __actionStudioModule52;
 
 const GUARD_REACTION_VARIANTS = Object.freeze({
   BLOCK_HIT: 'block-hit',
@@ -9949,6 +9991,13 @@ const REACTION_COMPLETE_EVENT = 'reaction_complete';
 const GUARD_ROOT_ROTATION_POLICY = 'lock';
 const GUARD_ROOT_ROTATION_SAFETY_STAGE = 'G3.4.2R';
 
+function normalizeWindow(input, durationSeconds) {
+  if (!Array.isArray(input) || input.length < 2) return null;
+  const start = Math.max(0, Math.min(durationSeconds, Number(input[0]) || 0));
+  const end = Math.max(start, Math.min(durationSeconds, Number(input[1]) || durationSeconds));
+  return Object.freeze([start, end]);
+}
+
 function reactionProfile({
   id,
   variant,
@@ -9960,6 +10009,8 @@ function reactionProfile({
   sourceStartSeconds = 0,
   sourceEndSeconds,
   counterWindowSeconds,
+  followupWindowSeconds = null,
+  parryAdvantage = null,
   visualDecision,
   semanticAssessment,
 }) {
@@ -9967,8 +10018,8 @@ function reactionProfile({
   const sourceDuration = Math.max(start, Number(sourceDurationSeconds) || start);
   const end = Math.max(start, Math.min(sourceDuration, Number(sourceEndSeconds) || sourceDuration));
   const durationSeconds = end - start;
-  const counterStart = Math.max(0, Math.min(durationSeconds, Number(counterWindowSeconds?.[0]) || 0));
-  const counterEnd = Math.max(counterStart, Math.min(durationSeconds, Number(counterWindowSeconds?.[1]) || durationSeconds));
+  const legacyCounterWindow = normalizeWindow(counterWindowSeconds, durationSeconds) || Object.freeze([0, 0]);
+  const followupWindow = normalizeWindow(followupWindowSeconds, durationSeconds);
   return Object.freeze({
     id,
     variant,
@@ -9980,7 +10031,10 @@ function reactionProfile({
     sourceWindow: Object.freeze({ startSeconds: start, endSeconds: end }),
     durationSeconds,
     durationMs: durationSeconds * 1000,
-    counterWindowSeconds: Object.freeze([counterStart, counterEnd]),
+    // G3.4 compatibility only. Production G3.5.1 consumers use followupWindowSeconds.
+    counterWindowSeconds: legacyCounterWindow,
+    followupWindowSeconds: followupWindow,
+    parryAdvantage,
     completionEvent: REACTION_COMPLETE_EVENT,
     correctionWeight: 1,
     inPlace: true,
@@ -10002,6 +10056,9 @@ const SHARED_BLOCK_CONTACT = Object.freeze({
   sourceEndSeconds: 0.6,
 });
 
+const PARRY_FOLLOWUP_WINDOW = Object.freeze([0.08, 1 / 3]);
+const PERFECT_PARRY_FOLLOWUP_WINDOW = Object.freeze([0.1, 0.48]);
+
 const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
   [GUARD_REACTION_VARIANTS.BLOCK_HIT]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.BLOCK_HIT,
@@ -10009,7 +10066,7 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     state: 'guard_block_hit',
     ...SHARED_BLOCK_CONTACT,
     counterWindowSeconds: [0.24, 0.6],
-    visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; do not expose the unverified 0.60–0.80s tail while root-rotation safety is enforced',
+    visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; ordinary Block does not grant the G3.5.1 free-attack advantage.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
@@ -10022,13 +10079,18 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     variant: GUARD_REACTION_VARIANTS.PARRY,
     state: 'guard_parry',
     ...SHARED_BLOCK_CONTACT,
-    counterWindowSeconds: [0.08, 1 / 3],
-    visualDecision: 'G3.5 SHARED DEFENSIVE CONTACT — Parry is a timing-qualified successful block, so reuse the validated Block Hit motion; the semantic difference comes from combat outcome and Counter Window rather than a shield-bash animation',
+    counterWindowSeconds: PARRY_FOLLOWUP_WINDOW,
+    followupWindowSeconds: PARRY_FOLLOWUP_WINDOW,
+    parryAdvantage: createParryAdvantageContract({
+      grade: 'parry',
+      followupWindowSeconds: PARRY_FOLLOWUP_WINDOW,
+    }),
+    visualDecision: 'G3.5.1 PARRY ADVANTAGE — reuse Block Hit for contact; successful timing staggers the attacker and opens the existing directional attack system instead of launching a dedicated Counter animation.',
     semanticAssessment: guardActionSemanticAssessment({
-      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_SUCCESS,
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Parry is not a separate attack. It is a successful timed block, so sharing shd_blockhit is semantically approved.',
+      note: 'Parry is a timing-qualified block that grants a free directional attack opportunity; no separate Counter animation is required.',
     }),
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
@@ -10036,13 +10098,18 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     variant: GUARD_REACTION_VARIANTS.PERFECT_PARRY,
     state: 'guard_parry',
     ...SHARED_BLOCK_CONTACT,
-    counterWindowSeconds: [0.1, 0.48],
-    visualDecision: 'G3.5 SHARED DEFENSIVE CONTACT — Perfect Parry also reuses the validated Block Hit motion; perfect quality should be communicated by authoritative grade, Counter opportunity, enemy response and presentation accents rather than a shield-bash attack',
+    counterWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
+    followupWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
+    parryAdvantage: createParryAdvantageContract({
+      grade: 'perfect-parry',
+      followupWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
+    }),
+    visualDecision: 'G3.5.1 PERFECT PARRY ADVANTAGE — same defensive contact motion, stronger authoritative stagger/reward; follow-up still uses the normal directional attack system.',
     semanticAssessment: guardActionSemanticAssessment({
-      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_SUCCESS,
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Perfect Parry shares the defensive contact motion. Its stronger reward belongs in timing, enemy stagger, FX/audio and Counter access.',
+      note: 'Perfect Parry shares Block Hit presentation and grants a stronger combat advantage without a dedicated Counter animation.',
     }),
   }),
 });
@@ -10084,7 +10151,10 @@ function sampleGuardReactionProfile(state, elapsedMs = 0, payload = {}) {
     progress,
     sourceTimeSeconds,
     complete: progress >= 1,
+    // G3.4 compatibility signal. Do not use for new production follow-up logic.
     counterWindowOpen: elapsedSeconds >= counterStart && elapsedSeconds <= counterEnd,
+    freeAttackFollowupOpen: isFreeAttackFollowupOpen(profile.parryAdvantage, elapsedSeconds),
+    parryAdvantage: profile.parryAdvantage,
     completionEvent: profile.completionEvent,
   });
 }
@@ -10092,8 +10162,8 @@ return Object.freeze({ GUARD_REACTION_VARIANTS, GUARD_REACTION_PROFILE_IDS, LONG
 })();
 
 // src/combat/guard-counter-presentation.js
-const __actionStudioModule52 = (() => {
-const { COUNTER_MOTION_ACQUISITION_CRITERIA, GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule51;
+const __actionStudioModule53 = (() => {
+const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule51;
 
 const GUARD_COUNTER_PROFILE_IDS = Object.freeze({
   LONGSWORD: 'longsword_guard_counter_melee_block_attack_v1',
@@ -10132,14 +10202,16 @@ const LONGSWORD_GUARD_COUNTER_PROFILE = Object.freeze({
   timingStage: 'G3.4.2',
   sourceWindow: Object.freeze({ startProgress: 0, endProgress: 1 }),
   timingAnchors: LONGSWORD_COUNTER_TIMING_ANCHORS,
-  visualDecision: 'G3.5 PROVISIONAL ONLY — preserve technical runtime timing for now, but Melee_Block_Attack reads primarily as a block/shield push instead of a longsword counter-strike; replace before semantic sign-off',
+  legacyOnly: true,
+  productionEnabled: false,
+  retiredByStage: 'G3.5.1',
+  visualDecision: 'G3.5.1 LEGACY COMPATIBILITY ONLY — keep the G3.4 Melee_Block_Attack timing for regression labs, but production Parry follow-up now returns control to the existing directional attack system.',
   ...guardActionSemanticAssessment({
-    intendedRole: GUARD_ACTION_SEMANTIC_ROLES.COUNTER_STRIKE,
+    intendedRole: GUARD_ACTION_SEMANTIC_ROLES.LEGACY_COUNTER_PRESENTATION,
     sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_ATTACK_PUSH,
-    fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
-    replacementRequired: true,
-    acquisitionCriteria: COUNTER_MOTION_ACQUISITION_CRITERIA,
-    note: 'Keep Melee_Block_Attack as a possible Shield Bash / Guard Push candidate. The final Counter must visibly attack with the right-hand longsword.',
+    fit: GUARD_ACTION_SEMANTIC_FIT.PROVISIONAL,
+    replacementRequired: false,
+    note: 'No replacement Counter animation is required. Melee_Block_Attack remains only for G3.4 regression evidence and may later be reused as Shield Bash / Guard Push.',
   }),
 });
 
@@ -10197,7 +10269,7 @@ const __actionStudioModule47 = (() => {
 const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
 const { GUARD_TRANSITION_PROFILE_IDS } = __actionStudioModule49;
 const { GUARD_REACTION_VARIANTS, LONGSWORD_GUARD_REACTION_PROFILES, getGuardReactionProfile } = __actionStudioModule50;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule52;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule53;
 
 const GUARD_STATE_AUTHORITY_NOTE =
   'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
@@ -10528,7 +10600,7 @@ return Object.freeze({ GUARD_STATE_AUTHORITY_NOTE, GUARD_STATES, GUARD_EVENTS, G
 })();
 
 // src/combat/longsword-guard-correction.js
-const __actionStudioModule54 = (() => {
+const __actionStudioModule55 = (() => {
 const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = __actionStudioModule48;
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -10685,7 +10757,7 @@ return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quatern
 })();
 
 // src/combat/guard-recovery-bridge.js
-const __actionStudioModule55 = (() => {
+const __actionStudioModule56 = (() => {
 const EPSILON = 1e-8;
 const COUNTER_CONTINUITY_HOLD_MS = 1000 / 60;
 
@@ -10975,7 +11047,7 @@ return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, capt
 })();
 
 // src/combat/guard-world-sword-orientation.js
-const __actionStudioModule56 = (() => {
+const __actionStudioModule57 = (() => {
 const EPSILON = 1e-8;
 
 function clamp01(value) {
@@ -11075,15 +11147,15 @@ return Object.freeze({ quaternionAngleDegrees, slerpShortestQuaternion, sampleWo
 })();
 
 // src/combat/guard-presentation-runtime.js
-const __actionStudioModule53 = (() => {
+const __actionStudioModule54 = (() => {
 const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule47;
 const { sampleGuardPresentationWeights, sampleGuardTransitionProfile } = __actionStudioModule49;
 const { sampleGuardReactionProfile } = __actionStudioModule50;
-const { sampleGuardCounterProfile } = __actionStudioModule52;
+const { sampleGuardCounterProfile } = __actionStudioModule53;
 const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
-const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule54;
-const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule55;
-const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule56;
+const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule55;
+const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule56;
+const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule57;
 
 const GUARD_ROOT_ROTATION_POLICY = 'lock';
 
@@ -11581,7 +11653,7 @@ return Object.freeze({ createGuardPresentationRuntime });
 })();
 
 // src/combat/guard-weapon-mount-runtime.js
-const __actionStudioModule57 = (() => {
+const __actionStudioModule58 = (() => {
 const { applyMountCalibration } = __actionStudioModule3;
 
 function createGuardWeaponMountRuntime(options = {}) {
@@ -11624,21 +11696,23 @@ return Object.freeze({ createGuardWeaponMountRuntime });
 const __actionStudioModule46 = (() => {
 const { DEFAULT_KAYKIT_SWORD_MOUNT } = __actionStudioModule15;
 const { applyMountCalibration } = __actionStudioModule3;
-const { loadKayKitAnimationLibrary } = __actionStudioModule11;
 const { loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
 const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
 const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule47;
-const { createGuardPresentationRuntime } = __actionStudioModule53;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule52;
-const { createGuardWeaponMountRuntime } = __actionStudioModule57;
+const { createGuardPresentationRuntime } = __actionStudioModule54;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule53;
+const { createGuardWeaponMountRuntime } = __actionStudioModule58;
 
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
   block: 'Block Hit',
   parry: 'Parry',
   perfect: 'Perfect Parry',
-  counter: 'Counter',
+  // Compatibility DOM key. G3.5.1 relabels this button to Parry Advantage.
+  counter: 'Parry Advantage',
 });
+
+const REQUIRED_GUARD_RUNTIME_MODES = Object.freeze(['hold', 'block', 'parry', 'perfect', 'counter']);
 
 function captureMountCalibration(object3d) {
   return {
@@ -11660,7 +11734,23 @@ function captureMountCalibration(object3d) {
   };
 }
 
-const REQUIRED_GUARD_RUNTIME_MODES = Object.freeze(['hold', 'block', 'parry', 'perfect', 'counter']);
+function relabelG351Surface(panel) {
+  panel.setAttribute('data-stage', 'G3.5.1');
+  panel.setAttribute('data-followup-model', 'free-directional-attack');
+  const title = panel.querySelector('.panel-title span');
+  const subtitle = panel.querySelector('.panel-title small');
+  const intro = panel.querySelector('.blocking-intro');
+  const compatibilityButton = panel.querySelector('[data-guard-runtime="counter"]');
+  if (title) title.textContent = 'Guard Runtime · G3.5.1';
+  if (subtitle) subtitle.textContent = 'Parry Advantage → free directional attack';
+  if (intro) {
+    intro.textContent = 'Block / Parry 共用 Skyrim defensive contact。Parry 成功後由 authoritative combat 讓對手失衡；玩家直接使用既有 Top / Left / Right 攻擊，不再播放專用 Counter 動畫。';
+  }
+  if (compatibilityButton) {
+    compatibilityButton.textContent = '▶ Parry Advantage';
+    compatibilityButton.setAttribute('data-guard-runtime-semantic', 'parry-advantage');
+  }
+}
 
 function resolveGuardPanel() {
   const panel = document.getElementById('guardRuntimePanel');
@@ -11676,6 +11766,7 @@ function resolveGuardPanel() {
   panel.setAttribute('data-guard-runtime-static', 'true');
   panel.setAttribute('data-controller-bound', 'true');
   panel.setAttribute('data-guard-runtime-button-count', String(buttons.length));
+  relabelG351Surface(panel);
   return panel;
 }
 
@@ -11732,23 +11823,33 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     });
   }
 
+  function isParryAdvantageMode() {
+    return activeMode === 'parry' || activeMode === 'perfect' || activeMode === 'counter';
+  }
+
   function updateReadout(result) {
     if (!result) return;
     const { snapshot, report } = result;
+    const freeAttackFollowupOpen = isParryAdvantageMode() && Boolean(report.counterWindowOpen);
     panel?.setAttribute('data-guard-state', snapshot.state);
     panel?.setAttribute('data-guard-clip', report.clipId || '');
     panel?.setAttribute('data-guard-mount', report.weaponMountProfileId || '');
-    if (report.counterProfileId) panel?.setAttribute('data-counter-profile', report.counterProfileId);
+    panel?.setAttribute('data-free-attack-followup', freeAttackFollowupOpen ? 'open' : 'closed');
     if (report.recoveryProfileId) panel?.setAttribute('data-recovery-profile', report.recoveryProfileId);
     const clipLabel = String(report.clipId || snapshot.presentation?.clipId || '—').replace(/^SKYRIM_GUARD\//, '');
     const sourceSeconds = Number(report.sourceTimeSeconds) || 0;
     document.getElementById('clipNow').textContent = clipLabel.toUpperCase();
-    document.getElementById('phaseNow').textContent = `GUARD RUNTIME · ${snapshot.state.toUpperCase()}`;
+    document.getElementById('phaseNow').textContent = freeAttackFollowupOpen
+      ? 'PARRY ADVANTAGE · FREE ATTACK'
+      : `GUARD RUNTIME · ${snapshot.state.toUpperCase()}`;
     if (detail) {
       const recovery = report.recoveryProfileId
         ? ` · recover ${Math.round((report.recoveryProgress || 0) * 100)}%/${report.recoveryDurationMs}ms${report.recoveryMomentumActive ? ' · inertia' : ''}`
         : '';
-      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${report.counterProfileId ? ` · ${report.counterProfileId}` : ''}${recovery}`;
+      const followup = isParryAdvantageMode()
+        ? ` · free attack ${freeAttackFollowupOpen ? 'OPEN' : 'closed'} · Top / Left / Right`
+        : '';
+      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${followup}${recovery}`;
     }
   }
 
@@ -11759,29 +11860,20 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus('G3.4.1 · loading Skyrim Guard + KayKit melee…');
+    setStatus('G3.5.1 · loading Skyrim Guard defensive contact…');
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
-      const [skyrim, kaykit] = await Promise.all([
-        loadSkyrimConvertedAnimationLibrary(loader, {
-          THREE,
-          rig: character.rig,
-          baseUrl: '../../assets/skyrim/guard/converted/',
-          fps: 30,
-        }),
-        loadKayKitAnimationLibrary(loader, {
-          baseUrl: '../../assets/kaykit/animations/',
-          packIds: ['melee'],
-        }),
-      ]);
+      const skyrim = await loadSkyrimConvertedAnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/skyrim/guard/converted/',
+        fps: 30,
+      });
       character.registerAnimations(skyrim);
-      character.registerAnimations(kaykit);
 
-      const counterClip = kaykit.clips.get('Melee_Block_Attack');
-      if (!counterClip) throw new Error('G3.4 requires KayKit Melee_Block_Attack');
       const bind = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle')?.userData?.weaponBindCalibration;
       if (!bind?.correctionQuaternion) {
-        throw new Error('G3.4 requires the accepted Skyrim Guard weapon-bind calibration');
+        throw new Error('G3.5.1 requires the accepted Skyrim Guard weapon-bind calibration');
       }
       const skyrimMount = composeSkyrimWeaponMountCalibration(
         THREE,
@@ -11792,7 +11884,6 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
         weaponObject3d,
         profiles: {
           [GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD]: skyrimMount,
-          [GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT]: DEFAULT_KAYKIT_SWORD_MOUNT,
         },
       });
       machine = createGuardStateMachine();
@@ -11806,12 +11897,12 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
         },
       });
       loaded = true;
-      setStatus(`G3.4.1 ready · inertial recovery + Counter ${Number(counterClip.duration).toFixed(3)}s`);
-      panel?.setAttribute('data-g34-ready', 'true');
+      setStatus('G3.5.1 ready · Parry Advantage uses existing directional attacks');
+      panel?.setAttribute('data-g351-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
-      setStatus(`G3.4.1 load failed · ${error.message}`, true);
-      panel?.setAttribute('data-g34-ready', 'false');
+      setStatus(`G3.5.1 load failed · ${error.message}`, true);
+      panel?.setAttribute('data-g351-ready', 'false');
       throw error;
     });
     return loadPromise;
@@ -11847,26 +11938,14 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
         source: 'action-studio-preview-authority',
         verification: 'action-studio-block-hit',
       });
-    } else if (mode === 'parry' || mode === 'perfect') {
+    } else if (mode === 'parry' || mode === 'perfect' || mode === 'counter') {
       machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
         source: 'action-studio-preview-authority',
         perfect: mode === 'perfect',
-        verification: `action-studio-${mode}`,
+        verification: mode === 'counter'
+          ? 'action-studio-g351-parry-advantage'
+          : `action-studio-${mode}`,
       });
-    } else if (mode === 'counter') {
-      machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
-        source: 'action-studio-preview-authority',
-        perfect: false,
-        verification: 'action-studio-counter-entry-parry',
-      });
-      runtime.sync();
-      const confirmed = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, {
-        source: 'action-studio-preview-authority',
-        verification: 'action-studio-g34-counter',
-      });
-      if (!confirmed.accepted || confirmed.snapshot.state !== GUARD_STATES.COUNTER) {
-        throw new Error(`Action Studio COUNTER_CONFIRMED rejected: ${confirmed.snapshot.state}`);
-      }
     } else {
       throw new Error(`Unknown Guard Runtime preview mode: ${mode}`);
     }
@@ -11887,7 +11966,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · G3.4.1 pose-matched recovery${mode === 'counter' ? ' · preview authority sent COUNTER_CONFIRMED' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · G3.5.1${mode === 'counter' ? ' · no dedicated Counter state or animation' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -11905,7 +11984,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus('G3.4.1 ready · choose a Guard runtime preview');
+    if (!options.quiet) setStatus('G3.5.1 ready · choose Guard / Parry Advantage preview');
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {
@@ -11944,6 +12023,9 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
       get mode() { return activeMode; },
       get snapshot() { return machine?.snapshot || null; },
       get report() { return lastResult?.report || null; },
+      get freeAttackFollowupOpen() {
+        return isParryAdvantageMode() && Boolean(lastResult?.report?.counterWindowOpen);
+      },
       get ready() { return loaded; },
     };
   }
@@ -11955,6 +12037,9 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     get mode() { return activeMode; },
     get snapshot() { return machine?.snapshot || null; },
     get report() { return lastResult?.report || null; },
+    get freeAttackFollowupOpen() {
+      return isParryAdvantageMode() && Boolean(lastResult?.report?.counterWindowOpen);
+    },
     get ready() { return loaded; },
   });
 }
