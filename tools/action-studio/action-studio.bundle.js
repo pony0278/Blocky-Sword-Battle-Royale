@@ -1416,6 +1416,11 @@ const KAYKIT_ANIMATION_PACKS = Object.freeze([
   Object.freeze({ id: 'tools', file: 'tools.glb' }),
 ]);
 
+const ROOT_ROTATION_POLICIES = Object.freeze({
+  PRESERVE: 'preserve',
+  LOCK: 'lock',
+});
+
 function loadGlb(loader, url) {
   return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
 }
@@ -1462,10 +1467,33 @@ function clipPropertyName(trackName) {
   return propertyIndex < 0 ? '' : String(trackName || '').slice(propertyIndex + 1);
 }
 
-function isRootPositionTrack(track) {
+function isRootPropertyTrack(track, propertyName) {
   const name = String(track?.name || '');
-  return clipPropertyName(name) === 'position'
+  return clipPropertyName(name) === propertyName
     && sanitizeAnimationTargetName(clipTargetName(name)) === sanitizeAnimationTargetName('root');
+}
+
+function isRootPositionTrack(track) {
+  return isRootPropertyTrack(track, 'position');
+}
+
+function isRootQuaternionTrack(track) {
+  return isRootPropertyTrack(track, 'quaternion');
+}
+
+function normalizeRootRotationPolicy(value) {
+  return value === ROOT_ROTATION_POLICIES.LOCK
+    ? ROOT_ROTATION_POLICIES.LOCK
+    : ROOT_ROTATION_POLICIES.PRESERVE;
+}
+
+function filterAnimationTracksForInPlace(tracks = [], options = {}) {
+  const rootRotationPolicy = normalizeRootRotationPolicy(options.rootRotationPolicy);
+  return tracks.filter((track) => {
+    if (isRootPositionTrack(track)) return false;
+    if (rootRotationPolicy === ROOT_ROTATION_POLICIES.LOCK && isRootQuaternionTrack(track)) return false;
+    return true;
+  });
 }
 
 function validateKayKitClipBindings(clips, boneIds) {
@@ -1501,15 +1529,18 @@ function createKayKitAnimationController(THREE, object3d) {
     }
   }
 
-  function preparedClip(name, inPlace) {
+  function preparedClip(name, inPlace, requestedRootRotationPolicy = ROOT_ROTATION_POLICIES.PRESERVE) {
     const source = clips.get(name);
     if (!source) return null;
-    const key = `${name}|${inPlace ? 'in-place' : 'root-motion'}`;
+    const rootRotationPolicy = inPlace
+      ? normalizeRootRotationPolicy(requestedRootRotationPolicy)
+      : ROOT_ROTATION_POLICIES.PRESERVE;
+    const key = `${name}|${inPlace ? 'in-place' : 'root-motion'}|root-rotation-${rootRotationPolicy}`;
     if (!actions.has(key)) {
       const clip = source.clone();
       clip.name = key;
       if (inPlace) {
-        clip.tracks = clip.tracks.filter((track) => !isRootPositionTrack(track));
+        clip.tracks = filterAnimationTracksForInPlace(clip.tracks, { rootRotationPolicy });
         clip.resetDuration();
       }
       actions.set(key, mixer.clipAction(clip, object3d));
@@ -1546,21 +1577,28 @@ function createKayKitAnimationController(THREE, object3d) {
     getClipDuration(name) {
       return Math.max(0, Number(clips.get(name)?.duration) || 0);
     },
-    getPreparedClipDiagnostics(name, inPlace = true) {
+    getPreparedClipDiagnostics(name, inPlace = true, options = {}) {
       const source = clips.get(name);
-      const action = preparedClip(name, inPlace);
+      const rootRotationPolicy = inPlace
+        ? normalizeRootRotationPolicy(options.rootRotationPolicy)
+        : ROOT_ROTATION_POLICIES.PRESERVE;
+      const action = preparedClip(name, inPlace, rootRotationPolicy);
       const prepared = action?.getClip?.() || null;
       return {
         name,
         inPlace: Boolean(inPlace),
+        rootRotationPolicy,
         sourceTrackCount: source?.tracks?.length || 0,
         sourceRootPositionTracks: source?.tracks?.filter(isRootPositionTrack).length || 0,
+        sourceRootQuaternionTracks: source?.tracks?.filter(isRootQuaternionTrack).length || 0,
         preparedTrackCount: prepared?.tracks?.length || 0,
         preparedRootPositionTracks: prepared?.tracks?.filter(isRootPositionTrack).length || 0,
+        preparedRootQuaternionTracks: prepared?.tracks?.filter(isRootQuaternionTrack).length || 0,
       };
     },
     play(name, options = {}) {
-      const action = preparedClip(name, options.inPlace !== false);
+      const inPlace = options.inPlace !== false;
+      const action = preparedClip(name, inPlace, options.rootRotationPolicy);
       if (!action) throw new Error(`Unknown KayKit animation: ${name}`);
       const fadeSeconds = Math.max(0, Number(options.fadeSeconds ?? 0.12));
       if (currentAction && currentAction !== action) currentAction.fadeOut(fadeSeconds);
@@ -1576,7 +1614,8 @@ function createKayKitAnimationController(THREE, object3d) {
       return action;
     },
     sample(name, timeSeconds, options = {}) {
-      const action = preparedClip(name, options.inPlace !== false);
+      const inPlace = options.inPlace !== false;
+      const action = preparedClip(name, inPlace, options.rootRotationPolicy);
       if (!action) throw new Error(`Unknown KayKit animation: ${name}`);
       if (currentAction !== action) {
         mixer.stopAllAction();
@@ -1607,7 +1646,7 @@ function createKayKitAnimationController(THREE, object3d) {
     },
   };
 }
-return Object.freeze({ KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary, validateKayKitClipBindings, createKayKitAnimationController });
+return Object.freeze({ KAYKIT_ANIMATION_PACKS, ROOT_ROTATION_POLICIES, loadKayKitAnimationLibrary, normalizeRootRotationPolicy, filterAnimationTracksForInPlace, validateKayKitClipBindings, createKayKitAnimationController });
 })();
 
 // src/character/procedural-kaykit-character.js
@@ -1615,7 +1654,15 @@ const __actionStudioModule2 = (() => {
 const { attachEquipment } = __actionStudioModule3;
 const { createProceduralKayKitRig, restoreProceduralKayKitRestPose } = __actionStudioModule4;
 const { applyPoseToProceduralKayKitRig } = __actionStudioModule8;
-const { createKayKitAnimationController, validateKayKitClipBindings } = __actionStudioModule11;
+const { ROOT_ROTATION_POLICIES, createKayKitAnimationController, normalizeRootRotationPolicy, validateKayKitClipBindings } = __actionStudioModule11;
+
+function createAnimationPlaybackSignature(name, playOptions = {}) {
+  const inPlace = playOptions.inPlace !== false;
+  const rootRotationPolicy = inPlace
+    ? normalizeRootRotationPolicy(playOptions.rootRotationPolicy)
+    : ROOT_ROTATION_POLICIES.PRESERVE;
+  return `${String(name || '')}|${inPlace ? 'in-place' : 'root-motion'}|root-rotation-${rootRotationPolicy}`;
+}
 
 function createProceduralKayKitCharacter(THREE, options = {}) {
   const rig = createProceduralKayKitRig(THREE, options);
@@ -1633,12 +1680,8 @@ function createProceduralKayKitCharacter(THREE, options = {}) {
     rig.updateAppearance();
   }
 
-  function signatureFor(name, playOptions = {}) {
-    return `${String(name || '')}|${playOptions.inPlace !== false ? 'in-place' : 'root-motion'}`;
-  }
-
   function prepareAnimation(name, playOptions = {}) {
-    const nextSignature = signatureFor(name, playOptions);
+    const nextSignature = createAnimationPlaybackSignature(name, playOptions);
     if (mode !== 'kaykit' || playbackSignature !== nextSignature) {
       animation.stop();
       resetForAnimation();
@@ -1721,7 +1764,7 @@ function createProceduralKayKitCharacter(THREE, options = {}) {
 
   return character;
 }
-return Object.freeze({ createProceduralKayKitCharacter });
+return Object.freeze({ createAnimationPlaybackSignature, createProceduralKayKitCharacter });
 })();
 
 // src/character/default-character.js
@@ -9853,6 +9896,8 @@ const GUARD_REACTION_PROFILE_IDS = Object.freeze({
 });
 
 const REACTION_COMPLETE_EVENT = 'reaction_complete';
+const GUARD_ROOT_ROTATION_POLICY = 'lock';
+const GUARD_ROOT_ROTATION_SAFETY_STAGE = 'G3.4.2R';
 
 function reactionProfile({
   id,
@@ -9888,6 +9933,8 @@ function reactionProfile({
     completionEvent: REACTION_COMPLETE_EVENT,
     correctionWeight: 1,
     inPlace: true,
+    rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
+    rootRotationSafetyStage: GUARD_ROOT_ROTATION_SAFETY_STAGE,
     loop: false,
     authored: true,
     authoredStage: 'G3.4.0',
@@ -9904,9 +9951,9 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     file: 'shd_blockhit.source.glb',
     clipId: 'SKYRIM_GUARD/shd_blockhit',
     sourceDurationSeconds: 0.8,
-    sourceEndSeconds: 0.8,
+    sourceEndSeconds: 0.6,
     counterWindowSeconds: [0.24, 0.6],
-    visualDecision: 'ADOPT FULL SOURCE — preserve authored recoil + settle; keep the existing 0.24–0.60s presentation counter window',
+    visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; do not expose the unverified 0.60–0.80s tail while root-rotation safety is enforced',
   }),
   [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
@@ -10962,6 +11009,8 @@ const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule53;
 const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule54;
 const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule55;
 
+const GUARD_ROOT_ROTATION_POLICY = 'lock';
+
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -11065,6 +11114,7 @@ function defaultReport(snapshot) {
     reactionVariant: null,
     counterProfileId: null,
     counterWindowOpen: false,
+    rootRotationPolicy: null,
     weaponMountProfileId: snapshot?.presentation?.weaponMountProfileId || null,
     recoveryProfileId: null,
     recoveryProgress: 0,
@@ -11145,6 +11195,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
       loop: presentation.loop !== false,
       inPlace: presentation.inPlace !== false,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     if (!stableGuardBasePose && snapshot.state === GUARD_STATES.HOLD) {
       stableGuardBasePose = captureRigPose(character.rig);
@@ -11162,6 +11213,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds,
       correctionWeight: weights.correctionWeight,
       reactionOverlayWeight: weights.reactionOverlayWeight,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
     });
   }
@@ -11179,6 +11231,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
       loop: true,
       inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     if (!stableGuardBasePose && snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0) {
       stableGuardBasePose = captureRigPose(character.rig);
@@ -11193,6 +11246,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds,
       correctionWeight: transition.weights.correctionWeight,
       reactionOverlayWeight: transition.weights.reactionOverlayWeight,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: transition.complete,
       completionEvent: transition.completionEvent,
@@ -11205,7 +11259,11 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     const presentation = preparePresentation(snapshot);
     const duration = positiveDuration(character, presentation.clipId, 1);
     restoreStableGuardBase();
-    character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    character.sampleAnimation(presentation.clipId, 0, {
+      loop: true,
+      inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
+    });
     if (!stableGuardBasePose) stableGuardBasePose = captureRigPose(character.rig);
     applyCorrection(1);
     character.update?.(0, camera);
@@ -11237,7 +11295,11 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     const presentation = preparePresentation(snapshot);
 
     restoreStableGuardBase();
-    character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    character.sampleAnimation(presentation.clipId, 0, {
+      loop: true,
+      inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
+    });
     applyCorrection(1);
 
     const recovery = samplePoseMatchedRecovery(
@@ -11284,6 +11346,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds: 0,
       correctionWeight: 1,
       reactionOverlayWeight: 1 - recovery.eased,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       recoveryProfileId: recovery.profile.id,
       recoveryProgress: recovery.progress,
@@ -11305,11 +11368,13 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     const clipId = reaction.profile.clipId;
     const registeredDuration = positiveDuration(character, clipId, reaction.profile.sourceDurationSeconds);
     if (registeredDuration + 1e-4 < reaction.profile.sourceWindow.endSeconds) {
-      throw new Error(`Guard reaction ${clipId} is shorter than its G3.3.2 source window`);
+      throw new Error(`Guard reaction ${clipId} is shorter than its configured source window`);
     }
+    const rootRotationPolicy = reaction.profile.rootRotationPolicy || GUARD_ROOT_ROTATION_POLICY;
     character.sampleAnimation(clipId, Math.min(reaction.sourceTimeSeconds, registeredDuration), {
       loop: false,
       inPlace: true,
+      rootRotationPolicy,
     });
     applyCorrection(reaction.profile.correctionWeight);
     character.update?.(0, camera);
@@ -11325,6 +11390,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       reactionProfileId: reaction.profile.id,
       reactionVariant: reaction.profile.variant,
       counterWindowOpen: reaction.counterWindowOpen,
+      rootRotationPolicy,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: reaction.complete,
       completionEvent: reaction.completionEvent,
@@ -11341,6 +11407,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     character.sampleAnimation(clipId, counter.sourceTimeSeconds, {
       loop: false,
       inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     applyCorrection(counter.profile.correctionWeight);
     character.update?.(0, camera);
@@ -11353,6 +11420,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds: counter.sourceTimeSeconds,
       correctionWeight: counter.profile.correctionWeight,
       counterProfileId: counter.profile.id,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: counter.complete,
       completionEvent: counter.completionEvent,
