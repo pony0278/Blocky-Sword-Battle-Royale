@@ -85,6 +85,12 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
     },
     sampleAnimation(name, timeSeconds, sampleOptions = {}) {
       prepareAnimation(name, sampleOptions);
+      // Presentation layers such as Guard correction are applied after sampling. When a
+      // caller repeatedly samples the same clip/time, AnimationMixer may leave untracked
+      // helper bones at the previously corrected pose. An explicit deterministic sample
+      // restores the rig baseline first so post-sample corrections are absolute, not
+      // cumulative. This opt-in keeps existing animation playback semantics unchanged.
+      if (sampleOptions.resetPose === true) resetForAnimation();
       mode = 'kaykit';
       externalAnimationClock = true;
       return animation.sample(name, timeSeconds, sampleOptions);
