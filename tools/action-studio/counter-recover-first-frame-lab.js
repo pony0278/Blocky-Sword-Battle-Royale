@@ -137,8 +137,8 @@ async function main() {
   const hold = enterStableHold();
   machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { perfect: false, verification: 'g3412-parry' });
   runtime.sync();
-  const window = runtime.update(100);
-  if (!window.report.counterWindowOpen) throw new Error('Counter window did not open');
+  const windowResult = runtime.update(100);
+  if (!windowResult.report.counterWindowOpen) throw new Error('Counter window did not open');
   const confirmed = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, { authorityTick: 3412 });
   if (!confirmed.accepted || confirmed.snapshot.state !== GUARD_STATES.COUNTER) {
     throw new Error('COUNTER_CONFIRMED rejected');
@@ -234,7 +234,6 @@ async function main() {
   status.textContent = `G3.4.1.2 ${report.pass ? 'PASS' : 'FAIL'} · Counter final → Recover first-frame continuity`;
   status.className = report.pass ? 'good' : 'bad';
   reportNode.textContent = JSON.stringify(report, null, 2);
-  window.__G3412_RESULT__ = report;
 }
 
 main().catch((error) => {
@@ -242,5 +241,4 @@ main().catch((error) => {
   status.textContent = `G3.4.1.2 FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G3412_RESULT__ = { stage: 'G3.4.1.2', pass: false, error: error?.stack || String(error) };
 });
