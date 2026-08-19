@@ -5,6 +5,7 @@ import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
 import {
   PARRY_CONTACT_DEFLECT_PHASES,
+  PARRY_CONTACT_DEFLECT_TUNING_PRESETS,
   PARRY_CONTACT_DEFLECT_VARIANTS,
   createParryContactDeflectProbeProfile,
   sampleParryContactDeflectProbe,
@@ -29,6 +30,7 @@ scene.add(character.object3d);
 let sword = null;
 let library = null;
 let activeVariant = PARRY_CONTACT_DEFLECT_VARIANTS.PARRY;
+let activePreset = PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT;
 let profile = null;
 let elapsedMs = 0;
 let playing = false;
@@ -110,6 +112,7 @@ function applySample(sample) {
 
 function readOverrides() {
   return {
+    tuningPreset:activePreset,
     contactEndSeconds:Number(ui.contactEnd.value),
     contactHoldMs:Number(ui.holdMs.value),
     blendMs:Number(ui.blendMs.value),
@@ -118,6 +121,16 @@ function readOverrides() {
     blendLeadSeconds:Number(ui.blendLead.value),
     deflectRate:Number(ui.deflectRate.value),
   };
+}
+
+function writeProfileToControls(candidate) {
+  ui.contactEnd.value = String(candidate.contactWindow.endSeconds);
+  ui.holdMs.value = String(candidate.contactHoldMs);
+  ui.blendMs.value = String(candidate.blendMs);
+  ui.deflectStart.value = String(candidate.deflectWindow.startSeconds);
+  ui.deflectEnd.value = String(candidate.deflectWindow.endSeconds);
+  ui.blendLead.value = String(candidate.blendLeadSeconds);
+  ui.deflectRate.value = String(candidate.deflectRate);
 }
 
 function refreshLabels() {
@@ -150,7 +163,7 @@ function displayAt(nextElapsedMs) {
   const source = sample.phase === PARRY_CONTACT_DEFLECT_PHASES.BLEND
     ? `${sample.fromClipId.replace('SKYRIM_GUARD/','')} → ${sample.toClipId.replace('SKYRIM_GUARD/','')} · blend ${Math.round(sample.blendAlpha * 100)}%`
     : `${sample.clipId.replace('SKYRIM_GUARD/','')} @ ${Number(sample.sourceTimeSeconds).toFixed(3)}s`;
-  ui.hudState.textContent = `${activeVariant.toUpperCase()} · ${sample.phase.toUpperCase()}`;
+  ui.hudState.textContent = `${activeVariant.toUpperCase()} · ${activePreset.toUpperCase()} · ${sample.phase.toUpperCase()}`;
   ui.hudDetail.textContent = `${source} · root rotation LOCK`;
   return sample;
 }
@@ -160,11 +173,18 @@ function setVariant(variant) {
     ? PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT
     : PARRY_CONTACT_DEFLECT_VARIANTS.PARRY;
   document.querySelectorAll('[data-variant]').forEach((button) => button.classList.toggle('on', button.dataset.variant === activeVariant));
-  if (activeVariant === PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT) {
-    ui.holdMs.value = '75'; ui.blendMs.value = '60'; ui.deflectStart.value = '0.08'; ui.deflectEnd.value = '0.46'; ui.blendLead.value = '0.06';
-  } else {
-    ui.holdMs.value = '65'; ui.blendMs.value = '55'; ui.deflectStart.value = '0.04'; ui.deflectEnd.value = '0.30'; ui.blendLead.value = '0.045';
-  }
+  const candidate = createParryContactDeflectProbeProfile(activeVariant, { tuningPreset:activePreset });
+  writeProfileToControls(candidate);
+  rebuildProfile({ preserveElapsed:false });
+}
+
+function setPreset(preset) {
+  activePreset = preset === PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE
+    ? PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE
+    : PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT;
+  document.querySelectorAll('[data-preset]').forEach((button) => button.classList.toggle('on', button.dataset.preset === activePreset));
+  const candidate = createParryContactDeflectProbeProfile(activeVariant, { tuningPreset:activePreset });
+  writeProfileToControls(candidate);
   rebuildProfile({ preserveElapsed:false });
 }
 
@@ -172,43 +192,55 @@ function clipDuration(clipId) {
   return Number(library.clips.get(clipId)?.duration || 0);
 }
 
+function scenarioFor(variant, tuningPreset) {
+  const candidate = createParryContactDeflectProbeProfile(variant, { tuningPreset });
+  const contactDuration = clipDuration(candidate.contactClipId);
+  const deflectDuration = clipDuration(candidate.deflectClipId);
+  const midBlend = candidate.contactWindow.endSeconds * 1000 + candidate.contactHoldMs + candidate.blendMs * 0.5;
+  const blend = sampleParryContactDeflectProbe(candidate, midBlend);
+  return {
+    tuningPreset,
+    contactClipId:candidate.contactClipId,
+    deflectClipId:candidate.deflectClipId,
+    contactDuration,
+    deflectDuration,
+    contactHoldMs:candidate.contactHoldMs,
+    deflectSpanSeconds:candidate.deflectWindow.endSeconds - candidate.deflectWindow.startSeconds,
+    sourceWindowsValid:candidate.contactWindow.endSeconds <= contactDuration + 1e-6
+      && candidate.deflectWindow.endSeconds <= deflectDuration + 1e-6,
+    contactBeforeDeflect:blend.phase === PARRY_CONTACT_DEFLECT_PHASES.BLEND
+      && blend.fromClipId === candidate.contactClipId
+      && blend.toClipId === candidate.deflectClipId,
+    rootRotationLocked:candidate.rootRotationPolicy === 'lock',
+    probeOnly:candidate.probeOnly === true && candidate.productionEnabled === false,
+  };
+}
+
 function runVerification() {
   const variants = [PARRY_CONTACT_DEFLECT_VARIANTS.PARRY, PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT];
-  const scenarios = Object.fromEntries(variants.map((variant) => {
-    const candidate = createParryContactDeflectProbeProfile(variant);
-    const contactDuration = clipDuration(candidate.contactClipId);
-    const deflectDuration = clipDuration(candidate.deflectClipId);
-    const midBlend = candidate.contactWindow.endSeconds * 1000 + candidate.contactHoldMs + candidate.blendMs * 0.5;
-    const blend = sampleParryContactDeflectProbe(candidate, midBlend);
-    return [variant, {
-      contactClipId:candidate.contactClipId,
-      deflectClipId:candidate.deflectClipId,
-      contactDuration,
-      deflectDuration,
-      sourceWindowsValid:candidate.contactWindow.endSeconds <= contactDuration + 1e-6
-        && candidate.deflectWindow.endSeconds <= deflectDuration + 1e-6,
-      contactBeforeDeflect:blend.phase === PARRY_CONTACT_DEFLECT_PHASES.BLEND
-        && blend.fromClipId === candidate.contactClipId
-        && blend.toClipId === candidate.deflectClipId,
-      rootRotationLocked:candidate.rootRotationPolicy === 'lock',
-      probeOnly:candidate.probeOnly === true && candidate.productionEnabled === false,
-    }];
-  }));
+  const scenarios = Object.fromEntries(variants.map((variant) => [variant, {
+    baseline:scenarioFor(variant, PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE),
+    compact:scenarioFor(variant, PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT),
+  }]));
+  const flat = Object.values(scenarios).flatMap((entry) => [entry.baseline, entry.compact]);
   const gates = {
     allThreeSourcesPresent:[
       'SKYRIM_GUARD/shd_blockhit','SKYRIM_GUARD/shd_blockbash','SKYRIM_GUARD/shd_blockbashpower',
     ].every((id) => library.clips.has(id)),
-    sourceWindowsValid:Object.values(scenarios).every((entry) => entry.sourceWindowsValid),
-    contactBeforeDeflect:Object.values(scenarios).every((entry) => entry.contactBeforeDeflect),
-    rootRotationLocked:Object.values(scenarios).every((entry) => entry.rootRotationLocked),
-    productionUnaffected:Object.values(scenarios).every((entry) => entry.probeOnly),
+    sourceWindowsValid:flat.every((entry) => entry.sourceWindowsValid),
+    contactBeforeDeflect:flat.every((entry) => entry.contactBeforeDeflect),
+    rootRotationLocked:flat.every((entry) => entry.rootRotationLocked),
+    productionUnaffected:flat.every((entry) => entry.probeOnly),
+    compactHoldsContactLonger:Object.values(scenarios).every((entry) => entry.compact.contactHoldMs > entry.baseline.contactHoldMs),
+    compactTrimsDeflect:Object.values(scenarios).every((entry) => entry.compact.deflectSpanSeconds < entry.baseline.deflectSpanSeconds),
   };
   const failures = Object.entries(gates).filter(([,pass]) => !pass).map(([name]) => name);
-  const report = { stage:'G3.5.1P', pass:failures.length === 0, scenarios, gates, failures };
+  const report = { stage:'G3.5.1P-T1', pass:failures.length === 0, scenarios, gates, failures };
   document.documentElement.dataset.g351p = report.pass ? 'pass' : 'fail';
-  document.documentElement.dataset.g351pNormal = scenarios.parry.contactBeforeDeflect ? 'pass' : 'fail';
-  document.documentElement.dataset.g351pPerfect = scenarios.perfect.contactBeforeDeflect ? 'pass' : 'fail';
-  ui.status.textContent = `G3.5.1P ${report.pass ? 'PASS' : 'FAIL'} · contact → deflect probe`;
+  document.documentElement.dataset.g351pNormal = scenarios.parry.compact.contactBeforeDeflect ? 'pass' : 'fail';
+  document.documentElement.dataset.g351pPerfect = scenarios.perfect.compact.contactBeforeDeflect ? 'pass' : 'fail';
+  document.documentElement.dataset.g351pTuning = gates.compactHoldsContactLonger && gates.compactTrimsDeflect ? 'pass' : 'fail';
+  ui.status.textContent = `G3.5.1P-T1 ${report.pass ? 'PASS' : 'FAIL'} · P0 ↔ compact redirect A/B`;
   ui.status.className = report.pass ? 'good' : 'bad';
   ui.report.textContent = JSON.stringify(report,null,2);
   window.__G351P_RESULT__ = report;
@@ -226,6 +258,10 @@ async function main() {
   mountDebugSword(character, sword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
   runVerification();
   const params = new URLSearchParams(location.search);
+  activePreset = params.get('preset') === PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE
+    ? PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE
+    : PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT;
+  document.querySelectorAll('[data-preset]').forEach((button) => button.classList.toggle('on', button.dataset.preset === activePreset));
   setVariant(params.get('variant') === 'perfect' ? 'perfect' : 'parry');
   const requestedElapsed = Number(params.get('elapsed'));
   if (Number.isFinite(requestedElapsed)) displayAt(requestedElapsed);
@@ -236,6 +272,7 @@ ui.timeline.addEventListener('input', () => { playing = false; displayAt(Number(
 ui.playToggle.addEventListener('click', () => { playing = !playing; ui.playToggle.textContent = playing ? '❚❚ Pause' : '▶ Play chain'; if (playing && elapsedMs >= profile.durationMs) elapsedMs = 0; });
 ui.restart.addEventListener('click', () => { playing = false; elapsedMs = 0; ui.playToggle.textContent = '▶ Play chain'; displayAt(0); });
 document.querySelectorAll('[data-variant]').forEach((button) => button.addEventListener('click', () => setVariant(button.dataset.variant)));
+document.querySelectorAll('[data-preset]').forEach((button) => button.addEventListener('click', () => setPreset(button.dataset.preset)));
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
 
 setView(new URLSearchParams(location.search).get('view') || 'three');
@@ -260,7 +297,7 @@ main().catch((error) => {
   ui.status.textContent = `G3.5.1P FAIL · ${error?.message || error}`;
   ui.status.className = 'bad';
   ui.report.textContent = error?.stack || String(error);
-  window.__G351P_RESULT__ = { stage:'G3.5.1P', pass:false, error:error?.stack || String(error) };
+  window.__G351P_RESULT__ = { stage:'G3.5.1P-T1', pass:false, error:error?.stack || String(error) };
 });
 
-window.__G351P_LAB__ = { setVariant, displayAt, runVerification, get profile(){ return profile; } };
+window.__G351P_LAB__ = { setVariant, setPreset, displayAt, runVerification, get profile(){ return profile; } };
