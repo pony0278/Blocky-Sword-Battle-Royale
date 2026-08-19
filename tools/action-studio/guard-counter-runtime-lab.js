@@ -74,12 +74,14 @@ function verifyScenario(variant){
   const historyStart=mountHistory.length, window=openCounterWindow(variant);
   const noAuto=window.snapshot.state===GUARD_STATES.PARRY&&window.report.counterWindowOpen&&window.snapshot.lastOutcome==='parry';
   const {confirmed,synced:start}=confirmCounter(variant);
-  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot();
-  const ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition, recoverStartMount=mountSnapshot();
+  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot(),sourceWorld=worldSwordQuaternion();
+  const ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition, recoverStartMount=mountSnapshot(),recoverStartWorld=worldSwordQuaternion();
   const recoveryDurationMs=Number(ended.report.recoveryDurationMs)||0;
   const recoveryProfileId=ended.report.recoveryProfileId||null;
   const startMountContinuous=mountDelta(sourceMount,recoverStartMount)<1e-5;
-  const checkpoints=[0,.05,.10,.25,.50,.75,1],worldSamples=[{progress:0,quaternion:worldSwordQuaternion(),stabilized:Boolean(ended.report.worldSwordOrientationStabilized)}];
+  const startWorldDeltaDeg=quaternionAngleDegrees(sourceWorld,recoverStartWorld);
+  const startWorldContinuous=startWorldDeltaDeg<1;
+  const checkpoints=[0,.05,.10,.25,.50,.75,1],worldSamples=[{progress:0,quaternion:recoverStartWorld,stabilized:Boolean(ended.report.worldSwordOrientationStabilized)}];
   let cursor=0,current=ended,midMount=null;
   for(const progress of checkpoints.slice(1)){
     current=runtime.update((progress-cursor)*recoveryDurationMs,camera); cursor=progress;
@@ -88,8 +90,8 @@ function verifyScenario(variant){
   }
   const finish=current,targetMount=mountSnapshot(),targetWorld=worldSamples.at(-1).quaternion;
   const worldTrajectory=monotonicAngles(worldSamples,targetWorld);
-  const worldSwordShortestPath=worldTrajectory.monotonic&&worldTrajectory.rows.slice(0,-1).every(row=>row.stabilized);
-  const mountActuallyBlends=startMountContinuous&&mountDelta(recoverStartMount,midMount)>1e-5&&mountDelta(midMount,targetMount)>1e-5;
+  const worldSwordShortestPath=startWorldContinuous&&worldTrajectory.monotonic&&worldTrajectory.rows.slice(0,-1).every(row=>row.stabilized);
+  const mountActuallyBlends=mountDelta(recoverStartMount,midMount)>1e-5&&mountDelta(midMount,targetMount)>1e-5;
   const history=mountHistory.slice(historyStart);
   const sawKayKit=history.some(x=>x.profileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT);
   const sawSkyrimRecover=history.some(x=>x.profileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD&&x.state===GUARD_STATES.RECOVER);
@@ -98,14 +100,14 @@ function verifyScenario(variant){
     &&start.report.correctionWeight===0&&before.snapshot.state===GUARD_STATES.COUNTER&&completion?.event===GUARD_EVENTS.COUNTER_COMPLETE
     &&completion?.authority==='presentation'&&completion?.payload?.counterProfileId===GUARD_COUNTER_PROFILE_IDS.LONGSWORD
     &&ended.snapshot.state===GUARD_STATES.RECOVER&&ended.report.weaponMountProfileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD
-    &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&startMountContinuous&&mountActuallyBlends&&worldSwordShortestPath&&finish.snapshot.state===GUARD_STATES.HOLD
+    &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&mountActuallyBlends&&worldSwordShortestPath&&finish.snapshot.state===GUARD_STATES.HOLD
     &&sawKayKit&&sawSkyrimRecover;
   return {variant,noAutoCounter:noAuto,confirmAuthority:confirmed.snapshot.lastTransition?.authority||null,counterClip:start.report.clipId,
     counterProfileId:start.report.counterProfileId,counterMount:start.report.weaponMountProfileId,counterCorrectionWeight:start.report.correctionWeight,
     beforeEndState:before.snapshot.state,completionEvent:completion?.event||null,completionAuthority:completion?.authority||null,
     completionProfileId:completion?.payload?.counterProfileId||null,afterCounterState:ended.snapshot.state,afterCounterMount:ended.report.weaponMountProfileId,
-    recoveryProfileId,recoveryDurationMs,startMountContinuous,mountActuallyBlends,worldSwordShortestPath,worldTrajectory:worldTrajectory.rows,
-    afterRecoveryState:finish.snapshot.state,sawKayKitMount:sawKayKit,sawSkyrimRecoverMount:sawSkyrimRecover,pass};
+    recoveryProfileId,recoveryDurationMs,startMountContinuous,startWorldDeltaDeg,startWorldContinuous,mountActuallyBlends,worldSwordShortestPath,
+    worldTrajectory:worldTrajectory.rows,afterRecoveryState:finish.snapshot.state,sawKayKitMount:sawKayKit,sawSkyrimRecoverMount:sawSkyrimRecover,pass};
 }
 function runVerification(kaykit,skyrim){
   const clip=kaykit.clips.get('Melee_Block_Attack'); counterDurationMs=Math.max(.001,Number(clip?.duration)||0)*1000;
@@ -113,7 +115,8 @@ function runVerification(kaykit,skyrim){
   const normal=verifyScenario('normal'),perfect=verifyScenario('perfect');
   const gates={skyrimGuardFamilyLoaded:skyrim.clips.size===4,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
     inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
-    poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends,
+    poseMatchedMountRecovery:normal.mountActuallyBlends&&perfect.mountActuallyBlends,
+    worldSwordStartContinuous:normal.startWorldContinuous&&perfect.startWorldContinuous,
     worldSwordOrientationMonotonic:normal.worldSwordShortestPath&&perfect.worldSwordShortestPath};
   const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1.1',pass:failures.length===0,
     counterClip:{name:clip?.name||null,durationSeconds:Number(clip?.duration)||0,diagnostics},scenarios:{normal,perfect},mountHistory:[...mountHistory],gates,failures};
