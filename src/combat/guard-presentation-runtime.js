@@ -12,7 +12,6 @@ import { LONGSWORD_GUARD_AUTHORING_STATE } from './longsword-guard-metadata.js';
 import { applyGuardQuaternionOffsetsWeighted } from './longsword-guard-correction.js';
 import {
   applyObjectTransform,
-  applyObjectWorldQuaternion,
   applyRigPose,
   blendRecoveryTransform,
   captureObjectTransform,
@@ -89,6 +88,50 @@ function defaultReport(snapshot) {
   });
 }
 
+function releaseWorldMatrixConstraint(object3d) {
+  if (!object3d || object3d.matrixAutoUpdate !== false) return;
+  object3d.matrixAutoUpdate = true;
+  object3d.updateMatrix?.();
+  object3d.updateMatrixWorld?.(true);
+}
+
+function applyExactWorldOrientation(THREE, object3d, desiredWorldInput) {
+  if (!object3d || !desiredWorldInput || !THREE?.Matrix4 || !THREE?.Vector3 || !THREE?.Quaternion) return false;
+
+  // A rotated object under a non-uniformly scaled bone hierarchy inherits affine shear.
+  // Decomposing that hierarchy to parent/world quaternions and solving qLocal is therefore
+  // only approximate. Build the desired world TRS directly, preserve its exact local affine
+  // matrix under the current parent, and let Three.js render that matrix without decomposition.
+  object3d.updateWorldMatrix?.(true, false);
+  const worldPosition = new THREE.Vector3();
+  const worldScale = new THREE.Vector3();
+  const ignoredWorldQuaternion = new THREE.Quaternion();
+  object3d.matrixWorld.decompose(worldPosition, ignoredWorldQuaternion, worldScale);
+
+  const desiredWorldQuaternion = new THREE.Quaternion(
+    Number(desiredWorldInput.x) || 0,
+    Number(desiredWorldInput.y) || 0,
+    Number(desiredWorldInput.z) || 0,
+    Number.isFinite(Number(desiredWorldInput.w)) ? Number(desiredWorldInput.w) : 1,
+  ).normalize();
+  const desiredWorldMatrix = new THREE.Matrix4().compose(
+    worldPosition,
+    desiredWorldQuaternion,
+    worldScale,
+  );
+  const localMatrix = desiredWorldMatrix.clone();
+  if (object3d.parent?.matrixWorld) {
+    object3d.parent.updateWorldMatrix?.(true, false);
+    localMatrix.premultiply(object3d.parent.matrixWorld.clone().invert());
+  }
+
+  object3d.matrixAutoUpdate = false;
+  object3d.matrix.copy(localMatrix);
+  object3d.matrixWorldNeedsUpdate = true;
+  object3d.updateMatrixWorld?.(true);
+  return true;
+}
+
 export function createGuardPresentationRuntime(THREE, options = {}) {
   const machine = options.machine;
   const character = options.character;
@@ -135,6 +178,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
   }
 
   function clearRecoveryBridge() {
+    releaseWorldMatrixConstraint(weaponObject3d);
     recoveryBridge = null;
   }
 
@@ -190,6 +234,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
   }
 
   function beginRecoveryBridge(snapshot, camera) {
+    releaseWorldMatrixConstraint(weaponObject3d);
     const sourceMount = captureObjectTransform(weaponObject3d);
     const sourceWeaponWorldQuaternion = captureObjectWorldQuaternion(weaponObject3d);
     const presentation = preparePresentation(snapshot);
@@ -239,6 +284,9 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
 
     let recoveryWorldSwordStabilized = false;
     if (weaponObject3d && bridge.sourceMount && bridge.targetMount) {
+      // Release the previous frame's affine constraint, then recover mount position/scale
+      // with the existing G3.4.1 local bridge before applying this frame's world rotation.
+      releaseWorldMatrixConstraint(weaponObject3d);
       const mount = blendRecoveryTransform(
         bridge.sourceMount,
         bridge.sourceMount,
@@ -248,17 +296,24 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       );
       applyObjectTransform(weaponObject3d, mount);
 
-      // G3.4.1.1: local shortest-path blends on every arm bone plus the sword mount do
-      // not guarantee a shortest path after hierarchy composition. Preserve the existing
-      // position/scale recovery, but stabilize the final sword orientation in world space.
-      if (bridge.sourceWeaponWorldQuaternion && bridge.targetWeaponWorldQuaternion) {
+      // G3.4.1.1 is intentionally scoped to Counter recovery. Block / Parry / Perfect
+      // Parry keep their existing G3.4.1 behavior unchanged.
+      if (
+        bridge.sourceState === GUARD_STATES.COUNTER
+        && recovery.progress < 1
+        && bridge.sourceWeaponWorldQuaternion
+        && bridge.targetWeaponWorldQuaternion
+      ) {
         const desiredWorldQuaternion = sampleRecoveryWorldQuaternion(
           bridge.sourceWeaponWorldQuaternion,
           bridge.targetWeaponWorldQuaternion,
           recovery.progress,
         );
-        applyObjectWorldQuaternion(weaponObject3d, desiredWorldQuaternion);
-        recoveryWorldSwordStabilized = true;
+        recoveryWorldSwordStabilized = applyExactWorldOrientation(
+          THREE,
+          weaponObject3d,
+          desiredWorldQuaternion,
+        );
       }
     }
     character.update?.(0, camera);
