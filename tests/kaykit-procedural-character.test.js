@@ -10,6 +10,7 @@ import {
   validateKayKitRigDefinition,
 } from '../src/character/procedural-kaykit-rig.js';
 import { createDefaultCharacter, DEFAULT_CHARACTER_RIG_ID } from '../src/character/default-character.js';
+import { createAnimationPlaybackSignature } from '../src/character/procedural-kaykit-character.js';
 import {
   KAYKIT_ANIMATION_PACKS,
   validateKayKitClipBindings,
@@ -121,6 +122,23 @@ test('KayKit animation binding validation rejects targets outside the procedural
   assert.equal(valid.valid, true);
   assert.equal(invalid.valid, false);
   assert.deepEqual(invalid.missing.get('Broken'), ['missing']);
+});
+
+test('G3.4.2R playback signatures isolate preserve and locked root-rotation actions', () => {
+  const preserved = createAnimationPlaybackSignature('SKYRIM_GUARD/shd_blockhit', { inPlace: true });
+  const locked = createAnimationPlaybackSignature('SKYRIM_GUARD/shd_blockhit', {
+    inPlace: true,
+    rootRotationPolicy: 'lock',
+  });
+  const rootMotion = createAnimationPlaybackSignature('SKYRIM_GUARD/shd_blockhit', {
+    inPlace: false,
+    rootRotationPolicy: 'lock',
+  });
+
+  assert.notEqual(preserved, locked);
+  assert.match(preserved, /root-rotation-preserve$/);
+  assert.match(locked, /root-rotation-lock$/);
+  assert.match(rootMotion, /root-motion\|root-rotation-preserve$/);
 });
 
 test('extracted animation manifest contains valid GLB packs and expected combat clips', async () => {
