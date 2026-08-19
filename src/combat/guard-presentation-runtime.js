@@ -83,9 +83,6 @@ function applyWorldQuaternion(THREE, object3d, desiredWorld) {
   const parentWorld = new THREE.Quaternion();
   parent.getWorldQuaternion(parentWorld);
 
-  // Start from the analytic parent^-1 * desired solution. Bone-local non-uniform
-  // scaling can make matrixWorld decomposition differ from pure quaternion
-  // composition, so refine against Three.js' actual world quaternion below.
   const local = solveLocalQuaternionForWorld(parentWorld, desiredWorld);
   if (typeof object3d.quaternion.set === 'function') {
     object3d.quaternion.set(local.x, local.y, local.z, local.w);
@@ -107,10 +104,7 @@ function applyWorldQuaternion(THREE, object3d, desiredWorld) {
 
     parent.updateWorldMatrix?.(true, false);
     parent.getWorldQuaternion(parentWorld);
-    // desired = worldError * actual
     worldError.copy(desired).multiply(scratch.copy(actual).invert()).normalize();
-    // Convert the world-space correction into the current parent-local frame:
-    // localError = parent^-1 * worldError * parent.
     parentInverse.copy(parentWorld).invert();
     localError.copy(parentInverse).multiply(worldError).multiply(parentWorld).normalize();
     object3d.quaternion.premultiply(localError).normalize();
@@ -169,6 +163,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
   let previousPoseSample = null;
   let sourcePoseSample = null;
   let recoveryBridge = null;
+  let stableGuardWorldQuaternion = null;
 
   function preparePresentation(snapshot) {
     const presentation = snapshot?.presentation || {};
@@ -205,6 +200,9 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     });
     applyCorrection(weights.correctionWeight);
     character.update?.(0, camera);
+    if (snapshot.state === GUARD_STATES.HOLD && weaponObject3d) {
+      stableGuardWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
+    }
     return Object.freeze({
       ...defaultReport(snapshot),
       managed: true,
@@ -252,6 +250,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
     applyCorrection(1);
     character.update?.(0, camera);
+    const sampledTargetWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
     recoveryBridge = Object.freeze({
       sequence: snapshot.sequence,
       presentation,
@@ -262,7 +261,9 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       sourceMount,
       targetMount: captureObjectTransform(weaponObject3d),
       sourceWorldQuaternion,
-      targetWorldQuaternion: captureWorldQuaternion(THREE, weaponObject3d),
+      targetWorldQuaternion: sourcePoseSample?.state === GUARD_STATES.COUNTER
+        ? (stableGuardWorldQuaternion || sampledTargetWorldQuaternion)
+        : sampledTargetWorldQuaternion,
       profile: resolveGuardRecoveryProfile(snapshot),
       targetClipDuration: duration,
     });
