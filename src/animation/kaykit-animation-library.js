@@ -11,6 +11,11 @@ export const KAYKIT_ANIMATION_PACKS = Object.freeze([
   Object.freeze({ id: 'tools', file: 'tools.glb' }),
 ]);
 
+export const ROOT_ROTATION_POLICIES = Object.freeze({
+  PRESERVE: 'preserve',
+  LOCK: 'lock',
+});
+
 function loadGlb(loader, url) {
   return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
 }
@@ -57,10 +62,33 @@ function clipPropertyName(trackName) {
   return propertyIndex < 0 ? '' : String(trackName || '').slice(propertyIndex + 1);
 }
 
-function isRootPositionTrack(track) {
+function isRootPropertyTrack(track, propertyName) {
   const name = String(track?.name || '');
-  return clipPropertyName(name) === 'position'
+  return clipPropertyName(name) === propertyName
     && sanitizeAnimationTargetName(clipTargetName(name)) === sanitizeAnimationTargetName('root');
+}
+
+function isRootPositionTrack(track) {
+  return isRootPropertyTrack(track, 'position');
+}
+
+function isRootQuaternionTrack(track) {
+  return isRootPropertyTrack(track, 'quaternion');
+}
+
+export function normalizeRootRotationPolicy(value) {
+  return value === ROOT_ROTATION_POLICIES.LOCK
+    ? ROOT_ROTATION_POLICIES.LOCK
+    : ROOT_ROTATION_POLICIES.PRESERVE;
+}
+
+export function filterAnimationTracksForInPlace(tracks = [], options = {}) {
+  const rootRotationPolicy = normalizeRootRotationPolicy(options.rootRotationPolicy);
+  return tracks.filter((track) => {
+    if (isRootPositionTrack(track)) return false;
+    if (rootRotationPolicy === ROOT_ROTATION_POLICIES.LOCK && isRootQuaternionTrack(track)) return false;
+    return true;
+  });
 }
 
 export function validateKayKitClipBindings(clips, boneIds) {
@@ -96,15 +124,18 @@ export function createKayKitAnimationController(THREE, object3d) {
     }
   }
 
-  function preparedClip(name, inPlace) {
+  function preparedClip(name, inPlace, requestedRootRotationPolicy = ROOT_ROTATION_POLICIES.PRESERVE) {
     const source = clips.get(name);
     if (!source) return null;
-    const key = `${name}|${inPlace ? 'in-place' : 'root-motion'}`;
+    const rootRotationPolicy = inPlace
+      ? normalizeRootRotationPolicy(requestedRootRotationPolicy)
+      : ROOT_ROTATION_POLICIES.PRESERVE;
+    const key = `${name}|${inPlace ? 'in-place' : 'root-motion'}|root-rotation-${rootRotationPolicy}`;
     if (!actions.has(key)) {
       const clip = source.clone();
       clip.name = key;
       if (inPlace) {
-        clip.tracks = clip.tracks.filter((track) => !isRootPositionTrack(track));
+        clip.tracks = filterAnimationTracksForInPlace(clip.tracks, { rootRotationPolicy });
         clip.resetDuration();
       }
       actions.set(key, mixer.clipAction(clip, object3d));
@@ -141,21 +172,28 @@ export function createKayKitAnimationController(THREE, object3d) {
     getClipDuration(name) {
       return Math.max(0, Number(clips.get(name)?.duration) || 0);
     },
-    getPreparedClipDiagnostics(name, inPlace = true) {
+    getPreparedClipDiagnostics(name, inPlace = true, options = {}) {
       const source = clips.get(name);
-      const action = preparedClip(name, inPlace);
+      const rootRotationPolicy = inPlace
+        ? normalizeRootRotationPolicy(options.rootRotationPolicy)
+        : ROOT_ROTATION_POLICIES.PRESERVE;
+      const action = preparedClip(name, inPlace, rootRotationPolicy);
       const prepared = action?.getClip?.() || null;
       return {
         name,
         inPlace: Boolean(inPlace),
+        rootRotationPolicy,
         sourceTrackCount: source?.tracks?.length || 0,
         sourceRootPositionTracks: source?.tracks?.filter(isRootPositionTrack).length || 0,
+        sourceRootQuaternionTracks: source?.tracks?.filter(isRootQuaternionTrack).length || 0,
         preparedTrackCount: prepared?.tracks?.length || 0,
         preparedRootPositionTracks: prepared?.tracks?.filter(isRootPositionTrack).length || 0,
+        preparedRootQuaternionTracks: prepared?.tracks?.filter(isRootQuaternionTrack).length || 0,
       };
     },
     play(name, options = {}) {
-      const action = preparedClip(name, options.inPlace !== false);
+      const inPlace = options.inPlace !== false;
+      const action = preparedClip(name, inPlace, options.rootRotationPolicy);
       if (!action) throw new Error(`Unknown KayKit animation: ${name}`);
       const fadeSeconds = Math.max(0, Number(options.fadeSeconds ?? 0.12));
       if (currentAction && currentAction !== action) currentAction.fadeOut(fadeSeconds);
@@ -171,7 +209,8 @@ export function createKayKitAnimationController(THREE, object3d) {
       return action;
     },
     sample(name, timeSeconds, options = {}) {
-      const action = preparedClip(name, options.inPlace !== false);
+      const inPlace = options.inPlace !== false;
+      const action = preparedClip(name, inPlace, options.rootRotationPolicy);
       if (!action) throw new Error(`Unknown KayKit animation: ${name}`);
       if (currentAction !== action) {
         mixer.stopAllAction();
