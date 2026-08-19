@@ -6,8 +6,8 @@ export const GUARD_ACTION_SEMANTIC_FIT = Object.freeze({
 
 export const GUARD_ACTION_SEMANTIC_ROLES = Object.freeze({
   BLOCK_REACTION: 'block-reaction',
-  PARRY_DEFLECT: 'parry-deflect',
-  PERFECT_PARRY_DEFLECT: 'perfect-parry-deflect',
+  PARRY_SUCCESS: 'parry-success',
+  PERFECT_PARRY_SUCCESS: 'perfect-parry-success',
   COUNTER_STRIKE: 'counter-strike',
   SHIELD_BASH: 'shield-bash',
   SHIELD_POWER_BASH: 'shield-power-bash',
@@ -34,18 +34,6 @@ export function guardActionSemanticAssessment({
     semanticNote: note,
   });
 }
-
-export const PARRY_MOTION_ACQUISITION_CRITERIA = Object.freeze([
-  'Short defensive deflection rather than a forward body-check or shield shove',
-  'Shield or weapon redirects the incoming attack line laterally/upward with limited forward displacement',
-  'Ends in a weapon-ready posture that can flow immediately into Counter',
-]);
-
-export const PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA = Object.freeze([
-  'Same defensive deflection language as normal Parry, but with a clearer contact accent',
-  'May use stronger torso/arm commitment, but must not read as a standalone shield bash attack',
-  'Leaves a readable opening for the follow-up Counter',
-]);
 
 export const COUNTER_MOTION_ACQUISITION_CRITERIA = Object.freeze([
   'Right-hand longsword is the primary attacking tool',
