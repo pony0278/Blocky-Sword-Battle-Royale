@@ -39,7 +39,7 @@ jobs:
         env:
           BROWSER: ${{ steps.browser.outputs.browser }}
         run: |
-          mkdir -p artifacts/g3-4
+          mkdir -p artifacts/g3-4 artifacts/g3-4/silhouette
           python3 -m http.server 4173 > /tmp/g34-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
@@ -88,6 +88,25 @@ jobs:
             --window-size=1500,1000 --virtual-time-budget=25000 \
             --screenshot="artifacts/g3-4/perfect-counter-220ms-side.png" \
             "${BASE}?variant=perfect&elapsed=220&view=side"
+
+          # G3.4.2 source silhouette review. Melee_Block_Attack is ~1066.67ms.
+          # 15/25/40/55/70/85% => 160/267/427/587/747/907ms.
+          for SPEC in '15:160' '25:267' '40:427' '55:587' '70:747' '85:907'; do
+            PCT="${SPEC%%:*}"
+            MS="${SPEC##*:}"
+            "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+              --window-size=1500,1000 --virtual-time-budget=25000 \
+              --screenshot="artifacts/g3-4/silhouette/source-${PCT}pct-three.png" \
+              "${BASE}?variant=normal&elapsed=${MS}&view=three"
+          done
+          for SPEC in '25:267' '40:427' '55:587' '70:747'; do
+            PCT="${SPEC%%:*}"
+            MS="${SPEC##*:}"
+            "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+              --window-size=1500,1000 --virtual-time-budget=25000 \
+              --screenshot="artifacts/g3-4/silhouette/source-${PCT}pct-side.png" \
+              "${BASE}?variant=normal&elapsed=${MS}&view=side"
+          done
 
       - name: Upload G3.4 runtime evidence
         uses: actions/upload-artifact@v4
