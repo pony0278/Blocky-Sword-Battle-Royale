@@ -40,5 +40,21 @@ jobs:
         shell: bash
         run: bash tools/action-studio/verify-guard-runtime-surface.sh
 
+      - name: Probe Counter recovery right-hand trajectory
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          python3 -m http.server 4173 > /tmp/counter-hand-probe-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1200,900 --virtual-time-budget=30000 --dump-dom \
+            'http://127.0.0.1:4173/tools/action-studio/counter-recovery-hand-glitch-probe.html' \
+            > /tmp/counter-hand-probe-dom.html
+          grep -q 'data-counter-hand-probe="pass"' /tmp/counter-hand-probe-dom.html
+          sed -n '/<pre id="report"/,/<\/pre>/p' /tmp/counter-hand-probe-dom.html
+
       - name: Run tests
         run: npm test
