@@ -27,47 +27,82 @@ This stage must not silently replace production Parry.
 
 Production G3.5.1 remains unchanged until visual review is accepted.
 
+## Visual Tuning — T1 Compact Redirect
+
+The first P0 artifact proved that the contact → deflect chain runs correctly, but its late poses still risk reading as a second active Shield Bash:
+
+- Normal P0 exposed almost the full `shd_blockbash` source (`0.040–0.300s`).
+- Perfect P0 exposed a large `shd_blockbashpower` displacement (`0.080–0.460s`).
+- the P0 contact hold was relatively short, so the eye had less time to register **impact first** before the second motion developed.
+
+T1 therefore does **less**, not more:
+
+- freeze the shield-contact read longer;
+- skip more of the bash preparation;
+- use only a compact middle redirect segment;
+- trim away the late forward follow-through that can look like a body-check / Shield Bash;
+- retain bone position lerp + quaternion slerp crossfade;
+- keep `rootRotationPolicy: lock`.
+
+The lab keeps **P0 Baseline** available for direct A/B comparison.
+
 ## Candidate chains
 
-### Normal Parry
+### Normal Parry — T1 default
 
 `SKYRIM_GUARD/shd_blockhit`
 
-→ short impact hold / hitstop
+→ readable contact hold
 
-→ crossfade
+→ longer pose crossfade
 
-→ trimmed `SKYRIM_GUARD/shd_blockbash`
+→ compact middle segment of `SKYRIM_GUARD/shd_blockbash`
 
-Default probe values:
+T1 values:
+
+- Block Hit contact end: `0.160s`;
+- contact hold: `85ms`;
+- crossfade: `70ms`;
+- blockbash trim: `0.090–0.220s`;
+- blend lead inside blockbash: `0.030s`;
+- deflect speed: `1.15x`.
+
+P0 comparison:
 
 - Block Hit contact end: `0.180s`;
 - contact hold: `65ms`;
 - crossfade: `55ms`;
 - blockbash trim: `0.040–0.300s`;
-- blend lead inside blockbash: `0.045s`;
-- deflect speed: `1.0x`.
+- blend lead: `0.045s`;
+- speed: `1.0x`.
 
-These values are starting points, not production decisions.
-
-### Perfect Parry
+### Perfect Parry — T1 default
 
 `SKYRIM_GUARD/shd_blockhit`
 
-→ slightly stronger impact hold
+→ stronger contact hold
 
-→ crossfade
+→ longer pose crossfade
 
-→ trimmed `SKYRIM_GUARD/shd_blockbashpower`
+→ trimmed middle segment of `SKYRIM_GUARD/shd_blockbashpower`
 
-Default probe values:
+T1 values:
+
+- Block Hit contact end: `0.160s`;
+- contact hold: `95ms`;
+- crossfade: `75ms`;
+- blockbashpower trim: `0.120–0.280s`;
+- blend lead: `0.035s`;
+- deflect speed: `1.10x`.
+
+P0 comparison:
 
 - Block Hit contact end: `0.180s`;
 - contact hold: `75ms`;
 - crossfade: `60ms`;
 - blockbashpower trim: `0.080–0.460s`;
 - blend lead: `0.060s`;
-- deflect speed: `1.0x`.
+- speed: `1.0x`.
 
 ## Why crossfade matters
 
@@ -88,6 +123,7 @@ This allows us to judge the intended semantic chain instead of judging a clip se
 Controls:
 
 - Normal / Power variant;
+- **T1 Compact Redirect / P0 Baseline** A/B preset;
 - play / restart;
 - chain scrubber;
 - Block Hit contact end;
@@ -100,25 +136,42 @@ Controls:
 
 The lab loads the real converted Skyrim Guard GLBs and uses the accepted Skyrim weapon-bind calibration.
 
-## Acceptance criteria
+## T1 acceptance criteria
 
-A candidate is visually successful only if all of the following are true:
+T1 is visually better than P0 only if:
 
-- shield contact is readable **before** outward motion begins;
-- the second motion reads as redirecting the opponent's attack, not initiating an unrelated shield strike;
-- the character does not lunge or spin because of imported root motion;
-- the sword / shield silhouette remains coherent through the crossfade;
-- the final pose can plausibly hand off into the existing Parry Advantage / free directional attack flow.
+- shield contact is easier to read before outward movement starts;
+- the redirect is one compact continuation of the collision, not a second initiated move;
+- Normal does not develop into a visible forward Shield Bash follow-through;
+- Perfect may have more displacement than Normal, but must still read as a stronger **redirect**, not a body-check;
+- shoulders / hands / weapon remain coherent through the longer blend;
+- root orientation remains locked;
+- the finishing silhouette can hand off immediately into Parry Advantage / normal directional attack.
 
 ## Rejection signs
 
-Reject or re-trim the candidate if:
+Reject or re-trim T1 if:
 
-- the shield begins moving forward before impact is readable;
-- the chain looks like two separate moves;
-- the bash section still reads primarily as body-check / shield strike;
-- the blend creates hand, shield, sword, or shoulder snapping;
-- the root orientation rotates unexpectedly.
+- the longer hold makes the animation feel frozen rather than impactful;
+- starting later in the bash clip creates an obvious pose jump even with crossfade;
+- the shield still drives straight forward instead of moving across / away from the incoming attack line;
+- Perfect still reads primarily as a shield strike;
+- the compact trim becomes too small to communicate any redirect at all.
+
+## Visual evidence policy
+
+The dedicated G3.5.1P workflow now captures both T1 and P0 evidence.
+
+T1 evidence includes:
+
+- Normal contact;
+- Normal hold;
+- Normal mid-blend;
+- Normal deflect;
+- Perfect deflect in 3/4;
+- Perfect deflect from the side.
+
+P0 comparison frames are retained for Normal and Perfect so the visual decision is not made from memory.
 
 ## Relationship to G3.5.1
 
@@ -132,7 +185,8 @@ No dedicated Counter animation is reintroduced.
 
 ## Next decision
 
-After visual review:
+After T1 visual review:
 
-- if the contact → deflect chain reads correctly, promote the accepted timing into a production Parry presentation stage;
-- if it still reads as Shield Bash, keep production `shd_blockhit` only and do not force the source clips into Parry.
+- if T1 clearly reads as **contact → redirect**, promote the accepted timing into a production Parry presentation stage;
+- if T1 still reads as Shield Bash, try one narrower trim only if the source still contains an obvious lateral redirect;
+- if no trim reads correctly, keep production `shd_blockhit` only and stop forcing the bash sources into Parry.
