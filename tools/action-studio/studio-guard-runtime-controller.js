@@ -88,6 +88,7 @@ function resolveGuardPanel() {
 function createUnavailableGuardRuntime() {
   return Object.freeze({
     start: async () => null,
+    sampleAt: async () => null,
     deactivate: () => {},
     get active() { return false; },
     get mode() { return null; },
@@ -292,6 +293,26 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     return lastResult;
   }
 
+  async function sampleAt(mode, elapsedMs = 0) {
+    if (!(mode in MODE_LABELS)) throw new Error(`Unknown Guard Runtime mode: ${mode}`);
+    await ensureLoaded();
+    pausePlayer();
+    clearWeaponTrail();
+    character.stopAnimation?.();
+    if (!restoreMountCalibration) restoreMountCalibration = captureMountCalibration(weaponObject3d);
+    active = false;
+    activeMode = mode;
+    setAnimationSource('guard-runtime');
+    setActiveButton(mode);
+    lastResult = dispatchPreviewMode(mode);
+    const targetMs = Math.max(0, Number(elapsedMs) || 0);
+    if (targetMs > 0) lastResult = runtime.update(targetMs);
+    updateReadout(lastResult);
+    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE} · sampled ${Math.round(targetMs)}ms`);
+    updatePlaybackButtons();
+    return lastResult;
+  }
+
   function deactivate(options = {}) {
     if (!active && !options.force) return;
     active = false;
@@ -339,6 +360,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
   if (typeof window !== 'undefined') {
     window.__ACTION_STUDIO_GUARD_RUNTIME__ = {
       start,
+      sampleAt,
       deactivate,
       get active() { return active; },
       get mode() { return activeMode; },
@@ -353,6 +375,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
 
   return Object.freeze({
     start,
+    sampleAt,
     deactivate,
     get active() { return active; },
     get mode() { return activeMode; },
