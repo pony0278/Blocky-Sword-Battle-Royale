@@ -1,4 +1,5 @@
 const EPSILON = 1e-8;
+const COUNTER_CONTINUITY_HOLD_MS = 1000 / 60;
 
 export const GUARD_RECOVERY_PROFILE_IDS = Object.freeze({
   BLOCK: 'guard_recovery_block_v1',
@@ -12,7 +13,13 @@ export const GUARD_RECOVERY_PROFILES = Object.freeze({
   block: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.BLOCK, durationMs: 210, momentumScale: 0.34 }),
   parry: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.PARRY, durationMs: 170, momentumScale: 0.30 }),
   'perfect-parry': Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.PERFECT_PARRY, durationMs: 270, momentumScale: 0.42 }),
-  counter: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.COUNTER, durationMs: 310, momentumScale: 0.38 }),
+  counter: Object.freeze({
+    id: GUARD_RECOVERY_PROFILE_IDS.COUNTER,
+    durationMs: 310,
+    momentumScale: 0.38,
+    continuityHoldMs: COUNTER_CONTINUITY_HOLD_MS,
+    inertiaEnvelope: 'soft-start',
+  }),
   default: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.DEFAULT, durationMs: 220, momentumScale: 0.32 }),
 });
 
@@ -118,8 +125,9 @@ function smoothstep(t) {
   return value * value * (3 - 2 * value);
 }
 
-function inertiaEnvelope(t) {
+function inertiaEnvelope(t, mode = 'default') {
   const value = clamp01(t);
+  if (mode === 'soft-start') return smoothstep(value) * ((1 - value) ** 2);
   return value * ((1 - value) ** 2);
 }
 
@@ -178,9 +186,9 @@ export function applyObjectTransform(object3d, transform) {
   object3d.updateMatrixWorld?.(true);
 }
 
-function blendVector(previous, source, target, progress, durationSeconds, sampleDeltaSeconds, momentumScale) {
+function blendVector(previous, source, target, progress, durationSeconds, sampleDeltaSeconds, momentumScale, envelopeMode) {
   const eased = smoothstep(progress);
-  const envelope = inertiaEnvelope(progress);
+  const envelope = inertiaEnvelope(progress, envelopeMode);
   const velocityScale = sampleDeltaSeconds > EPSILON && sampleDeltaSeconds <= 0.08 ? 1 : 0;
   const vx = velocityScale ? (source.x - previous.x) / sampleDeltaSeconds : 0;
   const vy = velocityScale ? (source.y - previous.y) / sampleDeltaSeconds : 0;
@@ -192,10 +200,10 @@ function blendVector(previous, source, target, progress, durationSeconds, sample
   };
 }
 
-function blendQuaternion(previous, source, target, progress, durationSeconds, sampleDeltaSeconds, momentumScale) {
+function blendQuaternion(previous, source, target, progress, durationSeconds, sampleDeltaSeconds, momentumScale, envelopeMode) {
   const eased = smoothstep(progress);
   const base = slerpQuat(source, target, eased);
-  const envelope = inertiaEnvelope(progress);
+  const envelope = inertiaEnvelope(progress, envelopeMode);
   const velocity = sampleDeltaSeconds > EPSILON && sampleDeltaSeconds <= 0.08
     ? angularVelocity(previous, source, sampleDeltaSeconds)
     : { axis: { x: 0, y: 0, z: 0 }, radiansPerSecond: 0 };
@@ -211,9 +219,10 @@ export function blendRecoveryTransform(previousInput, sourceInput, targetInput, 
   const durationSeconds = Math.max(0.001, finite(options.durationMs, 220) / 1000);
   const sampleDeltaSeconds = Math.max(0, finite(options.sampleDeltaMs, 0) / 1000);
   const momentumScale = Math.max(0, finite(options.momentumScale, 0.32));
+  const envelopeMode = options.inertiaEnvelope || 'default';
   return Object.freeze({
-    position: Object.freeze(blendVector(previous.position, source.position, target.position, progress, durationSeconds, sampleDeltaSeconds, momentumScale)),
-    quaternion: Object.freeze(blendQuaternion(previous.quaternion, source.quaternion, target.quaternion, progress, durationSeconds, sampleDeltaSeconds, momentumScale)),
+    position: Object.freeze(blendVector(previous.position, source.position, target.position, progress, durationSeconds, sampleDeltaSeconds, momentumScale, envelopeMode)),
+    quaternion: Object.freeze(blendQuaternion(previous.quaternion, source.quaternion, target.quaternion, progress, durationSeconds, sampleDeltaSeconds, momentumScale, envelopeMode)),
     scale: Object.freeze({
       x: source.scale.x + (target.scale.x - source.scale.x) * smoothstep(progress),
       y: source.scale.y + (target.scale.y - source.scale.y) * smoothstep(progress),
@@ -247,23 +256,30 @@ export function resolveGuardRecoveryProfile(snapshot = {}) {
 export function samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, targetPose, elapsedMs, options = {}) {
   const profile = options.profile || resolveGuardRecoveryProfile(snapshot);
   const durationMs = Math.max(1, finite(profile.durationMs, 220));
-  const progress = clamp01(finite(elapsedMs) / durationMs);
+  const elapsed = Math.max(0, finite(elapsedMs));
+  const continuityHoldMs = Math.min(Math.max(0, finite(profile.continuityHoldMs, 0)), Math.max(0, durationMs - 1));
+  const activeDurationMs = Math.max(1, durationMs - continuityHoldMs);
+  const activeElapsedMs = Math.max(0, elapsed - continuityHoldMs);
+  const progress = elapsed >= durationMs ? 1 : clamp01(activeElapsedMs / activeDurationMs);
   const sampleDeltaMs = sourceSample && previousSample && sourceSample.sequence === previousSample.sequence
     ? Math.max(0, finite(sourceSample.elapsedMs) - finite(previousSample.elapsedMs))
     : 0;
   const pose = blendRecoveryPose(previousSample?.pose, sourceSample?.pose, targetPose, progress, {
-    durationMs,
+    durationMs: activeDurationMs,
     sampleDeltaMs,
     momentumScale: profile.momentumScale,
+    inertiaEnvelope: profile.inertiaEnvelope,
   });
   return Object.freeze({
     profile,
     durationMs,
+    continuityHoldMs,
+    continuityLatched: continuityHoldMs > 0 && elapsed <= continuityHoldMs + EPSILON,
     progress,
     eased: smoothstep(progress),
-    complete: progress >= 1,
+    complete: elapsed >= durationMs,
     sampleDeltaMs,
-    momentumActive: sampleDeltaMs > 0 && sampleDeltaMs <= 80,
+    momentumActive: progress > 0 && sampleDeltaMs > 0 && sampleDeltaMs <= 80,
     pose,
   });
 }
