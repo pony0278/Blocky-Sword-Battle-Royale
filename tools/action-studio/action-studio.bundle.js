@@ -9127,10 +9127,330 @@ function measureSkyrimWeaponFrameErrorDegrees(THREE, sourceWeapon, targetSocket,
 return Object.freeze({ multiplyQuaternionArrays, invertQuaternionArray, quaternionAngularErrorDegrees, deriveSkyrimWeaponBindCorrection, computeSkyrimWeaponBindCalibration, composeSkyrimWeaponMountCalibration, measureSkyrimWeaponFrameErrorDegrees });
 })();
 
+// src/animation/parry-contact-deflect-runtime-clip.js
+const __actionStudioModule43 = (() => {
+const PRODUCTION_PARRY_DEFLECT_STAGE = 'G3.5.1P-T3';
+
+const PRODUCTION_PARRY_DEFLECT_VARIANTS = Object.freeze({
+  PARRY: 'parry',
+  PERFECT_PARRY: 'perfect-parry',
+});
+
+const PRODUCTION_PARRY_DEFLECT_PHASES = Object.freeze({
+  CONTACT: 'contact',
+  CONTACT_HOLD: 'contact-hold',
+  BLEND: 'blend',
+  DEFLECT: 'deflect',
+  SETTLE: 'settle',
+});
+
+const PRODUCTION_PARRY_DEFLECT_CLIP_IDS = Object.freeze({
+  PARRY: 'SKYRIM_GUARD/parry_contact_deflect_t3',
+  PERFECT_PARRY: 'SKYRIM_GUARD/perfect_parry_contact_deflect_t3',
+});
+
+const CONTACT_CLIP_ID = 'SKYRIM_GUARD/shd_blockhit';
+const DEFLECT_CLIP_ID = 'SKYRIM_GUARD/shd_blockbash';
+const REACTION_DURATION_SECONDS = 0.6;
+const CONTACT_END_SECONDS = 0.16;
+const DEFLECT_START_SECONDS = 0.09;
+const DEFLECT_END_SECONDS = 0.22;
+const DEFLECT_BLEND_LEAD_SECONDS = 0.03;
+const DEFLECT_RATE = 1.15;
+
+const PROFILES = Object.freeze({
+  [PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY]: Object.freeze({
+    id: 'g351p_t3_parry_contact_deflect',
+    variant: PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY,
+    clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
+    contactHoldSeconds: 0.085,
+    blendSeconds: 0.070,
+  }),
+  [PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY]: Object.freeze({
+    id: 'g351p_t3_perfect_parry_contact_deflect',
+    variant: PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY,
+    clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
+    contactHoldSeconds: 0.095,
+    blendSeconds: 0.075,
+  }),
+});
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function resolveVariant(value) {
+  return value === PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY
+    ? PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY
+    : PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY;
+}
+
+function deflectPlaybackSeconds() {
+  return (DEFLECT_END_SECONDS - DEFLECT_START_SECONDS - DEFLECT_BLEND_LEAD_SECONDS) / DEFLECT_RATE;
+}
+
+function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY) {
+  const base = PROFILES[resolveVariant(variant)];
+  const holdEndSeconds = CONTACT_END_SECONDS + base.contactHoldSeconds;
+  const blendEndSeconds = holdEndSeconds + base.blendSeconds;
+  const deflectEndAtSeconds = blendEndSeconds + deflectPlaybackSeconds();
+  return Object.freeze({
+    ...base,
+    stage: PRODUCTION_PARRY_DEFLECT_STAGE,
+    productionEnabled: true,
+    probeOnly: false,
+    contactClipId: CONTACT_CLIP_ID,
+    deflectClipId: DEFLECT_CLIP_ID,
+    contactEndSeconds: CONTACT_END_SECONDS,
+    contactHoldSeconds: base.contactHoldSeconds,
+    holdEndSeconds,
+    blendSeconds: base.blendSeconds,
+    blendEndSeconds,
+    deflectStartSeconds: DEFLECT_START_SECONDS,
+    deflectEndSeconds: DEFLECT_END_SECONDS,
+    deflectBlendLeadSeconds: DEFLECT_BLEND_LEAD_SECONDS,
+    deflectRate: DEFLECT_RATE,
+    deflectEndAtSeconds,
+    reactionDurationSeconds: REACTION_DURATION_SECONDS,
+    semanticIntent: 'incoming weapon contacts shield, impact reads, then the shield redirects the attack line upward/laterally',
+    sourceDecision: 'T2_SHARED_NORMAL_T1',
+    perfectDifferentiation: base.variant === PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY
+      ? 'longer-contact-hold-and-blend; stronger stagger/hitfeel remains external to this clip'
+      : 'normal-parry-contact-deflect',
+  });
+}
+
+function sampleProductionParryDeflectTimeline(variant, elapsedSeconds = 0) {
+  const profile = getProductionParryDeflectProfile(variant);
+  const elapsed = clamp(elapsedSeconds, 0, profile.reactionDurationSeconds);
+
+  if (elapsed < profile.contactEndSeconds) {
+    return Object.freeze({
+      phase: PRODUCTION_PARRY_DEFLECT_PHASES.CONTACT,
+      elapsedSeconds: elapsed,
+      clipId: profile.contactClipId,
+      sourceTimeSeconds: elapsed,
+      completeVisualChain: false,
+    });
+  }
+
+  if (elapsed < profile.holdEndSeconds) {
+    return Object.freeze({
+      phase: PRODUCTION_PARRY_DEFLECT_PHASES.CONTACT_HOLD,
+      elapsedSeconds: elapsed,
+      clipId: profile.contactClipId,
+      sourceTimeSeconds: profile.contactEndSeconds,
+      completeVisualChain: false,
+    });
+  }
+
+  if (elapsed < profile.blendEndSeconds && profile.blendSeconds > 0) {
+    const alpha = clamp((elapsed - profile.holdEndSeconds) / profile.blendSeconds, 0, 1);
+    return Object.freeze({
+      phase: PRODUCTION_PARRY_DEFLECT_PHASES.BLEND,
+      elapsedSeconds: elapsed,
+      fromClipId: profile.contactClipId,
+      fromSourceTimeSeconds: profile.contactEndSeconds,
+      toClipId: profile.deflectClipId,
+      toSourceTimeSeconds: profile.deflectStartSeconds + profile.deflectBlendLeadSeconds * alpha,
+      blendAlpha: alpha,
+      completeVisualChain: false,
+    });
+  }
+
+  if (elapsed < profile.deflectEndAtSeconds) {
+    const afterBlend = Math.max(0, elapsed - profile.blendEndSeconds);
+    const sourceTimeSeconds = Math.min(
+      profile.deflectEndSeconds,
+      profile.deflectStartSeconds + profile.deflectBlendLeadSeconds + afterBlend * profile.deflectRate,
+    );
+    return Object.freeze({
+      phase: PRODUCTION_PARRY_DEFLECT_PHASES.DEFLECT,
+      elapsedSeconds: elapsed,
+      clipId: profile.deflectClipId,
+      sourceTimeSeconds,
+      completeVisualChain: false,
+    });
+  }
+
+  return Object.freeze({
+    phase: PRODUCTION_PARRY_DEFLECT_PHASES.SETTLE,
+    elapsedSeconds: elapsed,
+    clipId: profile.deflectClipId,
+    sourceTimeSeconds: profile.deflectEndSeconds,
+    completeVisualChain: true,
+  });
+}
+
+function canSampleTrack(track) {
+  return Boolean(track?.name && typeof track.getValueSize === 'function' && typeof track.createInterpolant === 'function');
+}
+
+function makeTrackSampler(clip) {
+  const byName = new Map();
+  for (const track of clip?.tracks || []) {
+    if (!canSampleTrack(track)) continue;
+    byName.set(track.name, {
+      track,
+      size: track.getValueSize(),
+      interpolant: track.createInterpolant(),
+    });
+  }
+  return byName;
+}
+
+function sampleTrack(entry, timeSeconds, clipDuration) {
+  if (!entry) return null;
+  const time = clamp(timeSeconds, 0, Math.max(0, Number(clipDuration) || 0));
+  const value = entry.interpolant.evaluate(time);
+  return Array.from(value).slice(0, entry.size);
+}
+
+function slerpQuaternion(THREE, from, to, alpha) {
+  if (!THREE?.Quaternion || from?.length !== 4 || to?.length !== 4) {
+    return from.map((value, index) => value + ((to[index] ?? value) - value) * alpha);
+  }
+  const a = new THREE.Quaternion(from[0], from[1], from[2], from[3]).normalize();
+  const b = new THREE.Quaternion(to[0], to[1], to[2], to[3]).normalize();
+  a.slerp(b, alpha);
+  return [a.x, a.y, a.z, a.w];
+}
+
+function blendValues(THREE, trackName, from, to, alpha) {
+  if (!from) return to ? [...to] : [];
+  if (!to) return [...from];
+  if (trackName.endsWith('.quaternion') && from.length === 4 && to.length === 4) {
+    return slerpQuaternion(THREE, from, to, alpha);
+  }
+  return from.map((value, index) => value + ((to[index] ?? value) - value) * alpha);
+}
+
+function uniqueSortedTimes(values) {
+  const sorted = [...values]
+    .map((value) => Number(Number(value).toFixed(8)))
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .sort((a, b) => a - b);
+  return sorted.filter((value, index) => index === 0 || Math.abs(value - sorted[index - 1]) > 1e-7);
+}
+
+function outputTimes(profile, fps) {
+  const values = [
+    0,
+    profile.contactEndSeconds,
+    profile.holdEndSeconds,
+    profile.blendEndSeconds,
+    profile.deflectEndAtSeconds,
+    profile.reactionDurationSeconds,
+  ];
+  const frames = Math.ceil(profile.reactionDurationSeconds * fps);
+  for (let frame = 0; frame <= frames; frame += 1) {
+    values.push(Math.min(profile.reactionDurationSeconds, frame / fps));
+  }
+  return uniqueSortedTimes(values);
+}
+
+function valueForTimeline(THREE, timeline, trackName, contactEntry, deflectEntry, contactDuration, deflectDuration) {
+  if (timeline.phase === PRODUCTION_PARRY_DEFLECT_PHASES.BLEND) {
+    const from = sampleTrack(contactEntry, timeline.fromSourceTimeSeconds, contactDuration);
+    const to = sampleTrack(deflectEntry, timeline.toSourceTimeSeconds, deflectDuration);
+    return blendValues(THREE, trackName, from, to, timeline.blendAlpha);
+  }
+  const useContact = timeline.clipId === CONTACT_CLIP_ID;
+  const entry = useContact ? contactEntry : deflectEntry;
+  const fallback = useContact ? deflectEntry : contactEntry;
+  return sampleTrack(entry || fallback, timeline.sourceTimeSeconds, useContact ? contactDuration : deflectDuration);
+}
+
+function canCreateProductionParryDeflectClips(THREE, clipMap) {
+  const contact = clipMap?.get?.(CONTACT_CLIP_ID);
+  const deflect = clipMap?.get?.(DEFLECT_CLIP_ID);
+  return Boolean(
+    THREE?.AnimationClip
+    && THREE?.Quaternion
+    && contact?.tracks?.length
+    && deflect?.tracks?.length
+  );
+}
+
+function createProductionParryDeflectClip(THREE, clipMap, variant, options = {}) {
+  if (!canCreateProductionParryDeflectClips(THREE, clipMap)) {
+    throw new Error('G3.5.1P-T3 production Parry clip synthesis requires retargeted Block Hit + Block Bash tracks and Three.js AnimationClip support');
+  }
+  const profile = getProductionParryDeflectProfile(variant);
+  const contactClip = clipMap.get(profile.contactClipId);
+  const deflectClip = clipMap.get(profile.deflectClipId);
+  const contactTracks = makeTrackSampler(contactClip);
+  const deflectTracks = makeTrackSampler(deflectClip);
+  const names = new Set([...contactTracks.keys(), ...deflectTracks.keys()]);
+  const fps = Math.max(30, Number(options.fps) || 60);
+  const times = outputTimes(profile, fps);
+  const tracks = [];
+
+  for (const name of names) {
+    const contactEntry = contactTracks.get(name) || null;
+    const deflectEntry = deflectTracks.get(name) || null;
+    const template = contactEntry?.track || deflectEntry?.track;
+    if (!template) continue;
+    const values = [];
+    for (const time of times) {
+      const timeline = sampleProductionParryDeflectTimeline(profile.variant, time);
+      const value = valueForTimeline(
+        THREE,
+        timeline,
+        name,
+        contactEntry,
+        deflectEntry,
+        contactClip.duration,
+        deflectClip.duration,
+      );
+      if (!value?.length) throw new Error(`G3.5.1P-T3 could not sample track ${name}`);
+      values.push(...value);
+    }
+    tracks.push(new template.constructor(
+      name,
+      times,
+      values,
+      typeof template.getInterpolation === 'function' ? template.getInterpolation() : undefined,
+    ));
+  }
+
+  const clip = new THREE.AnimationClip(profile.clipId, profile.reactionDurationSeconds, tracks);
+  clip.userData = {
+    ...(clip.userData || {}),
+    productionParryDeflect: Object.freeze({
+      stage: PRODUCTION_PARRY_DEFLECT_STAGE,
+      productionEnabled: true,
+      probeOnly: false,
+      variant: profile.variant,
+      sourceDecision: profile.sourceDecision,
+      contactClipId: profile.contactClipId,
+      deflectClipId: profile.deflectClipId,
+      contactEndSeconds: profile.contactEndSeconds,
+      contactHoldSeconds: profile.contactHoldSeconds,
+      blendSeconds: profile.blendSeconds,
+      deflectWindow: Object.freeze([profile.deflectStartSeconds, profile.deflectEndSeconds]),
+      deflectRate: profile.deflectRate,
+      visualChainEndSeconds: profile.deflectEndAtSeconds,
+      reactionDurationSeconds: profile.reactionDurationSeconds,
+    }),
+  };
+  return clip;
+}
+
+function createProductionParryDeflectClips(THREE, clipMap, options = {}) {
+  return Object.freeze([
+    createProductionParryDeflectClip(THREE, clipMap, PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY, options),
+    createProductionParryDeflectClip(THREE, clipMap, PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY, options),
+  ]);
+}
+return Object.freeze({ PRODUCTION_PARRY_DEFLECT_STAGE, PRODUCTION_PARRY_DEFLECT_VARIANTS, PRODUCTION_PARRY_DEFLECT_PHASES, PRODUCTION_PARRY_DEFLECT_CLIP_IDS, getProductionParryDeflectProfile, sampleProductionParryDeflectTimeline, canCreateProductionParryDeflectClips, createProductionParryDeflectClip, createProductionParryDeflectClips });
+})();
+
 // src/animation/skyrim-converted-animation-library.js
 const __actionStudioModule40 = (() => {
 const { retargetSkyrimClip } = __actionStudioModule41;
 const { computeSkyrimWeaponBindCalibration } = __actionStudioModule42;
+const { canCreateProductionParryDeflectClips, createProductionParryDeflectClips } = __actionStudioModule43;
 
 const SKYRIM_GUARD_HOLD_CONVERTED_FILE = Object.freeze({
   id: 'shd_blockidle',
@@ -9247,6 +9567,7 @@ function createSkyrimConvertedAnimationLibrary(clip, options = {}) {
     retargetFps: Math.max(1, Number(options.fps) || 30),
     duplicates: [],
     bridge: 'converted-glb',
+    virtualClips: [],
   };
 }
 
@@ -9274,6 +9595,14 @@ const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) => {
     }
   }
 
+  const sourceClipMap = new Map(clips.map((clip) => [clip.name, clip]));
+  const virtualClips = canCreateProductionParryDeflectClips(THREE, sourceClipMap)
+    ? createProductionParryDeflectClips(THREE, sourceClipMap, {
+      fps: Math.max(60, Number(options.productionParryFps) || 60),
+    })
+    : [];
+  clips.push(...virtualClips);
+
   return {
     clips: new Map(clips.map((clip) => [clip.name, clip])),
     files,
@@ -9281,6 +9610,7 @@ const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) => {
     retargetFps: Math.max(1, Number(options.fps) || 30),
     duplicates: [],
     bridge: 'converted-glb',
+    virtualClips: virtualClips.map((clip) => clip.name),
   };
 };
 
@@ -9309,7 +9639,7 @@ return Object.freeze({ SKYRIM_GUARD_HOLD_CONVERTED_FILE, SKYRIM_GUARD_REACTION_C
 })();
 
 // src/combat/longsword-directional-metadata.js
-const __actionStudioModule43 = (() => {
+const __actionStudioModule44 = (() => {
 const LONGSWORD_ATTACK_DIRECTIONS = Object.freeze(['top', 'right', 'left']);
 
 const LONGSWORD_DIRECTIONAL_ATTACKS = Object.freeze({
@@ -9349,7 +9679,7 @@ return Object.freeze({ LONGSWORD_ATTACK_DIRECTIONS, LONGSWORD_DIRECTIONAL_ATTACK
 })();
 
 // tools/action-studio/studio-editor-view.js
-const __actionStudioModule44 = (() => {
+const __actionStudioModule45 = (() => {
 const { POSE_KEYS } = __actionStudioModule10;
 const { normalizeAnimationBinding } = __actionStudioModule19;
 const { clipMarkerSummary } = __actionStudioModule16;
@@ -9575,7 +9905,7 @@ return Object.freeze({ renderTimelineView, updateTimelineReadoutView, renderKeyE
 })();
 
 // tools/action-studio/studio-skyrim-bridge-controls.js
-const __actionStudioModule45 = (() => {
+const __actionStudioModule46 = (() => {
 function installStudioSkyrimBridgeControls() {
   const sourceSelect = document.getElementById('animationPackSource');
   if (sourceSelect && typeof sourceSelect.querySelector === 'function'
@@ -9610,7 +9940,7 @@ return Object.freeze({ installStudioSkyrimBridgeControls });
 })();
 
 // src/combat/longsword-guard-metadata.js
-const __actionStudioModule48 = (() => {
+const __actionStudioModule49 = (() => {
 const freezeRange = (range) => Object.freeze({ ...range });
 const freezeEuler = (value) => Object.freeze({ x:value.x, y:value.y, z:value.z });
 const freezeQuaternion = (value) => Object.freeze([...value]);
@@ -9767,8 +10097,8 @@ return Object.freeze({ LONGSWORD_GUARD_BASE, LONGSWORD_TRIANGLE_GUARD_TARGETS, L
 })();
 
 // src/combat/guard-transition-presentation.js
-const __actionStudioModule49 = (() => {
-const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
+const __actionStudioModule50 = (() => {
+const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule49;
 
 const GUARD_TRANSITION_PROFILE_IDS = Object.freeze({
   ENTER: 'longsword_guard_enter_v1',
@@ -9882,7 +10212,7 @@ return Object.freeze({ GUARD_TRANSITION_PROFILE_IDS, LONGSWORD_GUARD_TRANSITION_
 })();
 
 // src/combat/guard-action-semantics.js
-const __actionStudioModule51 = (() => {
+const __actionStudioModule52 = (() => {
 const GUARD_ACTION_SEMANTIC_FIT = Object.freeze({
   MATCH: 'match',
   PROVISIONAL: 'provisional',
@@ -9930,7 +10260,7 @@ return Object.freeze({ GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, G
 })();
 
 // src/combat/parry-advantage.js
-const __actionStudioModule52 = (() => {
+const __actionStudioModule53 = (() => {
 const PARRY_ADVANTAGE_STAGE = 'G3.5.1';
 const PARRY_ADVANTAGE_FOLLOWUP_MODE = 'normal-directional-attack';
 const PARRY_ADVANTAGE_ENEMY_RESPONSE = 'authoritative-stagger';
@@ -9971,9 +10301,10 @@ return Object.freeze({ PARRY_ADVANTAGE_STAGE, PARRY_ADVANTAGE_FOLLOWUP_MODE, PAR
 })();
 
 // src/combat/guard-reaction-presentation.js
-const __actionStudioModule50 = (() => {
-const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule51;
-const { createParryAdvantageContract, isFreeAttackFollowupOpen } = __actionStudioModule52;
+const __actionStudioModule51 = (() => {
+const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule52;
+const { createParryAdvantageContract, isFreeAttackFollowupOpen } = __actionStudioModule53;
+const { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } = __actionStudioModule43;
 
 const GUARD_REACTION_VARIANTS = Object.freeze({
   BLOCK_HIT: 'block-hit',
@@ -10013,6 +10344,8 @@ function reactionProfile({
   parryAdvantage = null,
   visualDecision,
   semanticAssessment,
+  productionPresentationStage = null,
+  productionSourceChain = null,
 }) {
   const start = Math.max(0, Number(sourceStartSeconds) || 0);
   const sourceDuration = Math.max(start, Number(sourceDurationSeconds) || start);
@@ -10043,6 +10376,8 @@ function reactionProfile({
     loop: false,
     authored: true,
     authoredStage: 'G3.4.0',
+    productionPresentationStage,
+    productionSourceChain,
     visualDecision,
     ...semanticAssessment,
   });
@@ -10054,6 +10389,26 @@ const SHARED_BLOCK_CONTACT = Object.freeze({
   clipId: 'SKYRIM_GUARD/shd_blockhit',
   sourceDurationSeconds: 0.8,
   sourceEndSeconds: 0.6,
+});
+
+const PRODUCTION_PARRY_CONTACT_DEFLECT = Object.freeze({
+  sourceId: 'parry_contact_deflect_t3',
+  file: 'virtual:shd_blockhit+shd_blockbash',
+  clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
+  sourceDurationSeconds: 0.6,
+  sourceEndSeconds: 0.6,
+  productionPresentationStage: 'G3.5.1P-T3',
+  productionSourceChain: Object.freeze(['SKYRIM_GUARD/shd_blockhit', 'SKYRIM_GUARD/shd_blockbash']),
+});
+
+const PRODUCTION_PERFECT_PARRY_CONTACT_DEFLECT = Object.freeze({
+  sourceId: 'perfect_parry_contact_deflect_t3',
+  file: 'virtual:shd_blockhit+shd_blockbash',
+  clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
+  sourceDurationSeconds: 0.6,
+  sourceEndSeconds: 0.6,
+  productionPresentationStage: 'G3.5.1P-T3',
+  productionSourceChain: Object.freeze(['SKYRIM_GUARD/shd_blockhit', 'SKYRIM_GUARD/shd_blockbash']),
 });
 
 const PARRY_FOLLOWUP_WINDOW = Object.freeze([0.08, 1 / 3]);
@@ -10078,38 +10433,38 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
     variant: GUARD_REACTION_VARIANTS.PARRY,
     state: 'guard_parry',
-    ...SHARED_BLOCK_CONTACT,
+    ...PRODUCTION_PARRY_CONTACT_DEFLECT,
     counterWindowSeconds: PARRY_FOLLOWUP_WINDOW,
     followupWindowSeconds: PARRY_FOLLOWUP_WINDOW,
     parryAdvantage: createParryAdvantageContract({
       grade: 'parry',
       followupWindowSeconds: PARRY_FOLLOWUP_WINDOW,
     }),
-    visualDecision: 'G3.5.1 PARRY ADVANTAGE — reuse Block Hit for contact; successful timing staggers the attacker and opens the existing directional attack system instead of launching a dedicated Counter animation.',
+    visualDecision: 'G3.5.1P-T3 PRODUCTION — promote the T2 Shared Normal T1 winner into the production Parry clip: Block Hit contact → 85ms read → 70ms crossfade → compact shd_blockbash 0.09–0.22s deflect → settle through the existing 0.60s reaction boundary.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
-      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_SUCCESS,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Parry is a timing-qualified block that grants a free directional attack opportunity; no separate Counter animation is required.',
+      note: 'Production Parry now visibly receives the attack before redirecting it upward/laterally; follow-up remains the existing directional attack system.',
     }),
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY,
     variant: GUARD_REACTION_VARIANTS.PERFECT_PARRY,
     state: 'guard_parry',
-    ...SHARED_BLOCK_CONTACT,
+    ...PRODUCTION_PERFECT_PARRY_CONTACT_DEFLECT,
     counterWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
     followupWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
     parryAdvantage: createParryAdvantageContract({
       grade: 'perfect-parry',
       followupWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
     }),
-    visualDecision: 'G3.5.1 PERFECT PARRY ADVANTAGE — same defensive contact motion, stronger authoritative stagger/reward; follow-up still uses the normal directional attack system.',
+    visualDecision: 'G3.5.1P-T3 PRODUCTION — Perfect Parry reuses the accepted Shared Normal T1 shd_blockbash deflect, with a 95ms contact read and 75ms crossfade. shd_blockbashpower stays probe-only; Perfect strength comes from stagger/hitstop/FX/audio/camera.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
-      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_SUCCESS,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Perfect Parry shares Block Hit presentation and grants a stronger combat advantage without a dedicated Counter animation.',
+      note: 'Perfect Parry shares the cleaner compact redirect motion and differentiates through stronger combat/presentation feedback rather than a bash-like power animation.',
     }),
   }),
 });
@@ -10162,8 +10517,8 @@ return Object.freeze({ GUARD_REACTION_VARIANTS, GUARD_REACTION_PROFILE_IDS, LONG
 })();
 
 // src/combat/guard-counter-presentation.js
-const __actionStudioModule53 = (() => {
-const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule51;
+const __actionStudioModule54 = (() => {
+const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule52;
 
 const GUARD_COUNTER_PROFILE_IDS = Object.freeze({
   LONGSWORD: 'longsword_guard_counter_melee_block_attack_v1',
@@ -10265,11 +10620,11 @@ return Object.freeze({ GUARD_COUNTER_PROFILE_IDS, GUARD_WEAPON_MOUNT_PROFILE_IDS
 })();
 
 // src/combat/guard-state-machine.js
-const __actionStudioModule47 = (() => {
-const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
-const { GUARD_TRANSITION_PROFILE_IDS } = __actionStudioModule49;
-const { GUARD_REACTION_VARIANTS, LONGSWORD_GUARD_REACTION_PROFILES, getGuardReactionProfile } = __actionStudioModule50;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule53;
+const __actionStudioModule48 = (() => {
+const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule49;
+const { GUARD_TRANSITION_PROFILE_IDS } = __actionStudioModule50;
+const { GUARD_REACTION_VARIANTS, LONGSWORD_GUARD_REACTION_PROFILES, getGuardReactionProfile } = __actionStudioModule51;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule54;
 
 const GUARD_STATE_AUTHORITY_NOTE =
   'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
@@ -10600,8 +10955,8 @@ return Object.freeze({ GUARD_STATE_AUTHORITY_NOTE, GUARD_STATES, GUARD_EVENTS, G
 })();
 
 // src/combat/longsword-guard-correction.js
-const __actionStudioModule55 = (() => {
-const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = __actionStudioModule48;
+const __actionStudioModule56 = (() => {
+const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = __actionStudioModule49;
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -10757,7 +11112,7 @@ return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quatern
 })();
 
 // src/combat/guard-recovery-bridge.js
-const __actionStudioModule56 = (() => {
+const __actionStudioModule57 = (() => {
 const EPSILON = 1e-8;
 const COUNTER_CONTINUITY_HOLD_MS = 1000 / 60;
 
@@ -11047,7 +11402,7 @@ return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, capt
 })();
 
 // src/combat/guard-world-sword-orientation.js
-const __actionStudioModule57 = (() => {
+const __actionStudioModule58 = (() => {
 const EPSILON = 1e-8;
 
 function clamp01(value) {
@@ -11147,15 +11502,15 @@ return Object.freeze({ quaternionAngleDegrees, slerpShortestQuaternion, sampleWo
 })();
 
 // src/combat/guard-presentation-runtime.js
-const __actionStudioModule54 = (() => {
-const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule47;
-const { sampleGuardPresentationWeights, sampleGuardTransitionProfile } = __actionStudioModule49;
-const { sampleGuardReactionProfile } = __actionStudioModule50;
-const { sampleGuardCounterProfile } = __actionStudioModule53;
-const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
-const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule55;
-const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule56;
-const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule57;
+const __actionStudioModule55 = (() => {
+const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule48;
+const { sampleGuardPresentationWeights, sampleGuardTransitionProfile } = __actionStudioModule50;
+const { sampleGuardReactionProfile } = __actionStudioModule51;
+const { sampleGuardCounterProfile } = __actionStudioModule54;
+const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule49;
+const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule56;
+const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule57;
+const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule58;
 
 const GUARD_ROOT_ROTATION_POLICY = 'lock';
 
@@ -11653,7 +12008,7 @@ return Object.freeze({ createGuardPresentationRuntime });
 })();
 
 // src/combat/guard-weapon-mount-runtime.js
-const __actionStudioModule58 = (() => {
+const __actionStudioModule59 = (() => {
 const { applyMountCalibration } = __actionStudioModule3;
 
 function createGuardWeaponMountRuntime(options = {}) {
@@ -11693,15 +12048,15 @@ return Object.freeze({ createGuardWeaponMountRuntime });
 })();
 
 // tools/action-studio/studio-guard-runtime-controller.js
-const __actionStudioModule46 = (() => {
+const __actionStudioModule47 = (() => {
 const { DEFAULT_KAYKIT_SWORD_MOUNT } = __actionStudioModule15;
 const { applyMountCalibration } = __actionStudioModule3;
 const { loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
 const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
-const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule47;
-const { createGuardPresentationRuntime } = __actionStudioModule54;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule53;
-const { createGuardWeaponMountRuntime } = __actionStudioModule58;
+const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule48;
+const { createGuardPresentationRuntime } = __actionStudioModule55;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule54;
+const { createGuardWeaponMountRuntime } = __actionStudioModule59;
 
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
@@ -12053,10 +12408,10 @@ const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioMod
 const { UAL1_ANIMATION_FILES, loadUal1AnimationLibrary } = __actionStudioModule37;
 const { UAL2_ANIMATION_FILES, loadUal2AnimationLibrary } = __actionStudioModule39;
 const { SKYRIM_GUARD_CONVERTED_FILES, importSkyrimConvertedAnimationFile, loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
-const { getCanonicalMotionContactSeconds, getLongswordMotionMetadata } = __actionStudioModule43;
-const { readAnimationBindingView } = __actionStudioModule44;
-const { installStudioSkyrimBridgeControls } = __actionStudioModule45;
-const { createStudioGuardRuntimeController } = __actionStudioModule46;
+const { getCanonicalMotionContactSeconds, getLongswordMotionMetadata } = __actionStudioModule44;
+const { readAnimationBindingView } = __actionStudioModule45;
+const { installStudioSkyrimBridgeControls } = __actionStudioModule46;
+const { createStudioGuardRuntimeController } = __actionStudioModule47;
 
 const SOURCE_INFO = Object.freeze({
   ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
@@ -12516,7 +12871,7 @@ const { createStudioPoseDragController } = __actionStudioModule29;
 const { captureNextBlockingKey, createStudioBlockingWorkflow } = __actionStudioModule32;
 const { createStudioProjectIoController } = __actionStudioModule33;
 const { createStudioExternalAnimationController } = __actionStudioModule36;
-const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule44;
+const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule45;
 const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule35;
 
 const THREE = window.THREE;
