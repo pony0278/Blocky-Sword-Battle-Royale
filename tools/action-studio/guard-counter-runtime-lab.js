@@ -21,7 +21,7 @@ const key=new THREE.DirectionalLight(0xffffff,.95); key.position.set(3,5,4); sce
 scene.add(new THREE.GridHelper(8,16,0x34435d,0x202a3b));
 const character=createDefaultCharacter(THREE); scene.add(character.object3d);
 const machine=createGuardStateMachine();
-let runtime,sword,mountRuntime,activeVariant='normal',counterDurationMs=750;
+let runtime,sword,mountRuntime,activeVariant='normal',counterDurationMs=750,lastCanonicalGuardWorldQuaternion=null;
 const mountHistory=[];
 const status=document.getElementById('status'), reportNode=document.getElementById('report');
 const hudState=document.getElementById('hudState'), hudDetail=document.getElementById('hudDetail');
@@ -59,7 +59,9 @@ function analyzeWorldOrientation(samples,target){
 }
 function resetToHold(){
   machine.send(GUARD_EVENTS.RESET); runtime.sync(camera); machine.send(GUARD_EVENTS.GUARD_PRESS); runtime.sync(camera);
-  const r=runtime.update(180,camera); if(r.snapshot.state!==GUARD_STATES.HOLD) throw new Error(`Guard Enter failed: ${r.snapshot.state}`); return r;
+  const r=runtime.update(180,camera); if(r.snapshot.state!==GUARD_STATES.HOLD) throw new Error(`Guard Enter failed: ${r.snapshot.state}`);
+  lastCanonicalGuardWorldQuaternion=worldQuaternionSnapshot();
+  return r;
 }
 function openCounterWindow(variant){
   resetToHold(); const perfect=variant==='perfect';
@@ -82,7 +84,7 @@ function displayCounter(variant,elapsedMs){
   character.object3d.updateMatrixWorld(true); sword?.update(); return r;
 }
 function verifyScenario(variant){
-  const historyStart=mountHistory.length, window=openCounterWindow(variant);
+  const historyStart=mountHistory.length, window=openCounterWindow(variant),canonicalGuardWorldQuaternion=[...(lastCanonicalGuardWorldQuaternion||[])];
   const noAuto=window.snapshot.state===GUARD_STATES.PARRY&&window.report.counterWindowOpen&&window.snapshot.lastOutcome==='parry';
   const {confirmed,synced:start}=confirmCounter(variant);
   const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot(),sourceWorldQuaternion=worldQuaternionSnapshot();
@@ -102,6 +104,7 @@ function verifyScenario(variant){
     lastProgress=progress;
   }
   const finish=current,targetMount=mountSnapshot(),targetWorldQuaternion=worldQuaternionSnapshot();
+  const canonicalToFinalGuardDeg=quaternionAngleDegrees(canonicalGuardWorldQuaternion,targetWorldQuaternion);
   const worldOrientation=analyzeWorldOrientation(worldSamples,targetWorldQuaternion);
   const mountActuallyBlends=startMountContinuous&&mountDelta(recoverStartMount,midMount)>1e-5&&mountDelta(midMount,targetMount)>1e-5;
   const history=mountHistory.slice(historyStart);
@@ -113,14 +116,14 @@ function verifyScenario(variant){
     &&completion?.authority==='presentation'&&completion?.payload?.counterProfileId===GUARD_COUNTER_PROFILE_IDS.LONGSWORD
     &&ended.snapshot.state===GUARD_STATES.RECOVER&&ended.report.weaponMountProfileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD
     &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&startMountContinuous&&mountActuallyBlends
-    &&worldOrientation.activeBeforeFinish&&worldOrientation.monotonic&&finish.snapshot.state===GUARD_STATES.HOLD
+    &&canonicalToFinalGuardDeg<.25&&worldOrientation.activeBeforeFinish&&worldOrientation.monotonic&&finish.snapshot.state===GUARD_STATES.HOLD
     &&sawKayKit&&sawSkyrimRecover;
   return {variant,noAutoCounter:noAuto,confirmAuthority:confirmed.snapshot.lastTransition?.authority||null,counterClip:start.report.clipId,
     counterProfileId:start.report.counterProfileId,counterMount:start.report.weaponMountProfileId,counterCorrectionWeight:start.report.correctionWeight,
     beforeEndState:before.snapshot.state,completionEvent:completion?.event||null,completionAuthority:completion?.authority||null,
     completionProfileId:completion?.payload?.counterProfileId||null,afterCounterState:ended.snapshot.state,afterCounterMount:ended.report.weaponMountProfileId,
     recoveryProfileId,recoveryDurationMs,startMountPositionScaleContinuous,startWorldOrientationDeltaDeg,startMountContinuous,mountActuallyBlends,
-    recoveryWorldSwordStabilized:worldOrientation.activeBeforeFinish,worldSwordOrientationMonotonic:worldOrientation.monotonic,
+    canonicalToFinalGuardDeg,recoveryWorldSwordStabilized:worldOrientation.activeBeforeFinish,worldSwordOrientationMonotonic:worldOrientation.monotonic,
     worldSwordOrientation:worldOrientation.rows,afterRecoveryState:finish.snapshot.state,
     sawKayKitMount:sawKayKit,sawSkyrimRecoverMount:sawSkyrimRecover,pass};
 }
@@ -131,6 +134,7 @@ function runVerification(kaykit,skyrim){
   const gates={skyrimGuardFamilyLoaded:skyrim.clips.size===4,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
     inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
     poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends,
+    canonicalGuardTargetStable:normal.canonicalToFinalGuardDeg<.25&&perfect.canonicalToFinalGuardDeg<.25,
     worldSpaceSwordOrientationStabilized:normal.recoveryWorldSwordStabilized&&normal.worldSwordOrientationMonotonic
       &&perfect.recoveryWorldSwordStabilized&&perfect.worldSwordOrientationMonotonic};
   const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1.1',pass:failures.length===0,
