@@ -171,8 +171,8 @@ async function main() {
   const zeroChainDelta = chainDeltaDegrees(finalCounter.pose, recoverZero.pose);
   const firstChainDelta = chainDeltaDegrees(finalCounter.pose, firstFrame.pose);
   const secondChainStep = chainDeltaDegrees(firstFrame.pose, secondFrame.pose);
-  const sourceToHold = chainDistanceToTarget(finalCounter.pose, hold.pose);
-  const secondToHold = chainDistanceToTarget(secondFrame.pose, hold.pose);
+  const sourceToHoldDeg = chainDistanceToTarget(finalCounter.pose, hold.pose);
+  const secondToHoldDeg = chainDistanceToTarget(secondFrame.pose, hold.pose);
   const zeroMountDelta = mountDelta(finalCounter.mount, recoverZero.mount);
   const firstMountDelta = mountDelta(finalCounter.mount, firstFrame.mount);
   const zeroWorldDeltaDeg = quaternionAngleDegrees(finalCounter.worldSword, recoverZero.worldSword);
@@ -194,7 +194,7 @@ async function main() {
     firstFrameStillRecovering: firstFrameReport.snapshot.state === GUARD_STATES.RECOVER,
     secondFrameBeginsBlend: maxValue(secondChainStep) > 0.001,
     secondFrameStepBounded: maxValue(secondChainStep) < 12,
-    secondFrameDoesNotMoveArmAway: everyNotFarther(secondToHold, sourceToHold),
+    secondFrameDoesNotMoveArmAway: everyNotFarther(secondToHoldDeg, sourceToHoldDeg),
     secondFrameSwordDoesNotMoveAway: secondWorldToHoldDeg <= sourceWorldToHoldDeg + 0.25,
     counterAuthorityPreserved: confirmed.snapshot.lastTransition?.authority === 'authoritative-combat',
   };
