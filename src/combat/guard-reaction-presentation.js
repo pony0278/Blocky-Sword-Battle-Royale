@@ -1,3 +1,11 @@
+import {
+  GUARD_ACTION_SEMANTIC_FIT,
+  GUARD_ACTION_SEMANTIC_ROLES,
+  PARRY_MOTION_ACQUISITION_CRITERIA,
+  PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA,
+  guardActionSemanticAssessment,
+} from './guard-action-semantics.js';
+
 export const GUARD_REACTION_VARIANTS = Object.freeze({
   BLOCK_HIT: 'block-hit',
   PARRY: 'parry',
@@ -26,6 +34,7 @@ function reactionProfile({
   sourceEndSeconds,
   counterWindowSeconds,
   visualDecision,
+  semanticAssessment,
 }) {
   const start = Math.max(0, Number(sourceStartSeconds) || 0);
   const sourceDuration = Math.max(start, Number(sourceDurationSeconds) || start);
@@ -54,6 +63,7 @@ function reactionProfile({
     authored: true,
     authoredStage: 'G3.4.0',
     visualDecision,
+    ...semanticAssessment,
   });
 }
 
@@ -69,6 +79,12 @@ export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     sourceEndSeconds: 0.6,
     counterWindowSeconds: [0.24, 0.6],
     visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; do not expose the unverified 0.60–0.80s tail while root-rotation safety is enforced',
+    semanticAssessment: guardActionSemanticAssessment({
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
+      note: 'Block Hit still reads as a defensive impact reaction and remains approved for production use.',
+    }),
   }),
   [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
@@ -80,7 +96,15 @@ export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     sourceDurationSeconds: 1 / 3,
     sourceEndSeconds: 1 / 3,
     counterWindowSeconds: [0.08, 1 / 3],
-    visualDecision: 'ADOPT FULL SOURCE — compact active longsword deflect; preserve the complete authored motion',
+    visualDecision: 'G3.5 PROVISIONAL ONLY — technically valid playback, but the source reads as a shield bash rather than a defensive parry deflection; replace before semantic sign-off',
+    semanticAssessment: guardActionSemanticAssessment({
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_DEFLECT,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.SHIELD_BASH,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
+      replacementRequired: true,
+      acquisitionCriteria: PARRY_MOTION_ACQUISITION_CRITERIA,
+      note: 'Keep shd_blockbash as a future Shield Bash candidate. Do not treat it as the final Parry animation.',
+    }),
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY,
@@ -92,7 +116,15 @@ export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     sourceDurationSeconds: 0.7,
     sourceEndSeconds: 0.7,
     counterWindowSeconds: [0.1, 0.48],
-    visualDecision: 'ADOPT FULL SOURCE — preserve strong displacement + authored settle; keep the existing 0.10–0.48s presentation counter window',
+    visualDecision: 'G3.5 PROVISIONAL ONLY — strong authored motion remains technically usable, but it reads as a power shield bash instead of a high-quality parry deflection; replace before semantic sign-off',
+    semanticAssessment: guardActionSemanticAssessment({
+      intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_DEFLECT,
+      sourceRole: GUARD_ACTION_SEMANTIC_ROLES.SHIELD_POWER_BASH,
+      fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
+      replacementRequired: true,
+      acquisitionCriteria: PERFECT_PARRY_MOTION_ACQUISITION_CRITERIA,
+      note: 'Keep shd_blockbashpower as a future powered Shield Bash candidate rather than discarding the asset.',
+    }),
   }),
 });
 
