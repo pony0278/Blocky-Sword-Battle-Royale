@@ -10695,6 +10695,37 @@ function captureObjectTransform(object3d) {
   return captureTransform(object3d);
 }
 
+function captureObjectWorldQuaternion(object3d) {
+  if (!object3d?.quaternion) return null;
+  object3d.updateWorldMatrix?.(true, false);
+  if (typeof object3d.getWorldQuaternion !== 'function' || typeof object3d.quaternion.clone !== 'function') {
+    return Object.freeze(quat(object3d.quaternion));
+  }
+  const world = object3d.quaternion.clone();
+  object3d.getWorldQuaternion(world);
+  return Object.freeze(quat(world));
+}
+
+function resolveLocalQuaternionForWorld(parentWorldInput, desiredWorldInput) {
+  const desiredWorld = quat(desiredWorldInput);
+  if (!parentWorldInput) return Object.freeze(desiredWorld);
+  return Object.freeze(multiplyQuat(inverseQuat(quat(parentWorldInput)), desiredWorld));
+}
+
+function sampleRecoveryWorldQuaternion(sourceWorldInput, targetWorldInput, progress) {
+  return Object.freeze(slerpQuat(sourceWorldInput, targetWorldInput, smoothstep(progress)));
+}
+
+function applyObjectWorldQuaternion(object3d, desiredWorldInput) {
+  if (!object3d?.quaternion || !desiredWorldInput) return null;
+  const parentWorld = object3d.parent ? captureObjectWorldQuaternion(object3d.parent) : null;
+  const local = resolveLocalQuaternionForWorld(parentWorld, desiredWorldInput);
+  applyQuaternion(object3d.quaternion, local);
+  object3d.updateWorldMatrix?.(false, false);
+  object3d.updateMatrixWorld?.(true);
+  return local;
+}
+
 function applyObjectTransform(object3d, transform) {
   if (!object3d || !transform) return;
   applyVector(object3d.position, transform.position);
@@ -10792,7 +10823,7 @@ function samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, targe
     pose,
   });
 }
-return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, captureRigPose, applyRigPose, captureObjectTransform, applyObjectTransform, blendRecoveryTransform, blendRecoveryPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery });
+return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, captureRigPose, applyRigPose, captureObjectTransform, captureObjectWorldQuaternion, resolveLocalQuaternionForWorld, sampleRecoveryWorldQuaternion, applyObjectWorldQuaternion, applyObjectTransform, blendRecoveryTransform, blendRecoveryPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery });
 })();
 
 // src/combat/guard-presentation-runtime.js
@@ -10803,7 +10834,7 @@ const { sampleGuardReactionProfile } = __actionStudioModule50;
 const { sampleGuardCounterProfile } = __actionStudioModule51;
 const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
 const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule53;
-const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule54;
+const { applyObjectTransform, applyObjectWorldQuaternion, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureObjectWorldQuaternion, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery, sampleRecoveryWorldQuaternion } = __actionStudioModule54;
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
@@ -10865,6 +10896,7 @@ function defaultReport(snapshot) {
     recoveryDurationMs: 0,
     recoveryMomentumActive: false,
     recoverySourceState: null,
+    recoveryWorldSwordStabilized: false,
     complete: false,
     completionEvent: null,
   });
@@ -10972,6 +11004,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
 
   function beginRecoveryBridge(snapshot, camera) {
     const sourceMount = captureObjectTransform(weaponObject3d);
+    const sourceWeaponWorldQuaternion = captureObjectWorldQuaternion(weaponObject3d);
     const presentation = preparePresentation(snapshot);
     const duration = positiveDuration(character, presentation.clipId, 1);
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
@@ -10986,6 +11019,8 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       targetPose: captureRigPose(character.rig),
       sourceMount,
       targetMount: captureObjectTransform(weaponObject3d),
+      sourceWeaponWorldQuaternion,
+      targetWeaponWorldQuaternion: captureObjectWorldQuaternion(weaponObject3d),
       profile: resolveGuardRecoveryProfile(snapshot),
       targetClipDuration: duration,
     });
@@ -11015,6 +11050,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     );
     applyRigPose(character.rig, recovery.pose);
 
+    let recoveryWorldSwordStabilized = false;
     if (weaponObject3d && bridge.sourceMount && bridge.targetMount) {
       const mount = blendRecoveryTransform(
         bridge.sourceMount,
@@ -11024,6 +11060,19 @@ function createGuardPresentationRuntime(THREE, options = {}) {
         { durationMs: recovery.durationMs, sampleDeltaMs: 0, momentumScale: 0 },
       );
       applyObjectTransform(weaponObject3d, mount);
+
+      // G3.4.1.1: local shortest-path blends on every arm bone plus the sword mount do
+      // not guarantee a shortest path after hierarchy composition. Preserve the existing
+      // position/scale recovery, but stabilize the final sword orientation in world space.
+      if (bridge.sourceWeaponWorldQuaternion && bridge.targetWeaponWorldQuaternion) {
+        const desiredWorldQuaternion = sampleRecoveryWorldQuaternion(
+          bridge.sourceWeaponWorldQuaternion,
+          bridge.targetWeaponWorldQuaternion,
+          recovery.progress,
+        );
+        applyObjectWorldQuaternion(weaponObject3d, desiredWorldQuaternion);
+        recoveryWorldSwordStabilized = true;
+      }
     }
     character.update?.(0, camera);
 
@@ -11041,6 +11090,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       recoveryDurationMs: recovery.durationMs,
       recoveryMomentumActive: recovery.momentumActive,
       recoverySourceState: bridge.sourceState,
+      recoveryWorldSwordStabilized,
       complete: recovery.complete,
       completionEvent: GUARD_EVENTS.RECOVER_COMPLETE,
     });
