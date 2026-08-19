@@ -10521,6 +10521,280 @@ function createGuardAuthoringExport(eulerByBone = {}, diagnostics = {}) {
 return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quaternionFromEulerDegrees, scaleQuaternionOffset, buildGuardQuaternionOffsets, validateGuardQuaternionOffsets, applyGuardQuaternionOffsetsWeighted, applyGuardQuaternionOffsets, createGuardAuthoringExport });
 })();
 
+// src/combat/guard-recovery-bridge.js
+const __actionStudioModule54 = (() => {
+const EPSILON = 1e-8;
+
+const GUARD_RECOVERY_PROFILE_IDS = Object.freeze({
+  BLOCK: 'guard_recovery_block_v1',
+  PARRY: 'guard_recovery_parry_v1',
+  PERFECT_PARRY: 'guard_recovery_perfect_parry_v1',
+  COUNTER: 'guard_recovery_counter_v1',
+  DEFAULT: 'guard_recovery_default_v1',
+});
+
+const GUARD_RECOVERY_PROFILES = Object.freeze({
+  block: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.BLOCK, durationMs: 210, momentumScale: 0.34 }),
+  parry: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.PARRY, durationMs: 170, momentumScale: 0.30 }),
+  'perfect-parry': Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.PERFECT_PARRY, durationMs: 270, momentumScale: 0.42 }),
+  counter: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.COUNTER, durationMs: 310, momentumScale: 0.38 }),
+  default: Object.freeze({ id: GUARD_RECOVERY_PROFILE_IDS.DEFAULT, durationMs: 220, momentumScale: 0.32 }),
+});
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function finite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function vec3(value, fallback = 0) {
+  return {
+    x: finite(value?.x, fallback),
+    y: finite(value?.y, fallback),
+    z: finite(value?.z, fallback),
+  };
+}
+
+function quat(value) {
+  const out = {
+    x: finite(value?.x),
+    y: finite(value?.y),
+    z: finite(value?.z),
+    w: finite(value?.w, 1),
+  };
+  return normalizeQuat(out);
+}
+
+function normalizeQuat(value) {
+  const length = Math.hypot(value.x, value.y, value.z, value.w) || 1;
+  return { x: value.x / length, y: value.y / length, z: value.z / length, w: value.w / length };
+}
+
+function multiplyQuat(a, b) {
+  return normalizeQuat({
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  });
+}
+
+function inverseQuat(value) {
+  return { x: -value.x, y: -value.y, z: -value.z, w: value.w };
+}
+
+function slerpQuat(fromInput, toInput, tInput) {
+  const t = clamp01(tInput);
+  const from = quat(fromInput);
+  let to = quat(toInput);
+  let dot = from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w;
+  if (dot < 0) {
+    dot = -dot;
+    to = { x: -to.x, y: -to.y, z: -to.z, w: -to.w };
+  }
+  if (dot > 0.9995) {
+    return normalizeQuat({
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+      z: from.z + (to.z - from.z) * t,
+      w: from.w + (to.w - from.w) * t,
+    });
+  }
+  const theta = Math.acos(Math.max(-1, Math.min(1, dot)));
+  const sinTheta = Math.sin(theta);
+  const a = Math.sin((1 - t) * theta) / sinTheta;
+  const b = Math.sin(t * theta) / sinTheta;
+  return normalizeQuat({
+    x: from.x * a + to.x * b,
+    y: from.y * a + to.y * b,
+    z: from.z * a + to.z * b,
+    w: from.w * a + to.w * b,
+  });
+}
+
+function angularVelocity(previousInput, sourceInput, deltaSeconds) {
+  if (!(deltaSeconds > EPSILON)) return { axis: { x: 0, y: 0, z: 0 }, radiansPerSecond: 0 };
+  const previous = quat(previousInput);
+  const source = quat(sourceInput);
+  let delta = multiplyQuat(inverseQuat(previous), source);
+  if (delta.w < 0) delta = { x: -delta.x, y: -delta.y, z: -delta.z, w: -delta.w };
+  const w = Math.max(-1, Math.min(1, delta.w));
+  const angle = 2 * Math.acos(w);
+  const sinHalf = Math.sqrt(Math.max(0, 1 - w * w));
+  if (sinHalf < 1e-5 || angle < 1e-5) return { axis: { x: 0, y: 0, z: 0 }, radiansPerSecond: 0 };
+  return {
+    axis: { x: delta.x / sinHalf, y: delta.y / sinHalf, z: delta.z / sinHalf },
+    radiansPerSecond: angle / deltaSeconds,
+  };
+}
+
+function axisAngleQuat(axis, angle) {
+  if (Math.abs(angle) < EPSILON) return { x: 0, y: 0, z: 0, w: 1 };
+  const half = angle * 0.5;
+  const sin = Math.sin(half);
+  return normalizeQuat({ x: axis.x * sin, y: axis.y * sin, z: axis.z * sin, w: Math.cos(half) });
+}
+
+function smoothstep(t) {
+  const value = clamp01(t);
+  return value * value * (3 - 2 * value);
+}
+
+function inertiaEnvelope(t) {
+  const value = clamp01(t);
+  return value * ((1 - value) ** 2);
+}
+
+function captureTransform(object3d) {
+  if (!object3d) return null;
+  return Object.freeze({
+    position: Object.freeze(vec3(object3d.position)),
+    quaternion: Object.freeze(quat(object3d.quaternion)),
+    scale: Object.freeze(vec3(object3d.scale, 1)),
+  });
+}
+
+function applyVector(target, value) {
+  if (!target) return;
+  if (typeof target.set === 'function') target.set(value.x, value.y, value.z);
+  else Object.assign(target, value);
+}
+
+function applyQuaternion(target, value) {
+  if (!target) return;
+  if (typeof target.set === 'function') target.set(value.x, value.y, value.z, value.w);
+  else Object.assign(target, value);
+}
+
+function captureRigPose(rig) {
+  const bones = rig?.bones || {};
+  const entries = {};
+  for (const [name, bone] of Object.entries(bones)) {
+    if (!bone?.quaternion) continue;
+    entries[name] = captureTransform(bone);
+  }
+  return Object.freeze(entries);
+}
+
+function applyRigPose(rig, pose) {
+  const bones = rig?.bones || {};
+  for (const [name, transform] of Object.entries(pose || {})) {
+    const bone = bones[name];
+    if (!bone || !transform) continue;
+    applyVector(bone.position, transform.position);
+    applyQuaternion(bone.quaternion, transform.quaternion);
+    applyVector(bone.scale, transform.scale);
+  }
+  rig?.root?.updateMatrixWorld?.(true);
+}
+
+function captureObjectTransform(object3d) {
+  return captureTransform(object3d);
+}
+
+function applyObjectTransform(object3d, transform) {
+  if (!object3d || !transform) return;
+  applyVector(object3d.position, transform.position);
+  applyQuaternion(object3d.quaternion, transform.quaternion);
+  applyVector(object3d.scale, transform.scale);
+  object3d.updateMatrixWorld?.(true);
+}
+
+function blendVector(previous, source, target, progress, durationSeconds, sampleDeltaSeconds, momentumScale) {
+  const eased = smoothstep(progress);
+  const envelope = inertiaEnvelope(progress);
+  const velocityScale = sampleDeltaSeconds > EPSILON && sampleDeltaSeconds <= 0.08 ? 1 : 0;
+  const vx = velocityScale ? (source.x - previous.x) / sampleDeltaSeconds : 0;
+  const vy = velocityScale ? (source.y - previous.y) / sampleDeltaSeconds : 0;
+  const vz = velocityScale ? (source.z - previous.z) / sampleDeltaSeconds : 0;
+  return {
+    x: source.x + (target.x - source.x) * eased + vx * durationSeconds * envelope * momentumScale,
+    y: source.y + (target.y - source.y) * eased + vy * durationSeconds * envelope * momentumScale,
+    z: source.z + (target.z - source.z) * eased + vz * durationSeconds * envelope * momentumScale,
+  };
+}
+
+function blendQuaternion(previous, source, target, progress, durationSeconds, sampleDeltaSeconds, momentumScale) {
+  const eased = smoothstep(progress);
+  const base = slerpQuat(source, target, eased);
+  const envelope = inertiaEnvelope(progress);
+  const velocity = sampleDeltaSeconds > EPSILON && sampleDeltaSeconds <= 0.08
+    ? angularVelocity(previous, source, sampleDeltaSeconds)
+    : { axis: { x: 0, y: 0, z: 0 }, radiansPerSecond: 0 };
+  const extraAngle = velocity.radiansPerSecond * durationSeconds * envelope * momentumScale;
+  return multiplyQuat(base, axisAngleQuat(velocity.axis, extraAngle));
+}
+
+function blendRecoveryTransform(previousInput, sourceInput, targetInput, progress, options = {}) {
+  const source = sourceInput || targetInput;
+  const previous = previousInput || source;
+  const target = targetInput || source;
+  if (!source || !target) return target || source || null;
+  const durationSeconds = Math.max(0.001, finite(options.durationMs, 220) / 1000);
+  const sampleDeltaSeconds = Math.max(0, finite(options.sampleDeltaMs, 0) / 1000);
+  const momentumScale = Math.max(0, finite(options.momentumScale, 0.32));
+  return Object.freeze({
+    position: Object.freeze(blendVector(previous.position, source.position, target.position, progress, durationSeconds, sampleDeltaSeconds, momentumScale)),
+    quaternion: Object.freeze(blendQuaternion(previous.quaternion, source.quaternion, target.quaternion, progress, durationSeconds, sampleDeltaSeconds, momentumScale)),
+    scale: Object.freeze({
+      x: source.scale.x + (target.scale.x - source.scale.x) * smoothstep(progress),
+      y: source.scale.y + (target.scale.y - source.scale.y) * smoothstep(progress),
+      z: source.scale.z + (target.scale.z - source.scale.z) * smoothstep(progress),
+    }),
+  });
+}
+
+function blendRecoveryPose(previousPose, sourcePose, targetPose, progress, options = {}) {
+  const output = {};
+  const names = new Set([...Object.keys(sourcePose || {}), ...Object.keys(targetPose || {})]);
+  for (const name of names) {
+    const source = sourcePose?.[name] || targetPose?.[name];
+    const previous = previousPose?.[name] || source;
+    const target = targetPose?.[name] || source;
+    if (!source || !target) continue;
+    output[name] = blendRecoveryTransform(previous, source, target, progress, options);
+  }
+  return Object.freeze(output);
+}
+
+function resolveGuardRecoveryProfile(snapshot = {}) {
+  const payload = snapshot?.lastTransition?.payload || {};
+  if (snapshot?.lastOutcome === 'counter' || payload.counterProfileId) return GUARD_RECOVERY_PROFILES.counter;
+  if (payload.reactionVariant === 'perfect-parry') return GUARD_RECOVERY_PROFILES['perfect-parry'];
+  if (snapshot?.lastOutcome === 'block' || payload.reactionVariant === 'block-hit') return GUARD_RECOVERY_PROFILES.block;
+  if (snapshot?.lastOutcome === 'parry' || payload.reactionVariant === 'parry') return GUARD_RECOVERY_PROFILES.parry;
+  return GUARD_RECOVERY_PROFILES.default;
+}
+
+function samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, targetPose, elapsedMs, options = {}) {
+  const profile = options.profile || resolveGuardRecoveryProfile(snapshot);
+  const durationMs = Math.max(1, finite(profile.durationMs, 220));
+  const progress = clamp01(finite(elapsedMs) / durationMs);
+  const sampleDeltaMs = sourceSample && previousSample && sourceSample.sequence === previousSample.sequence
+    ? Math.max(0, finite(sourceSample.elapsedMs) - finite(previousSample.elapsedMs))
+    : 0;
+  const pose = blendRecoveryPose(previousSample?.pose, sourceSample?.pose, targetPose, progress, {
+    durationMs,
+    sampleDeltaMs,
+    momentumScale: profile.momentumScale,
+  });
+  return Object.freeze({
+    profile,
+    durationMs,
+    progress,
+    eased: smoothstep(progress),
+    complete: progress >= 1,
+    sampleDeltaMs,
+    momentumActive: sampleDeltaMs > 0 && sampleDeltaMs <= 80,
+    pose,
+  });
+}
+return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, captureRigPose, applyRigPose, captureObjectTransform, applyObjectTransform, blendRecoveryTransform, blendRecoveryPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery });
+})();
+
 // src/combat/guard-presentation-runtime.js
 const __actionStudioModule52 = (() => {
 const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule47;
@@ -10529,6 +10803,7 @@ const { sampleGuardReactionProfile } = __actionStudioModule50;
 const { sampleGuardCounterProfile } = __actionStudioModule51;
 const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule48;
 const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule53;
+const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule54;
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
@@ -10585,6 +10860,11 @@ function defaultReport(snapshot) {
     counterProfileId: null,
     counterWindowOpen: false,
     weaponMountProfileId: snapshot?.presentation?.weaponMountProfileId || null,
+    recoveryProfileId: null,
+    recoveryProgress: 0,
+    recoveryDurationMs: 0,
+    recoveryMomentumActive: false,
+    recoverySourceState: null,
     complete: false,
     completionEvent: null,
   });
@@ -10605,10 +10885,16 @@ function createGuardPresentationRuntime(THREE, options = {}) {
   const applyWeaponMountProfile = typeof options.applyWeaponMountProfile === 'function'
     ? options.applyWeaponMountProfile
     : () => {};
+  const weaponObject3d = options.weaponObject3d || null;
   const autoComplete = options.autoComplete !== false;
+  const poseRecoveryEnabled = options.poseRecovery !== false
+    && Object.keys(character.rig?.bones || {}).length > 0;
   let lastAutoCompletionSequence = -1;
   let lastStoppedSequence = -1;
   let lastReport = defaultReport(machine.snapshot);
+  let previousPoseSample = null;
+  let sourcePoseSample = null;
+  let recoveryBridge = null;
 
   function preparePresentation(snapshot) {
     const presentation = snapshot?.presentation || {};
@@ -10616,7 +10902,25 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     return presentation;
   }
 
+  function rememberSourcePose(snapshot) {
+    if (!poseRecoveryEnabled) return;
+    const sample = Object.freeze({
+      sequence: snapshot.sequence,
+      state: snapshot.state,
+      elapsedMs: snapshot.elapsedMs,
+      pose: captureRigPose(character.rig),
+    });
+    if (sourcePoseSample?.sequence === snapshot.sequence) previousPoseSample = sourcePoseSample;
+    else previousPoseSample = null;
+    sourcePoseSample = sample;
+  }
+
+  function clearRecoveryBridge() {
+    recoveryBridge = null;
+  }
+
   function sampleStableGuard(snapshot, camera) {
+    clearRecoveryBridge();
     const presentation = preparePresentation(snapshot);
     const weights = sampleGuardPresentationWeights(snapshot.state, snapshot.elapsedMs);
     const duration = positiveDuration(character, presentation.clipId, 1);
@@ -10628,23 +10932,19 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     applyCorrection(weights.correctionWeight);
     character.update?.(0, camera);
     return Object.freeze({
+      ...defaultReport(snapshot),
       managed: true,
       state: snapshot.state,
       clipId: presentation.clipId,
       sourceTimeSeconds,
       correctionWeight: weights.correctionWeight,
       reactionOverlayWeight: weights.reactionOverlayWeight,
-      reactionProfileId: null,
-      reactionVariant: null,
-      counterProfileId: null,
-      counterWindowOpen: false,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
-      complete: false,
-      completionEvent: null,
     });
   }
 
-  function sampleTransition(snapshot, camera) {
+  function sampleGenericTransition(snapshot, camera) {
+    clearRecoveryBridge();
     const presentation = preparePresentation(snapshot);
     const transition = sampleGuardTransitionProfile(snapshot.state, snapshot.elapsedMs);
     if (!transition) return sampleStableGuard(snapshot, camera);
@@ -10657,23 +10957,97 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     applyCorrection(transition.weights.correctionWeight);
     character.update?.(0, camera);
     return Object.freeze({
+      ...defaultReport(snapshot),
       managed: true,
       state: snapshot.state,
       clipId: presentation.clipId,
       sourceTimeSeconds,
       correctionWeight: transition.weights.correctionWeight,
       reactionOverlayWeight: transition.weights.reactionOverlayWeight,
-      reactionProfileId: null,
-      reactionVariant: null,
-      counterProfileId: null,
-      counterWindowOpen: false,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: transition.complete,
       completionEvent: transition.completionEvent,
     });
   }
 
+  function beginRecoveryBridge(snapshot, camera) {
+    const sourceMount = captureObjectTransform(weaponObject3d);
+    const presentation = preparePresentation(snapshot);
+    const duration = positiveDuration(character, presentation.clipId, 1);
+    character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    applyCorrection(1);
+    character.update?.(0, camera);
+    recoveryBridge = Object.freeze({
+      sequence: snapshot.sequence,
+      presentation,
+      sourceSample: sourcePoseSample,
+      previousSample: previousPoseSample,
+      sourceState: sourcePoseSample?.state || null,
+      targetPose: captureRigPose(character.rig),
+      sourceMount,
+      targetMount: captureObjectTransform(weaponObject3d),
+      profile: resolveGuardRecoveryProfile(snapshot),
+      targetClipDuration: duration,
+    });
+    return recoveryBridge;
+  }
+
+  function samplePoseMatchedRecover(snapshot, camera) {
+    if (!poseRecoveryEnabled || !sourcePoseSample?.pose) return sampleGenericTransition(snapshot, camera);
+    const bridge = recoveryBridge?.sequence === snapshot.sequence
+      ? recoveryBridge
+      : beginRecoveryBridge(snapshot, camera);
+    const presentation = preparePresentation(snapshot);
+
+    // Sample the exact Guard Hold target pose every frame, then overwrite it with the
+    // inertial bridge. This keeps the target deterministic while preserving the source
+    // pose at t=0 and landing exactly on Hold at t=1.
+    character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    applyCorrection(1);
+
+    const recovery = samplePoseMatchedRecovery(
+      snapshot,
+      bridge.sourceSample,
+      bridge.previousSample,
+      bridge.targetPose,
+      snapshot.elapsedMs,
+      { profile: bridge.profile },
+    );
+    applyRigPose(character.rig, recovery.pose);
+
+    if (weaponObject3d && bridge.sourceMount && bridge.targetMount) {
+      const mount = blendRecoveryTransform(
+        bridge.sourceMount,
+        bridge.sourceMount,
+        bridge.targetMount,
+        recovery.progress,
+        { durationMs: recovery.durationMs, sampleDeltaMs: 0, momentumScale: 0 },
+      );
+      applyObjectTransform(weaponObject3d, mount);
+    }
+    character.update?.(0, camera);
+
+    return Object.freeze({
+      ...defaultReport(snapshot),
+      managed: true,
+      state: snapshot.state,
+      clipId: presentation.clipId,
+      sourceTimeSeconds: 0,
+      correctionWeight: 1,
+      reactionOverlayWeight: 1 - recovery.eased,
+      weaponMountProfileId: presentation.weaponMountProfileId || null,
+      recoveryProfileId: recovery.profile.id,
+      recoveryProgress: recovery.progress,
+      recoveryDurationMs: recovery.durationMs,
+      recoveryMomentumActive: recovery.momentumActive,
+      recoverySourceState: bridge.sourceState,
+      complete: recovery.complete,
+      completionEvent: GUARD_EVENTS.RECOVER_COMPLETE,
+    });
+  }
+
   function sampleReaction(snapshot, camera) {
+    clearRecoveryBridge();
     const payload = reactionPayload(snapshot);
     const reaction = sampleGuardReactionProfile(snapshot.state, snapshot.elapsedMs, payload);
     if (!reaction) return defaultReport(snapshot);
@@ -10689,7 +11063,9 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     });
     applyCorrection(reaction.profile.correctionWeight);
     character.update?.(0, camera);
+    rememberSourcePose(snapshot);
     return Object.freeze({
+      ...defaultReport(snapshot),
       managed: true,
       state: snapshot.state,
       clipId: presentation.clipId,
@@ -10698,7 +11074,6 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       reactionOverlayWeight: 1,
       reactionProfileId: reaction.profile.id,
       reactionVariant: reaction.profile.variant,
-      counterProfileId: null,
       counterWindowOpen: reaction.counterWindowOpen,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: reaction.complete,
@@ -10707,6 +11082,7 @@ function createGuardPresentationRuntime(THREE, options = {}) {
   }
 
   function sampleCounter(snapshot, camera) {
+    clearRecoveryBridge();
     const presentation = preparePresentation(snapshot);
     const clipId = presentation.clipId;
     const registeredDuration = requiredDuration(character, clipId, 'G3.4 Guard Counter');
@@ -10718,17 +11094,15 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     });
     applyCorrection(counter.profile.correctionWeight);
     character.update?.(0, camera);
+    rememberSourcePose(snapshot);
     return Object.freeze({
+      ...defaultReport(snapshot),
       managed: true,
       state: snapshot.state,
       clipId,
       sourceTimeSeconds: counter.sourceTimeSeconds,
       correctionWeight: counter.profile.correctionWeight,
-      reactionOverlayWeight: 0,
-      reactionProfileId: null,
-      reactionVariant: null,
       counterProfileId: counter.profile.id,
-      counterWindowOpen: false,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: counter.complete,
       completionEvent: counter.completionEvent,
@@ -10744,10 +11118,12 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       lastReport = sampleCounter(snapshot, camera);
       return lastReport;
     }
-    if (snapshot.state === GUARD_STATES.ENTER
-      || snapshot.state === GUARD_STATES.RECOVER
-      || snapshot.state === GUARD_STATES.EXIT) {
-      lastReport = sampleTransition(snapshot, camera);
+    if (snapshot.state === GUARD_STATES.RECOVER) {
+      lastReport = samplePoseMatchedRecover(snapshot, camera);
+      return lastReport;
+    }
+    if (snapshot.state === GUARD_STATES.ENTER || snapshot.state === GUARD_STATES.EXIT) {
+      lastReport = sampleGenericTransition(snapshot, camera);
       return lastReport;
     }
     if (snapshot.state === GUARD_STATES.HOLD) {
@@ -10755,6 +11131,9 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       return lastReport;
     }
     if (snapshot.state === GUARD_STATES.NEUTRAL && lastStoppedSequence !== snapshot.sequence) {
+      clearRecoveryBridge();
+      sourcePoseSample = null;
+      previousPoseSample = null;
       character.stopAnimation?.();
       lastStoppedSequence = snapshot.sequence;
     }
@@ -10769,6 +11148,13 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     let payload = Object.freeze({ source: 'guard-presentation-runtime' });
     if (report.reactionProfileId) payload = reactionCompletionPayload(report);
     else if (report.counterProfileId) payload = counterCompletionPayload(report);
+    else if (report.recoveryProfileId) {
+      payload = Object.freeze({
+        source: 'guard-presentation-runtime',
+        recoveryProfileId: report.recoveryProfileId,
+        recoverySourceState: report.recoverySourceState,
+      });
+    }
     const result = machine.send(report.completionEvent, payload);
     if (!result.accepted) return { snapshot, report };
     const nextSnapshot = result.snapshot;
@@ -10800,7 +11186,7 @@ return Object.freeze({ createGuardPresentationRuntime });
 })();
 
 // src/combat/guard-weapon-mount-runtime.js
-const __actionStudioModule54 = (() => {
+const __actionStudioModule55 = (() => {
 const { applyMountCalibration } = __actionStudioModule3;
 
 function createGuardWeaponMountRuntime(options = {}) {
@@ -10849,7 +11235,7 @@ const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
 const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule47;
 const { createGuardPresentationRuntime } = __actionStudioModule52;
 const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule51;
-const { createGuardWeaponMountRuntime } = __actionStudioModule54;
+const { createGuardWeaponMountRuntime } = __actionStudioModule55;
 
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
@@ -10958,12 +11344,16 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     panel?.setAttribute('data-guard-clip', report.clipId || '');
     panel?.setAttribute('data-guard-mount', report.weaponMountProfileId || '');
     if (report.counterProfileId) panel?.setAttribute('data-counter-profile', report.counterProfileId);
+    if (report.recoveryProfileId) panel?.setAttribute('data-recovery-profile', report.recoveryProfileId);
     const clipLabel = String(report.clipId || snapshot.presentation?.clipId || '—').replace(/^SKYRIM_GUARD\//, '');
     const sourceSeconds = Number(report.sourceTimeSeconds) || 0;
     document.getElementById('clipNow').textContent = clipLabel.toUpperCase();
     document.getElementById('phaseNow').textContent = `GUARD RUNTIME · ${snapshot.state.toUpperCase()}`;
     if (detail) {
-      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${report.counterProfileId ? ` · ${report.counterProfileId}` : ''}`;
+      const recovery = report.recoveryProfileId
+        ? ` · recover ${Math.round((report.recoveryProgress || 0) * 100)}%/${report.recoveryDurationMs}ms${report.recoveryMomentumActive ? ' · inertia' : ''}`
+        : '';
+      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${report.counterProfileId ? ` · ${report.counterProfileId}` : ''}${recovery}`;
     }
   }
 
@@ -10974,7 +11364,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus('G3.4 · loading Skyrim Guard + KayKit melee…');
+    setStatus('G3.4.1 · loading Skyrim Guard + KayKit melee…');
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
       const [skyrim, kaykit] = await Promise.all([
@@ -11014,17 +11404,18 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
       runtime = createGuardPresentationRuntime(THREE, {
         machine,
         character,
+        weaponObject3d,
         applyWeaponMountProfile(profileId) {
           const result = mountRuntime.apply(profileId);
           if (result.applied) weaponObject3d.updateMatrixWorld?.(true);
         },
       });
       loaded = true;
-      setStatus(`G3.4 ready · Counter Melee_Block_Attack ${Number(counterClip.duration).toFixed(3)}s`);
+      setStatus(`G3.4.1 ready · inertial recovery + Counter ${Number(counterClip.duration).toFixed(3)}s`);
       panel?.setAttribute('data-g34-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
-      setStatus(`G3.4 load failed · ${error.message}`, true);
+      setStatus(`G3.4.1 load failed · ${error.message}`, true);
       panel?.setAttribute('data-g34-ready', 'false');
       throw error;
     });
@@ -11101,7 +11492,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · real Guard FSM${mode === 'counter' ? ' · preview authority sent COUNTER_CONFIRMED' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · G3.4.1 pose-matched recovery${mode === 'counter' ? ' · preview authority sent COUNTER_CONFIRMED' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -11119,7 +11510,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus('G3.4 ready · choose a Guard runtime preview');
+    if (!options.quiet) setStatus('G3.4.1 ready · choose a Guard runtime preview');
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {

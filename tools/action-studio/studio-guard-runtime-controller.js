@@ -119,12 +119,16 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     panel?.setAttribute('data-guard-clip', report.clipId || '');
     panel?.setAttribute('data-guard-mount', report.weaponMountProfileId || '');
     if (report.counterProfileId) panel?.setAttribute('data-counter-profile', report.counterProfileId);
+    if (report.recoveryProfileId) panel?.setAttribute('data-recovery-profile', report.recoveryProfileId);
     const clipLabel = String(report.clipId || snapshot.presentation?.clipId || '—').replace(/^SKYRIM_GUARD\//, '');
     const sourceSeconds = Number(report.sourceTimeSeconds) || 0;
     document.getElementById('clipNow').textContent = clipLabel.toUpperCase();
     document.getElementById('phaseNow').textContent = `GUARD RUNTIME · ${snapshot.state.toUpperCase()}`;
     if (detail) {
-      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${report.counterProfileId ? ` · ${report.counterProfileId}` : ''}`;
+      const recovery = report.recoveryProfileId
+        ? ` · recover ${Math.round((report.recoveryProgress || 0) * 100)}%/${report.recoveryDurationMs}ms${report.recoveryMomentumActive ? ' · inertia' : ''}`
+        : '';
+      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${report.counterProfileId ? ` · ${report.counterProfileId}` : ''}${recovery}`;
     }
   }
 
@@ -135,7 +139,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus('G3.4 · loading Skyrim Guard + KayKit melee…');
+    setStatus('G3.4.1 · loading Skyrim Guard + KayKit melee…');
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
       const [skyrim, kaykit] = await Promise.all([
@@ -175,17 +179,18 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
       runtime = createGuardPresentationRuntime(THREE, {
         machine,
         character,
+        weaponObject3d,
         applyWeaponMountProfile(profileId) {
           const result = mountRuntime.apply(profileId);
           if (result.applied) weaponObject3d.updateMatrixWorld?.(true);
         },
       });
       loaded = true;
-      setStatus(`G3.4 ready · Counter Melee_Block_Attack ${Number(counterClip.duration).toFixed(3)}s`);
+      setStatus(`G3.4.1 ready · inertial recovery + Counter ${Number(counterClip.duration).toFixed(3)}s`);
       panel?.setAttribute('data-g34-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
-      setStatus(`G3.4 load failed · ${error.message}`, true);
+      setStatus(`G3.4.1 load failed · ${error.message}`, true);
       panel?.setAttribute('data-g34-ready', 'false');
       throw error;
     });
@@ -262,7 +267,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · real Guard FSM${mode === 'counter' ? ' · preview authority sent COUNTER_CONFIRMED' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · G3.4.1 pose-matched recovery${mode === 'counter' ? ' · preview authority sent COUNTER_CONFIRMED' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -280,7 +285,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus('G3.4 ready · choose a Guard runtime preview');
+    if (!options.quiet) setStatus('G3.4.1 ready · choose a Guard runtime preview');
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {

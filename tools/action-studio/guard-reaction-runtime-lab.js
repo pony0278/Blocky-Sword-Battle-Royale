@@ -156,7 +156,9 @@ function verifyScenario(kind) {
   const end = runtime.update(1, camera);
   const recoverState = end.snapshot.state;
   const completion = end.snapshot.lastTransition;
-  const recover = runtime.update(140, camera);
+  const recoveryDurationMs = Number(end.report.recoveryDurationMs) || 140;
+  const recoveryProfileId = end.report.recoveryProfileId || null;
+  const recover = runtime.update(recoveryDurationMs, camera);
   return {
     kind,
     variant:config.variant,
@@ -166,6 +168,8 @@ function verifyScenario(kind) {
     beforeClip,
     counterWindowOpen,
     recoverState,
+    recoveryDurationMs,
+    recoveryProfileId,
     completionEvent:completion?.event || null,
     completionAuthority:completion?.authority || null,
     completionVariant:completion?.payload?.reactionVariant || null,
@@ -173,6 +177,7 @@ function verifyScenario(kind) {
     pass:beforeState === profile.state
       && beforeClip === profile.clipId
       && recoverState === GUARD_STATES.RECOVER
+      && Boolean(recoveryProfileId)
       && completion?.event === GUARD_EVENTS.REACTION_COMPLETE
       && completion?.authority === 'presentation'
       && completion?.payload?.reactionVariant === profile.variant
@@ -203,11 +208,12 @@ function runVerification() {
     blockRuntime:scenarios.block.pass,
     parryRuntime:scenarios.parry.pass,
     perfectRuntime:scenarios.perfect.pass,
+    poseMatchedRecovery:[scenarios.block, scenarios.parry, scenarios.perfect].every((scenario) => Boolean(scenario.recoveryProfileId)),
     rejectedIntroAbsent:!library.clips.has('SKYRIM_GUARD/shd_blockbashintro'),
   };
   const failures = Object.entries(gates).filter(([, pass]) => !pass).map(([name]) => name);
   const report = {
-    stage:'G3.3.2',
+    stage:'G3.4.1',
     pass:failures.length === 0,
     files:SKYRIM_GUARD_CONVERTED_FILES.map(({ id, file, clipId, role, visualDecision }) => ({ id, file, clipId, role, visualDecision:visualDecision || 'ADOPT' })),
     clips,
@@ -220,9 +226,10 @@ function runVerification() {
   document.documentElement.dataset.g332Block = scenarios.block.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g332Parry = scenarios.parry.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g332Perfect = scenarios.perfect.pass ? 'pass' : 'fail';
+  document.documentElement.dataset.g341Recovery = gates.poseMatchedRecovery ? 'pass' : 'fail';
   reportNode.textContent = JSON.stringify(report, null, 2);
   window.__G332_RESULT__ = report;
-  status.textContent = `G3.3.2 ${report.pass ? 'PASS' : 'FAIL'} · product GLBs + FSM runtime`;
+  status.textContent = `G3.4.1 ${report.pass ? 'PASS' : 'FAIL'} · full reactions + pose-matched recovery`;
   status.className = report.pass ? 'good' : 'bad';
   return report;
 }
@@ -264,10 +271,10 @@ addEventListener('resize', resize);
 
 main().catch((error) => {
   document.documentElement.dataset.g332 = 'fail';
-  status.textContent = `G3.3.2 FAIL · ${error?.message || error}`;
+  status.textContent = `G3.4.1 FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G332_RESULT__ = { stage:'G3.3.2', pass:false, error:error?.stack || String(error) };
+  window.__G332_RESULT__ = { stage:'G3.4.1', pass:false, error:error?.stack || String(error) };
 });
 
 window.__G332_LAB__ = { displayReaction, runVerification };
