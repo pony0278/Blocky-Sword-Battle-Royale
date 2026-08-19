@@ -58,16 +58,21 @@ function createHarness(options = {}) {
   return { machine, character, correctionWeights, mountProfiles, runtime };
 }
 
-test('G3.3.2 runtime completes Block Hit at 0.60s then reuses G3.2 Recover', () => {
+test('G3.4.0 runtime plays full 0.80s Block Hit before reusing G3.2 Recover', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
   machine.send(GUARD_EVENTS.BLOCK_CONFIRMED, { attackId: 'attack-block' });
-  let result = runtime.update(599);
+  let result = runtime.update(600);
   assert.equal(result.snapshot.state, GUARD_STATES.BLOCK_HIT);
   assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(result.report.counterWindowOpen, true);
-  assert.ok(result.report.sourceTimeSeconds < 0.6);
+  assert.equal(result.report.sourceTimeSeconds, 0.6);
+
+  result = runtime.update(199);
+  assert.equal(result.snapshot.state, GUARD_STATES.BLOCK_HIT);
+  assert.equal(result.report.counterWindowOpen, false);
+  assert.ok(result.report.sourceTimeSeconds < 0.8);
 
   result = runtime.update(1);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
@@ -75,16 +80,16 @@ test('G3.3.2 runtime completes Block Hit at 0.60s then reuses G3.2 Recover', () 
   assert.equal(completion.event, GUARD_EVENTS.REACTION_COMPLETE);
   assert.equal(completion.authority, 'presentation');
   assert.equal(completion.payload.reactionVariant, 'block-hit');
-  assert.equal(completion.payload.sourceTimeSeconds, 0.6);
+  assert.equal(completion.payload.sourceTimeSeconds, 0.8);
 
   const blockSamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockhit');
-  assert.equal(blockSamples.at(-1).timeSeconds, 0.6);
+  assert.equal(blockSamples.at(-1).timeSeconds, 0.8);
 
   result = runtime.update(140);
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
 });
 
-test('G3.3.2 runtime uses complete 0.333s Bash for normal Parry', () => {
+test('G3.4.0 runtime uses complete 0.333s Bash for normal Parry', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
@@ -100,7 +105,7 @@ test('G3.3.2 runtime uses complete 0.333s Bash for normal Parry', () => {
   assert.ok(Math.abs(parrySamples.at(-1).timeSeconds - (1 / 3)) < 1e-9);
 });
 
-test('G3.3.2 runtime selects and trims Bash Power for Perfect Parry', () => {
+test('G3.4.0 runtime plays full 0.70s Bash Power for Perfect Parry', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
@@ -109,16 +114,22 @@ test('G3.3.2 runtime selects and trims Bash Power for Perfect Parry', () => {
   assert.equal(parry.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
   assert.equal(parry.snapshot.presentation.reactionVariant, 'perfect-parry');
 
-  let result = runtime.update(240);
+  let result = runtime.update(480);
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
   assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
   assert.equal(result.report.counterWindowOpen, true);
+  assert.equal(result.report.sourceTimeSeconds, 0.48);
 
-  result = runtime.update(240);
+  result = runtime.update(219);
+  assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
+  assert.equal(result.report.counterWindowOpen, false);
+  assert.ok(result.report.sourceTimeSeconds < 0.7);
+
+  result = runtime.update(1);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
   assert.equal(result.snapshot.lastTransition.payload.reactionVariant, 'perfect-parry');
   const perfectSamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockbashpower');
-  assert.equal(perfectSamples.at(-1).timeSeconds, 0.48);
+  assert.equal(perfectSamples.at(-1).timeSeconds, 0.7);
 });
 
 test('G3.4 counter window remains presentation-only until authoritative COUNTER_CONFIRMED', () => {
@@ -187,7 +198,7 @@ test('G3.4 delayed authoritative Counter from Recover still gets the authored Co
   const { machine, runtime } = createHarness();
   enterHold(machine, runtime);
   machine.send(GUARD_EVENTS.BLOCK_CONFIRMED);
-  let result = runtime.update(600);
+  let result = runtime.update(800);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
 
   const counter = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, { authorityTick: 1200 });
