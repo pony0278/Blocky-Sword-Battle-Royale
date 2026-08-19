@@ -91,50 +91,56 @@ test('G3.4.2R completes Block Hit at 0.60s and requests locked root rotation', (
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
 });
 
-test('G3.4.2R runtime uses complete 0.333s Bash for normal Parry with root rotation locked', () => {
+test('G3.5 runtime reuses Block Hit for normal Parry while keeping the Parry Counter Window', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
   machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { attackId: 'attack-parry' });
-  let result = runtime.update(1000 / 3 - 0.01);
+  let result = runtime.update(100);
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
-  assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockbash');
+  assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(result.report.reactionVariant, 'parry');
+  assert.equal(result.report.counterWindowOpen, true);
   assert.equal(result.report.rootRotationPolicy, 'lock');
 
-  result = runtime.update(0.01);
+  result = runtime.update(499);
+  assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
+  assert.equal(result.report.counterWindowOpen, false);
+  assert.ok(result.report.sourceTimeSeconds < 0.6);
+
+  result = runtime.update(1);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
-  const parrySamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockbash');
-  assert.ok(Math.abs(parrySamples.at(-1).timeSeconds - (1 / 3)) < 1e-9);
+  const parrySamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(parrySamples.at(-1).timeSeconds, 0.6);
   assert.equal(parrySamples.at(-1).options.rootRotationPolicy, 'lock');
 });
 
-test('G3.4.2R runtime keeps full 0.70s Bash Power but locks its root rotation', () => {
+test('G3.5 runtime reuses Block Hit for Perfect Parry while preserving its distinct Counter Window', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
   const parry = machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { perfect: true, authorityTick: 120 });
   assert.equal(parry.snapshot.state, GUARD_STATES.PARRY);
-  assert.equal(parry.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
+  assert.equal(parry.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(parry.snapshot.presentation.reactionVariant, 'perfect-parry');
 
   let result = runtime.update(480);
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
-  assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
+  assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(result.report.counterWindowOpen, true);
   assert.equal(result.report.rootRotationPolicy, 'lock');
   assert.equal(result.report.sourceTimeSeconds, 0.48);
 
-  result = runtime.update(219);
+  result = runtime.update(119);
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
   assert.equal(result.report.counterWindowOpen, false);
-  assert.ok(result.report.sourceTimeSeconds < 0.7);
+  assert.ok(result.report.sourceTimeSeconds < 0.6);
 
   result = runtime.update(1);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
   assert.equal(result.snapshot.lastTransition.payload.reactionVariant, 'perfect-parry');
-  const perfectSamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockbashpower');
-  assert.equal(perfectSamples.at(-1).timeSeconds, 0.7);
+  const perfectSamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(perfectSamples.at(-1).timeSeconds, 0.6);
   assert.equal(perfectSamples.at(-1).options.rootRotationPolicy, 'lock');
 });
 
