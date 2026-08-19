@@ -170,6 +170,37 @@ export function captureObjectTransform(object3d) {
   return captureTransform(object3d);
 }
 
+export function captureObjectWorldQuaternion(object3d) {
+  if (!object3d?.quaternion) return null;
+  object3d.updateWorldMatrix?.(true, false);
+  if (typeof object3d.getWorldQuaternion !== 'function' || typeof object3d.quaternion.clone !== 'function') {
+    return Object.freeze(quat(object3d.quaternion));
+  }
+  const world = object3d.quaternion.clone();
+  object3d.getWorldQuaternion(world);
+  return Object.freeze(quat(world));
+}
+
+export function resolveLocalQuaternionForWorld(parentWorldInput, desiredWorldInput) {
+  const desiredWorld = quat(desiredWorldInput);
+  if (!parentWorldInput) return Object.freeze(desiredWorld);
+  return Object.freeze(multiplyQuat(inverseQuat(quat(parentWorldInput)), desiredWorld));
+}
+
+export function sampleRecoveryWorldQuaternion(sourceWorldInput, targetWorldInput, progress) {
+  return Object.freeze(slerpQuat(sourceWorldInput, targetWorldInput, smoothstep(progress)));
+}
+
+export function applyObjectWorldQuaternion(object3d, desiredWorldInput) {
+  if (!object3d?.quaternion || !desiredWorldInput) return null;
+  const parentWorld = object3d.parent ? captureObjectWorldQuaternion(object3d.parent) : null;
+  const local = resolveLocalQuaternionForWorld(parentWorld, desiredWorldInput);
+  applyQuaternion(object3d.quaternion, local);
+  object3d.updateWorldMatrix?.(false, false);
+  object3d.updateMatrixWorld?.(true);
+  return local;
+}
+
 export function applyObjectTransform(object3d, transform) {
   if (!object3d || !transform) return;
   applyVector(object3d.position, transform.position);
