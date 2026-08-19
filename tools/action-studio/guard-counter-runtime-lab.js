@@ -34,6 +34,8 @@ function setView(v){
 }
 function resize(){ const w=Math.max(1,canvas.clientWidth),h=Math.max(1,canvas.clientHeight); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 function applyMount(profileId,snapshot){ const r=mountRuntime?.apply(profileId); if(r?.applied){ mountHistory.push({profileId,state:snapshot?.state||null,sequence:snapshot?.sequence??null}); sword?.update(); } }
+function mountSnapshot(){ const o=sword?.object3d; return o?{p:[o.position.x,o.position.y,o.position.z],q:[o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w],s:[o.scale.x,o.scale.y,o.scale.z]}:null; }
+function mountDelta(a,b){ if(!a||!b)return Infinity; return Math.max(...a.p.map((v,i)=>Math.abs(v-b.p[i])),...a.q.map((v,i)=>Math.abs(v-b.q[i])),...a.s.map((v,i)=>Math.abs(v-b.s[i]))); }
 function resetToHold(){
   machine.send(GUARD_EVENTS.RESET); runtime.sync(camera); machine.send(GUARD_EVENTS.GUARD_PRESS); runtime.sync(camera);
   const r=runtime.update(180,camera); if(r.snapshot.state!==GUARD_STATES.HOLD) throw new Error(`Guard Enter failed: ${r.snapshot.state}`); return r;
@@ -62,7 +64,15 @@ function verifyScenario(variant){
   const historyStart=mountHistory.length, window=openCounterWindow(variant);
   const noAuto=window.snapshot.state===GUARD_STATES.PARRY&&window.report.counterWindowOpen&&window.snapshot.lastOutcome==='parry';
   const {confirmed,synced:start}=confirmCounter(variant);
-  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition;
+  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot();
+  const ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition, recoverStartMount=mountSnapshot();
+  const recoveryDurationMs=Number(ended.report.recoveryDurationMs)||0;
+  const recoveryProfileId=ended.report.recoveryProfileId||null;
+  const startMountContinuous=mountDelta(sourceMount,recoverStartMount)<1e-5;
+  const mid=recoveryDurationMs>0?runtime.update(recoveryDurationMs*.5,camera):ended, midMount=mountSnapshot();
+  const finish=recoveryDurationMs>0?runtime.update(recoveryDurationMs*.5,camera):mid;
+  const targetMount=mountSnapshot();
+  const mountActuallyBlends=startMountContinuous&&mountDelta(recoverStartMount,midMount)>1e-5&&mountDelta(midMount,targetMount)>1e-5;
   const history=mountHistory.slice(historyStart);
   const sawKayKit=history.some(x=>x.profileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT);
   const sawSkyrimRecover=history.some(x=>x.profileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD&&x.state===GUARD_STATES.RECOVER);
@@ -70,11 +80,14 @@ function verifyScenario(variant){
     &&start.report.counterProfileId===GUARD_COUNTER_PROFILE_IDS.LONGSWORD&&start.report.weaponMountProfileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT
     &&start.report.correctionWeight===0&&before.snapshot.state===GUARD_STATES.COUNTER&&completion?.event===GUARD_EVENTS.COUNTER_COMPLETE
     &&completion?.authority==='presentation'&&completion?.payload?.counterProfileId===GUARD_COUNTER_PROFILE_IDS.LONGSWORD
-    &&ended.snapshot.state===GUARD_STATES.RECOVER&&ended.report.weaponMountProfileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD&&sawKayKit&&sawSkyrimRecover;
+    &&ended.snapshot.state===GUARD_STATES.RECOVER&&ended.report.weaponMountProfileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD
+    &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&startMountContinuous&&mountActuallyBlends&&finish.snapshot.state===GUARD_STATES.HOLD
+    &&sawKayKit&&sawSkyrimRecover;
   return {variant,noAutoCounter:noAuto,confirmAuthority:confirmed.snapshot.lastTransition?.authority||null,counterClip:start.report.clipId,
     counterProfileId:start.report.counterProfileId,counterMount:start.report.weaponMountProfileId,counterCorrectionWeight:start.report.correctionWeight,
     beforeEndState:before.snapshot.state,completionEvent:completion?.event||null,completionAuthority:completion?.authority||null,
     completionProfileId:completion?.payload?.counterProfileId||null,afterCounterState:ended.snapshot.state,afterCounterMount:ended.report.weaponMountProfileId,
+    recoveryProfileId,recoveryDurationMs,startMountContinuous,mountActuallyBlends,afterRecoveryState:finish.snapshot.state,
     sawKayKitMount:sawKayKit,sawSkyrimRecoverMount:sawSkyrimRecover,pass};
 }
 function runVerification(kaykit,skyrim){
@@ -82,12 +95,14 @@ function runVerification(kaykit,skyrim){
   const diagnostics=character.animation.getPreparedClipDiagnostics('Melee_Block_Attack',true);
   const normal=verifyScenario('normal'),perfect=verifyScenario('perfect');
   const gates={skyrimGuardFamilyLoaded:skyrim.clips.size===4,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
-    inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass};
-  const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4',pass:failures.length===0,
+    inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
+    poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends};
+  const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1',pass:failures.length===0,
     counterClip:{name:clip?.name||null,durationSeconds:Number(clip?.duration)||0,diagnostics},scenarios:{normal,perfect},mountHistory:[...mountHistory],gates,failures};
   document.documentElement.dataset.g34=report.pass?'pass':'fail'; document.documentElement.dataset.g34Normal=normal.pass?'pass':'fail';
   document.documentElement.dataset.g34Perfect=perfect.pass?'pass':'fail'; document.documentElement.dataset.g34CounterClip=clip?'pass':'fail';
-  reportNode.textContent=JSON.stringify(report,null,2); window.__G34_RESULT__=report; status.textContent=`G3.4 ${report.pass?'PASS':'FAIL'} · authoritative Counter + mount handoff`; status.className=report.pass?'good':'bad'; return report;
+  document.documentElement.dataset.g341Recovery=gates.poseMatchedMountRecovery?'pass':'fail';
+  reportNode.textContent=JSON.stringify(report,null,2); window.__G34_RESULT__=report; status.textContent=`G3.4.1 ${report.pass?'PASS':'FAIL'} · authoritative Counter + inertial recovery`; status.className=report.pass?'good':'bad'; return report;
 }
 async function main(){
   const loader=new THREE.GLTFLoader();
@@ -98,7 +113,7 @@ async function main(){
   const skyrimMount=composeSkyrimWeaponMountCalibration(THREE,DEFAULT_KAYKIT_SWORD_MOUNT,bind);
   sword=createDebugSword(THREE); mountDebugSword(character,sword,skyrimMount);
   mountRuntime=createGuardWeaponMountRuntime({weapon:sword,profiles:{[GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD]:skyrimMount,[GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT]:DEFAULT_KAYKIT_SWORD_MOUNT}});
-  runtime=createGuardPresentationRuntime(THREE,{machine,character,applyWeaponMountProfile:applyMount});
+  runtime=createGuardPresentationRuntime(THREE,{machine,character,weaponObject3d:sword.object3d,applyWeaponMountProfile:applyMount});
   runVerification(kaykit,skyrim);
   const p=new URLSearchParams(location.search),variant=p.get('variant')==='perfect'?'perfect':'normal',elapsed=Number(p.get('elapsed'));
   displayCounter(variant,Number.isFinite(elapsed)?elapsed:counterDurationMs*.5);
@@ -108,5 +123,5 @@ document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',(
 timeline.addEventListener('input',()=>displayCounter(activeVariant,Number(timeline.value)));
 setView(new URLSearchParams(location.search).get('view')||'three'); resize(); addEventListener('resize',resize);
 (function frame(){if(sword)sword.update();renderer.render(scene,camera);requestAnimationFrame(frame)})();
-main().catch(error=>{document.documentElement.dataset.g34='fail';status.textContent=`G3.4 FAIL · ${error?.message||error}`;status.className='bad';reportNode.textContent=error?.stack||String(error);window.__G34_RESULT__={stage:'G3.4',pass:false,error:error?.stack||String(error)}});
+main().catch(error=>{document.documentElement.dataset.g34='fail';status.textContent=`G3.4.1 FAIL · ${error?.message||error}`;status.className='bad';reportNode.textContent=error?.stack||String(error);window.__G34_RESULT__={stage:'G3.4.1',pass:false,error:error?.stack||String(error)}});
 window.__G34_LAB__={displayCounter};
