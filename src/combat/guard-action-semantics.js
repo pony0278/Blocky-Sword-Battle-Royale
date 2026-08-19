@@ -38,6 +38,6 @@ export function guardActionSemanticAssessment({
   });
 }
 
-// Compatibility export for old G3.5 consumers. G3.5.1 no longer requires a
+// Compatibility constant for old G3.5 consumers. G3.5.1 no longer requires a
 // dedicated Counter animation; production follow-up uses the existing attack system.
 export const COUNTER_MOTION_ACQUISITION_CRITERIA = Object.freeze([]);
