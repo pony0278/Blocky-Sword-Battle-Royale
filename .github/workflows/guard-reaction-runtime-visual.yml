@@ -1,10 +1,11 @@
-name: G3.3.2 Guard Reaction Runtime Visual
+name: G3.5.1P-T3 Production Parry Runtime Visual
 
 on:
   pull_request:
     paths:
       - 'assets/skyrim/guard/converted/**'
       - 'src/animation/skyrim-converted-animation-library.js'
+      - 'src/animation/parry-contact-deflect-runtime-clip.js'
       - 'src/combat/guard-*.js'
       - 'src/combat/longsword-guard-*.js'
       - 'tools/action-studio/guard-reaction-runtime-lab.*'
@@ -20,12 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify frozen G3.3.2 source assets
+      - name: Verify frozen Skyrim source assets
         shell: bash
         run: |
           test "$(sha256sum assets/skyrim/guard/converted/shd_blockhit.source.glb | cut -d' ' -f1)" = "270d68b5c62a7de68c39112ab9a813f27a758ac737a078fe55b21896cfce1f28"
           test "$(sha256sum assets/skyrim/guard/converted/shd_blockbash.source.glb | cut -d' ' -f1)" = "bae74b1cdf8724eb17073a7347192946fef8cc9cedcdb8c9728e6ea9004ea637"
           test "$(sha256sum assets/skyrim/guard/converted/shd_blockbashpower.source.glb | cut -d' ' -f1)" = "603cf8326501ca2dd3628e8f47c37c6cbad6bec491b224123af418e70c36fd47"
+
+      - name: Run T3 production timeline unit test
+        run: node --test tests/parry-contact-deflect-runtime-clip.test.js tests/guard-reaction-presentation.test.js tests/guard-state-machine.test.js tests/guard-presentation-runtime.test.js
 
       - name: Locate headless browser
         id: browser
@@ -41,44 +45,70 @@ jobs:
         env:
           BROWSER: ${{ steps.browser.outputs.browser }}
         run: |
-          mkdir -p artifacts/g3-3-2
-          python3 -m http.server 4173 > /tmp/g332-http.log 2>&1 &
+          mkdir -p artifacts/g3-5-1p-t3
+          python3 -m http.server 4173 > /tmp/g351pt3-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
           BASE='http://127.0.0.1:4173/tools/action-studio/guard-reaction-runtime-lab.html'
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=30000 --dump-dom \
-            "${BASE}?reaction=block&elapsed=300&view=three" > artifacts/g3-3-2/g332-dom.html
-          if ! grep -q 'data-g332="pass"' artifacts/g3-3-2/g332-dom.html; then
-            echo 'G3.3.2 runtime visual gate failed.' >&2
-            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-3-2/g332-dom.html || true
+            "${BASE}?reaction=parry&elapsed=360&view=three" > artifacts/g3-5-1p-t3/g351pt3-dom.html
+          if ! grep -q 'data-g351pt3="pass"' artifacts/g3-5-1p-t3/g351pt3-dom.html; then
+            echo 'G3.5.1P-T3 runtime visual gate failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-5-1p-t3/g351pt3-dom.html || true
             exit 1
           fi
-          grep -q 'data-g332-count="4"' artifacts/g3-3-2/g332-dom.html
-          grep -q 'data-g332-block="pass"' artifacts/g3-3-2/g332-dom.html
-          grep -q 'data-g332-parry="pass"' artifacts/g3-3-2/g332-dom.html
-          grep -q 'data-g332-perfect="pass"' artifacts/g3-3-2/g332-dom.html
+          grep -q 'data-g332-count="6"' artifacts/g3-5-1p-t3/g351pt3-dom.html
+          grep -q 'data-g332-block="pass"' artifacts/g3-5-1p-t3/g351pt3-dom.html
+          grep -q 'data-g332-parry="pass"' artifacts/g3-5-1p-t3/g351pt3-dom.html
+          grep -q 'data-g332-perfect="pass"' artifacts/g3-5-1p-t3/g351pt3-dom.html
+          grep -q 'data-g351pt3-virtual="pass"' artifacts/g3-5-1p-t3/g351pt3-dom.html
+          grep -q 'data-g351pt3-power="pass"' artifacts/g3-5-1p-t3/g351pt3-dom.html
 
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-3-2/block-hit-300ms.png" \
+            --screenshot="artifacts/g3-5-1p-t3/block-hit-300ms.png" \
             "${BASE}?reaction=block&elapsed=300&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-3-2/parry-160ms.png" \
-            "${BASE}?reaction=parry&elapsed=160&view=three"
+            --screenshot="artifacts/g3-5-1p-t3/parry-contact-150ms.png" \
+            "${BASE}?reaction=parry&elapsed=150&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-3-2/perfect-parry-240ms.png" \
-            "${BASE}?reaction=perfect&elapsed=240&view=three"
+            --screenshot="artifacts/g3-5-1p-t3/parry-hold-210ms.png" \
+            "${BASE}?reaction=parry&elapsed=210&view=three"
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=22000 \
-            --screenshot="artifacts/g3-3-2/perfect-parry-240ms-side.png" \
-            "${BASE}?reaction=perfect&elapsed=240&view=side"
+            --screenshot="artifacts/g3-5-1p-t3/parry-blend-280ms.png" \
+            "${BASE}?reaction=parry&elapsed=280&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t3/parry-deflect-360ms.png" \
+            "${BASE}?reaction=parry&elapsed=360&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t3/parry-deflect-side-390ms.png" \
+            "${BASE}?reaction=parry&elapsed=390&view=side"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t3/perfect-contact-150ms.png" \
+            "${BASE}?reaction=perfect&elapsed=150&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t3/perfect-blend-295ms.png" \
+            "${BASE}?reaction=perfect&elapsed=295&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t3/perfect-deflect-390ms.png" \
+            "${BASE}?reaction=perfect&elapsed=390&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t3/perfect-deflect-side-390ms.png" \
+            "${BASE}?reaction=perfect&elapsed=390&view=side"
 
-      - name: Upload G3.3.2 runtime evidence
+      - name: Upload T3 production runtime evidence
         uses: actions/upload-artifact@v4
         with:
-          name: g3-3-2-guard-reaction-runtime-visual
-          path: artifacts/g3-3-2
+          name: g3-5-1p-t3-production-parry-runtime-visual
+          path: artifacts/g3-5-1p-t3

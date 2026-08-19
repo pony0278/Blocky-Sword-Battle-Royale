@@ -18,6 +18,7 @@ import {
   GUARD_COUNTER_PROFILE_IDS,
   GUARD_WEAPON_MOUNT_PROFILE_IDS,
 } from '../src/combat/guard-counter-presentation.js';
+import { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } from '../src/animation/parry-contact-deflect-runtime-clip.js';
 
 test('G3.1 enters and exits the canonical Skyrim guard hold', () => {
   const machine = createGuardStateMachine();
@@ -120,7 +121,7 @@ test('G3.1 re-press during exit re-enters guard without transient neutral', () =
   assert.equal(machine.guardHeld, true);
 });
 
-test('G3.5 preserves Guard authority while sharing Block Hit presentation for Parry outcomes', () => {
+test('G3.5.1P-T3 preserves Guard authority while promoting production Parry presentation', () => {
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.GUARD_PRESS], 'local-intent');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.BLOCK_CONFIRMED], 'authoritative-combat');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.PARRY_CONFIRMED], 'authoritative-combat');
@@ -155,12 +156,12 @@ test('G3.5 preserves Guard authority while sharing Block Hit presentation for Pa
   const parry = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.PARRY];
   assert.equal(parry.authored, true);
   assert.equal(parry.authoredStage, 'G3.3.2');
-  assert.equal(parry.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(parry.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY);
   assert.equal(parry.reactionProfileId, GUARD_REACTION_PROFILE_IDS.PARRY);
   assert.equal(parry.reactionVariant, GUARD_REACTION_VARIANTS.PARRY);
 
   const perfect = getGuardPresentation(GUARD_STATES.PARRY, { perfect: true });
-  assert.equal(perfect.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(perfect.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY);
   assert.equal(perfect.reactionProfileId, GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY);
   assert.equal(perfect.reactionVariant, GUARD_REACTION_VARIANTS.PERFECT_PARRY);
 
@@ -175,7 +176,7 @@ test('G3.5 preserves Guard authority while sharing Block Hit presentation for Pa
   assert.equal(counter.inPlace, true);
 });
 
-test('G3.5 preserves the authoritative Perfect Parry payload while sharing Block Hit presentation', () => {
+test('G3.5.1P-T3 preserves the authoritative Perfect Parry payload with the shared-deflect virtual clip', () => {
   const machine = createGuardStateMachine();
   machine.send(GUARD_EVENTS.GUARD_PRESS);
   machine.send(GUARD_EVENTS.ENTER_COMPLETE);
@@ -188,7 +189,7 @@ test('G3.5 preserves the authoritative Perfect Parry payload while sharing Block
   assert.equal(result.snapshot.lastOutcome, 'parry');
   assert.equal(result.snapshot.lastTransition.authority, 'authoritative-combat');
   assert.equal(result.snapshot.lastTransition.payload.authorityTick, 451);
-  assert.equal(result.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(result.snapshot.presentation.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY);
   assert.equal(result.snapshot.presentation.reactionVariant, 'perfect-parry');
 });
 
@@ -198,7 +199,6 @@ test('G3.1 tracks deterministic state age and transition sequence', () => {
   machine.update(16.67);
   assert.ok(machine.snapshot.elapsedMs > 33);
   assert.equal(machine.snapshot.sequence, 0);
-
   machine.send(GUARD_EVENTS.GUARD_PRESS);
   assert.equal(machine.snapshot.elapsedMs, 0);
   assert.equal(machine.snapshot.sequence, 1);

@@ -10,6 +10,7 @@ import {
   GUARD_COUNTER_PROFILE_IDS,
   GUARD_WEAPON_MOUNT_PROFILE_IDS,
 } from '../src/combat/guard-counter-presentation.js';
+import { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } from '../src/animation/parry-contact-deflect-runtime-clip.js';
 
 function createCharacterStub(options = {}) {
   const samples = [];
@@ -20,6 +21,8 @@ function createCharacterStub(options = {}) {
     ['SKYRIM_GUARD/shd_blockhit', 0.8],
     ['SKYRIM_GUARD/shd_blockbash', 1 / 3],
     ['SKYRIM_GUARD/shd_blockbashpower', 0.7],
+    [PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY, 0.6],
+    [PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY, 0.6],
     ...(!options.omitCounter ? [['Melee_Block_Attack', 0.75]] : []),
   ]);
   return {
@@ -91,14 +94,14 @@ test('G3.4.2R completes Block Hit at 0.60s and requests locked root rotation', (
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
 });
 
-test('G3.5 runtime reuses Block Hit for normal Parry while keeping the Parry Counter Window', () => {
+test('G3.5.1P-T3 runtime plays the promoted contact-deflect virtual clip for normal Parry', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
   machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { attackId: 'attack-parry' });
   let result = runtime.update(100);
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
-  assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(result.report.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY);
   assert.equal(result.report.reactionVariant, 'parry');
   assert.equal(result.report.counterWindowOpen, true);
   assert.equal(result.report.rootRotationPolicy, 'lock');
@@ -110,23 +113,23 @@ test('G3.5 runtime reuses Block Hit for normal Parry while keeping the Parry Cou
 
   result = runtime.update(1);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
-  const parrySamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockhit');
+  const parrySamples = character.samples.filter((entry) => entry.name === PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY);
   assert.equal(parrySamples.at(-1).timeSeconds, 0.6);
   assert.equal(parrySamples.at(-1).options.rootRotationPolicy, 'lock');
 });
 
-test('G3.5 runtime reuses Block Hit for Perfect Parry while preserving its distinct Counter Window', () => {
+test('G3.5.1P-T3 runtime plays the shared-deflect Perfect virtual clip while preserving its Counter Window', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
   const parry = machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { perfect: true, authorityTick: 120 });
   assert.equal(parry.snapshot.state, GUARD_STATES.PARRY);
-  assert.equal(parry.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(parry.snapshot.presentation.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY);
   assert.equal(parry.snapshot.presentation.reactionVariant, 'perfect-parry');
 
   let result = runtime.update(480);
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
-  assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockhit');
+  assert.equal(result.report.clipId, PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY);
   assert.equal(result.report.counterWindowOpen, true);
   assert.equal(result.report.rootRotationPolicy, 'lock');
   assert.equal(result.report.sourceTimeSeconds, 0.48);
@@ -139,7 +142,7 @@ test('G3.5 runtime reuses Block Hit for Perfect Parry while preserving its disti
   result = runtime.update(1);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
   assert.equal(result.snapshot.lastTransition.payload.reactionVariant, 'perfect-parry');
-  const perfectSamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockhit');
+  const perfectSamples = character.samples.filter((entry) => entry.name === PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY);
   assert.equal(perfectSamples.at(-1).timeSeconds, 0.6);
   assert.equal(perfectSamples.at(-1).options.rootRotationPolicy, 'lock');
 });
