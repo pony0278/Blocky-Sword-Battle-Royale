@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   GUARD_RECOVERY_PROFILE_IDS,
+  GUARD_RECOVERY_PROFILES,
   blendRecoveryPose,
   resolveGuardRecoveryProfile,
   samplePoseMatchedRecovery,
@@ -93,4 +94,59 @@ test('G3.4.1 assigns longer recovery to Perfect Parry and Counter than compact n
   assert.equal(counter.id, GUARD_RECOVERY_PROFILE_IDS.COUNTER);
   assert.ok(parry.durationMs < perfect.durationMs);
   assert.ok(perfect.durationMs < counter.durationMs);
+});
+
+test('G3.4.1.2 latches the Counter final pose through the first 60 Hz Recover frame without extending 310 ms total recovery', () => {
+  const previous = pose(-0.1);
+  const source = pose(0);
+  const target = pose(1);
+  const snapshot = {
+    lastOutcome: 'counter',
+    lastTransition: { payload: { counterProfileId: 'longsword_guard_counter_melee_block_attack_v1' } },
+  };
+  const sourceSample = { sequence: 9, elapsedMs: 1066.6667, pose: source };
+  const previousSample = { sequence: 9, elapsedMs: 1050, pose: previous };
+  const holdMs = GUARD_RECOVERY_PROFILES.counter.continuityHoldMs;
+
+  const atZero = samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, target, 0);
+  const firstFrame = samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, target, holdMs);
+  assert.equal(atZero.durationMs, 310);
+  assert.equal(firstFrame.durationMs, 310);
+  assert.equal(atZero.continuityLatched, true);
+  assert.equal(firstFrame.continuityLatched, true);
+  assert.equal(firstFrame.progress, 0);
+  assert.equal(firstFrame.momentumActive, false);
+  assert.deepEqual(firstFrame.pose.spine.position, source.spine.position);
+  assert.deepEqual(firstFrame.pose.spine.quaternion, source.spine.quaternion);
+
+  const afterLatch = samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, target, holdMs + (1000 / 60));
+  assert.equal(afterLatch.continuityLatched, false);
+  assert.ok(afterLatch.progress > 0);
+  assert.ok(afterLatch.progress < 0.1);
+  assert.equal(afterLatch.momentumActive, true);
+
+  const end = samplePoseMatchedRecovery(snapshot, sourceSample, previousSample, target, 310);
+  assert.equal(end.complete, true);
+  assert.equal(end.progress, 1);
+  assert.ok(Math.abs(end.pose.spine.position.x - 1) < 1e-9);
+});
+
+test('G3.4.1.2 keeps non-Counter recovery timing unchanged', () => {
+  const source = pose(0);
+  const target = pose(1);
+  const snapshot = {
+    lastOutcome: 'parry',
+    lastTransition: { payload: { reactionVariant: 'parry' } },
+  };
+  const result = samplePoseMatchedRecovery(
+    snapshot,
+    { sequence: 3, elapsedMs: 333, pose: source },
+    null,
+    target,
+    17,
+  );
+  assert.equal(result.profile.id, GUARD_RECOVERY_PROFILE_IDS.PARRY);
+  assert.equal(result.continuityHoldMs, 0);
+  assert.equal(result.continuityLatched, false);
+  assert.ok(Math.abs(result.progress - (17 / 170)) < 1e-9);
 });
