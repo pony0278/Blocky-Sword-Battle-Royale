@@ -8,55 +8,72 @@ import {
 import {
   GUARD_REACTION_VARIANTS,
   LONGSWORD_GUARD_REACTION_PROFILES,
+  sampleGuardReactionProfile,
 } from '../src/combat/guard-reaction-presentation.js';
 import { LONGSWORD_GUARD_COUNTER_PROFILE } from '../src/combat/guard-counter-presentation.js';
+import {
+  PARRY_ADVANTAGE_DIRECTIONS,
+  PARRY_ADVANTAGE_ENEMY_RESPONSE,
+  PARRY_ADVANTAGE_FOLLOWUP_MODE,
+  PARRY_ADVANTAGE_STAGE,
+} from '../src/combat/parry-advantage.js';
 
-test('G3.5 keeps Block Hit semantically approved', () => {
+test('G3.5.1 keeps Block Hit semantically approved without granting free attack advantage', () => {
   const block = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
   assert.equal(block.semanticStage, GUARD_ACTION_SEMANTIC_STAGE);
   assert.equal(block.intendedRole, GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION);
   assert.equal(block.sourceRole, GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION);
   assert.equal(block.semanticFit, GUARD_ACTION_SEMANTIC_FIT.MATCH);
   assert.equal(block.replacementRequired, false);
+  assert.equal(block.parryAdvantage, null);
+  assert.equal(sampleGuardReactionProfile('guard_block_hit', 300, {}).freeAttackFollowupOpen, false);
 });
 
-test('G3.5 treats Parry and Perfect Parry as successful timed blocks, not separate attacks', () => {
+test('G3.5.1 turns Parry into attacker stagger plus existing directional attack follow-up', () => {
   const block = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
   const parry = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PARRY];
   const perfect = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PERFECT_PARRY];
 
-  assert.equal(parry.intendedRole, GUARD_ACTION_SEMANTIC_ROLES.PARRY_SUCCESS);
-  assert.equal(perfect.intendedRole, GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_SUCCESS);
-  assert.equal(parry.sourceRole, GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION);
-  assert.equal(perfect.sourceRole, GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION);
-  assert.equal(parry.semanticFit, GUARD_ACTION_SEMANTIC_FIT.MATCH);
-  assert.equal(perfect.semanticFit, GUARD_ACTION_SEMANTIC_FIT.MATCH);
-  assert.equal(parry.replacementRequired, false);
-  assert.equal(perfect.replacementRequired, false);
-  assert.equal(parry.clipId, block.clipId);
-  assert.equal(perfect.clipId, block.clipId);
-  assert.equal(parry.sourceId, 'shd_blockhit');
-  assert.equal(perfect.sourceId, 'shd_blockhit');
+  for (const profile of [parry, perfect]) {
+    assert.equal(profile.intendedRole, GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE);
+    assert.equal(profile.sourceRole, GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION);
+    assert.equal(profile.semanticFit, GUARD_ACTION_SEMANTIC_FIT.MATCH);
+    assert.equal(profile.replacementRequired, false);
+    assert.equal(profile.clipId, block.clipId);
+    assert.equal(profile.parryAdvantage.stage, PARRY_ADVANTAGE_STAGE);
+    assert.equal(profile.parryAdvantage.enemyResponse, PARRY_ADVANTAGE_ENEMY_RESPONSE);
+    assert.equal(profile.parryAdvantage.followupMode, PARRY_ADVANTAGE_FOLLOWUP_MODE);
+    assert.deepEqual(profile.parryAdvantage.allowedDirections, PARRY_ADVANTAGE_DIRECTIONS);
+    assert.equal(profile.parryAdvantage.dedicatedCounterState, false);
+    assert.equal(profile.parryAdvantage.dedicatedCounterAnimation, false);
+    assert.equal(profile.parryAdvantage.enemyStaggerDurationAuthority, 'authoritative-combat-balance');
+  }
 });
 
-test('G3.5 keeps gameplay distinctions even while Block and Parry share one defensive contact motion', () => {
-  const block = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT];
+test('G3.5.1 preserves distinct normal/perfect follow-up windows without a dedicated Counter clip', () => {
   const parry = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PARRY];
   const perfect = LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.PERFECT_PARRY];
 
-  assert.notEqual(block.intendedRole, parry.intendedRole);
-  assert.notEqual(parry.intendedRole, perfect.intendedRole);
-  assert.notDeepEqual(block.counterWindowSeconds, parry.counterWindowSeconds);
-  assert.notDeepEqual(parry.counterWindowSeconds, perfect.counterWindowSeconds);
+  assert.deepEqual(parry.followupWindowSeconds, [0.08, 1 / 3]);
+  assert.deepEqual(perfect.followupWindowSeconds, [0.1, 0.48]);
+  assert.notDeepEqual(parry.followupWindowSeconds, perfect.followupWindowSeconds);
+
+  assert.equal(sampleGuardReactionProfile('guard_parry', 79, {}).freeAttackFollowupOpen, false);
+  assert.equal(sampleGuardReactionProfile('guard_parry', 80, {}).freeAttackFollowupOpen, true);
+  assert.equal(sampleGuardReactionProfile('guard_parry', 334, {}).freeAttackFollowupOpen, false);
+  assert.equal(sampleGuardReactionProfile('guard_parry', 100, { perfect: true }).freeAttackFollowupOpen, true);
+  assert.equal(sampleGuardReactionProfile('guard_parry', 481, { perfect: true }).freeAttackFollowupOpen, false);
 });
 
-test('G3.5 refuses to sign off Melee_Block_Attack as a longsword Counter', () => {
+test('G3.5.1 retires Melee_Block_Attack from production instead of searching for a replacement Counter', () => {
   const counter = LONGSWORD_GUARD_COUNTER_PROFILE;
   assert.equal(counter.semanticStage, GUARD_ACTION_SEMANTIC_STAGE);
-  assert.equal(counter.intendedRole, GUARD_ACTION_SEMANTIC_ROLES.COUNTER_STRIKE);
+  assert.equal(counter.intendedRole, GUARD_ACTION_SEMANTIC_ROLES.LEGACY_COUNTER_PRESENTATION);
   assert.equal(counter.sourceRole, GUARD_ACTION_SEMANTIC_ROLES.BLOCK_ATTACK_PUSH);
-  assert.equal(counter.semanticFit, GUARD_ACTION_SEMANTIC_FIT.MISMATCH);
-  assert.equal(counter.replacementRequired, true);
-  assert.ok(counter.acquisitionCriteria.some((criterion) => /right-hand longsword/i.test(criterion)));
-  assert.match(counter.semanticNote, /Shield Bash \/ Guard Push candidate/i);
+  assert.equal(counter.semanticFit, GUARD_ACTION_SEMANTIC_FIT.PROVISIONAL);
+  assert.equal(counter.replacementRequired, false);
+  assert.equal(counter.legacyOnly, true);
+  assert.equal(counter.productionEnabled, false);
+  assert.equal(counter.retiredByStage, 'G3.5.1');
+  assert.match(counter.semanticNote, /No replacement Counter animation is required/i);
 });

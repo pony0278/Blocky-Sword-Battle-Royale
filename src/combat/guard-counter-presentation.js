@@ -1,5 +1,4 @@
 import {
-  COUNTER_MOTION_ACQUISITION_CRITERIA,
   GUARD_ACTION_SEMANTIC_FIT,
   GUARD_ACTION_SEMANTIC_ROLES,
   guardActionSemanticAssessment,
@@ -42,14 +41,16 @@ export const LONGSWORD_GUARD_COUNTER_PROFILE = Object.freeze({
   timingStage: 'G3.4.2',
   sourceWindow: Object.freeze({ startProgress: 0, endProgress: 1 }),
   timingAnchors: LONGSWORD_COUNTER_TIMING_ANCHORS,
-  visualDecision: 'G3.5 PROVISIONAL ONLY — preserve technical runtime timing for now, but Melee_Block_Attack reads primarily as a block/shield push instead of a longsword counter-strike; replace before semantic sign-off',
+  legacyOnly: true,
+  productionEnabled: false,
+  retiredByStage: 'G3.5.1',
+  visualDecision: 'G3.5.1 LEGACY COMPATIBILITY ONLY — keep the G3.4 Melee_Block_Attack timing for regression labs, but production Parry follow-up now returns control to the existing directional attack system.',
   ...guardActionSemanticAssessment({
-    intendedRole: GUARD_ACTION_SEMANTIC_ROLES.COUNTER_STRIKE,
+    intendedRole: GUARD_ACTION_SEMANTIC_ROLES.LEGACY_COUNTER_PRESENTATION,
     sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_ATTACK_PUSH,
-    fit: GUARD_ACTION_SEMANTIC_FIT.MISMATCH,
-    replacementRequired: true,
-    acquisitionCriteria: COUNTER_MOTION_ACQUISITION_CRITERIA,
-    note: 'Keep Melee_Block_Attack as a possible Shield Bash / Guard Push candidate. The final Counter must visibly attack with the right-hand longsword.',
+    fit: GUARD_ACTION_SEMANTIC_FIT.PROVISIONAL,
+    replacementRequired: false,
+    note: 'No replacement Counter animation is required. Melee_Block_Attack remains only for G3.4 regression evidence and may later be reused as Shield Bash / Guard Push.',
   }),
 });
 

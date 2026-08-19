@@ -1,6 +1,5 @@
 import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
 import { applyMountCalibration } from '../../src/character/character-sockets.js';
-import { loadKayKitAnimationLibrary } from '../../src/animation/kaykit-animation-library.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
 import {
@@ -17,8 +16,11 @@ const MODE_LABELS = Object.freeze({
   block: 'Block Hit',
   parry: 'Parry',
   perfect: 'Perfect Parry',
-  counter: 'Counter',
+  // Compatibility DOM key. G3.5.1 relabels this button to Parry Advantage.
+  counter: 'Parry Advantage',
 });
+
+const REQUIRED_GUARD_RUNTIME_MODES = Object.freeze(['hold', 'block', 'parry', 'perfect', 'counter']);
 
 function captureMountCalibration(object3d) {
   return {
@@ -40,7 +42,23 @@ function captureMountCalibration(object3d) {
   };
 }
 
-const REQUIRED_GUARD_RUNTIME_MODES = Object.freeze(['hold', 'block', 'parry', 'perfect', 'counter']);
+function relabelG351Surface(panel) {
+  panel.setAttribute('data-stage', 'G3.5.1');
+  panel.setAttribute('data-followup-model', 'free-directional-attack');
+  const title = panel.querySelector('.panel-title span');
+  const subtitle = panel.querySelector('.panel-title small');
+  const intro = panel.querySelector('.blocking-intro');
+  const compatibilityButton = panel.querySelector('[data-guard-runtime="counter"]');
+  if (title) title.textContent = 'Guard Runtime · G3.5.1';
+  if (subtitle) subtitle.textContent = 'Parry Advantage → free directional attack';
+  if (intro) {
+    intro.textContent = 'Block / Parry 共用 Skyrim defensive contact。Parry 成功後由 authoritative combat 讓對手失衡；玩家直接使用既有 Top / Left / Right 攻擊，不再播放專用 Counter 動畫。';
+  }
+  if (compatibilityButton) {
+    compatibilityButton.textContent = '▶ Parry Advantage';
+    compatibilityButton.setAttribute('data-guard-runtime-semantic', 'parry-advantage');
+  }
+}
 
 function resolveGuardPanel() {
   const panel = document.getElementById('guardRuntimePanel');
@@ -56,6 +74,7 @@ function resolveGuardPanel() {
   panel.setAttribute('data-guard-runtime-static', 'true');
   panel.setAttribute('data-controller-bound', 'true');
   panel.setAttribute('data-guard-runtime-button-count', String(buttons.length));
+  relabelG351Surface(panel);
   return panel;
 }
 
@@ -112,23 +131,33 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     });
   }
 
+  function isParryAdvantageMode() {
+    return activeMode === 'parry' || activeMode === 'perfect' || activeMode === 'counter';
+  }
+
   function updateReadout(result) {
     if (!result) return;
     const { snapshot, report } = result;
+    const freeAttackFollowupOpen = isParryAdvantageMode() && Boolean(report.counterWindowOpen);
     panel?.setAttribute('data-guard-state', snapshot.state);
     panel?.setAttribute('data-guard-clip', report.clipId || '');
     panel?.setAttribute('data-guard-mount', report.weaponMountProfileId || '');
-    if (report.counterProfileId) panel?.setAttribute('data-counter-profile', report.counterProfileId);
+    panel?.setAttribute('data-free-attack-followup', freeAttackFollowupOpen ? 'open' : 'closed');
     if (report.recoveryProfileId) panel?.setAttribute('data-recovery-profile', report.recoveryProfileId);
     const clipLabel = String(report.clipId || snapshot.presentation?.clipId || '—').replace(/^SKYRIM_GUARD\//, '');
     const sourceSeconds = Number(report.sourceTimeSeconds) || 0;
     document.getElementById('clipNow').textContent = clipLabel.toUpperCase();
-    document.getElementById('phaseNow').textContent = `GUARD RUNTIME · ${snapshot.state.toUpperCase()}`;
+    document.getElementById('phaseNow').textContent = freeAttackFollowupOpen
+      ? 'PARRY ADVANTAGE · FREE ATTACK'
+      : `GUARD RUNTIME · ${snapshot.state.toUpperCase()}`;
     if (detail) {
       const recovery = report.recoveryProfileId
         ? ` · recover ${Math.round((report.recoveryProgress || 0) * 100)}%/${report.recoveryDurationMs}ms${report.recoveryMomentumActive ? ' · inertia' : ''}`
         : '';
-      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${report.counterProfileId ? ` · ${report.counterProfileId}` : ''}${recovery}`;
+      const followup = isParryAdvantageMode()
+        ? ` · free attack ${freeAttackFollowupOpen ? 'OPEN' : 'closed'} · Top / Left / Right`
+        : '';
+      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${followup}${recovery}`;
     }
   }
 
@@ -139,29 +168,20 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus('G3.4.1 · loading Skyrim Guard + KayKit melee…');
+    setStatus('G3.5.1 · loading Skyrim Guard defensive contact…');
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
-      const [skyrim, kaykit] = await Promise.all([
-        loadSkyrimConvertedAnimationLibrary(loader, {
-          THREE,
-          rig: character.rig,
-          baseUrl: '../../assets/skyrim/guard/converted/',
-          fps: 30,
-        }),
-        loadKayKitAnimationLibrary(loader, {
-          baseUrl: '../../assets/kaykit/animations/',
-          packIds: ['melee'],
-        }),
-      ]);
+      const skyrim = await loadSkyrimConvertedAnimationLibrary(loader, {
+        THREE,
+        rig: character.rig,
+        baseUrl: '../../assets/skyrim/guard/converted/',
+        fps: 30,
+      });
       character.registerAnimations(skyrim);
-      character.registerAnimations(kaykit);
 
-      const counterClip = kaykit.clips.get('Melee_Block_Attack');
-      if (!counterClip) throw new Error('G3.4 requires KayKit Melee_Block_Attack');
       const bind = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle')?.userData?.weaponBindCalibration;
       if (!bind?.correctionQuaternion) {
-        throw new Error('G3.4 requires the accepted Skyrim Guard weapon-bind calibration');
+        throw new Error('G3.5.1 requires the accepted Skyrim Guard weapon-bind calibration');
       }
       const skyrimMount = composeSkyrimWeaponMountCalibration(
         THREE,
@@ -172,7 +192,6 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         weaponObject3d,
         profiles: {
           [GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD]: skyrimMount,
-          [GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT]: DEFAULT_KAYKIT_SWORD_MOUNT,
         },
       });
       machine = createGuardStateMachine();
@@ -186,12 +205,12 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         },
       });
       loaded = true;
-      setStatus(`G3.4.1 ready · inertial recovery + Counter ${Number(counterClip.duration).toFixed(3)}s`);
-      panel?.setAttribute('data-g34-ready', 'true');
+      setStatus('G3.5.1 ready · Parry Advantage uses existing directional attacks');
+      panel?.setAttribute('data-g351-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
-      setStatus(`G3.4.1 load failed · ${error.message}`, true);
-      panel?.setAttribute('data-g34-ready', 'false');
+      setStatus(`G3.5.1 load failed · ${error.message}`, true);
+      panel?.setAttribute('data-g351-ready', 'false');
       throw error;
     });
     return loadPromise;
@@ -227,26 +246,14 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         source: 'action-studio-preview-authority',
         verification: 'action-studio-block-hit',
       });
-    } else if (mode === 'parry' || mode === 'perfect') {
+    } else if (mode === 'parry' || mode === 'perfect' || mode === 'counter') {
       machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
         source: 'action-studio-preview-authority',
         perfect: mode === 'perfect',
-        verification: `action-studio-${mode}`,
+        verification: mode === 'counter'
+          ? 'action-studio-g351-parry-advantage'
+          : `action-studio-${mode}`,
       });
-    } else if (mode === 'counter') {
-      machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
-        source: 'action-studio-preview-authority',
-        perfect: false,
-        verification: 'action-studio-counter-entry-parry',
-      });
-      runtime.sync();
-      const confirmed = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, {
-        source: 'action-studio-preview-authority',
-        verification: 'action-studio-g34-counter',
-      });
-      if (!confirmed.accepted || confirmed.snapshot.state !== GUARD_STATES.COUNTER) {
-        throw new Error(`Action Studio COUNTER_CONFIRMED rejected: ${confirmed.snapshot.state}`);
-      }
     } else {
       throw new Error(`Unknown Guard Runtime preview mode: ${mode}`);
     }
@@ -267,7 +274,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · G3.4.1 pose-matched recovery${mode === 'counter' ? ' · preview authority sent COUNTER_CONFIRMED' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · G3.5.1${mode === 'counter' ? ' · no dedicated Counter state or animation' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -285,7 +292,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus('G3.4.1 ready · choose a Guard runtime preview');
+    if (!options.quiet) setStatus('G3.5.1 ready · choose Guard / Parry Advantage preview');
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {
@@ -324,6 +331,9 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
       get mode() { return activeMode; },
       get snapshot() { return machine?.snapshot || null; },
       get report() { return lastResult?.report || null; },
+      get freeAttackFollowupOpen() {
+        return isParryAdvantageMode() && Boolean(lastResult?.report?.counterWindowOpen);
+      },
       get ready() { return loaded; },
     };
   }
@@ -335,6 +345,9 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     get mode() { return activeMode; },
     get snapshot() { return machine?.snapshot || null; },
     get report() { return lastResult?.report || null; },
+    get freeAttackFollowupOpen() {
+      return isParryAdvantageMode() && Boolean(lastResult?.report?.counterWindowOpen);
+    },
     get ready() { return loaded; },
   });
 }
