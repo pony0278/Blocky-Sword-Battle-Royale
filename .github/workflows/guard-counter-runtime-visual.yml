@@ -58,6 +58,7 @@ jobs:
           grep -q 'data-g34-normal="pass"' artifacts/g3-4/g34-dom.html
           grep -q 'data-g34-perfect="pass"' artifacts/g3-4/g34-dom.html
           grep -q 'data-g34-counter-clip="pass"' artifacts/g3-4/g34-dom.html
+          grep -q 'data-g3411-world-sword="pass"' artifacts/g3-4/g34-dom.html
 
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=25000 \
