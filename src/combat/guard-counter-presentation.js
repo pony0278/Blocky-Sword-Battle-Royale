@@ -1,3 +1,9 @@
+import {
+  GUARD_ACTION_SEMANTIC_FIT,
+  GUARD_ACTION_SEMANTIC_ROLES,
+  guardActionSemanticAssessment,
+} from './guard-action-semantics.js';
+
 export const GUARD_COUNTER_PROFILE_IDS = Object.freeze({
   LONGSWORD: 'longsword_guard_counter_melee_block_attack_v1',
 });
@@ -35,7 +41,17 @@ export const LONGSWORD_GUARD_COUNTER_PROFILE = Object.freeze({
   timingStage: 'G3.4.2',
   sourceWindow: Object.freeze({ startProgress: 0, endProgress: 1 }),
   timingAnchors: LONGSWORD_COUNTER_TIMING_ANCHORS,
-  visualDecision: 'ADOPT + TIME-REMAP — preserve the complete Melee_Block_Attack motion arc, bring the strong ~40% contact silhouette forward, accent contact briefly, and protect the authored settle',
+  legacyOnly: true,
+  productionEnabled: false,
+  retiredByStage: 'G3.5.1',
+  visualDecision: 'G3.5.1 LEGACY COMPATIBILITY ONLY — keep the G3.4 Melee_Block_Attack timing for regression labs, but production Parry follow-up now returns control to the existing directional attack system.',
+  ...guardActionSemanticAssessment({
+    intendedRole: GUARD_ACTION_SEMANTIC_ROLES.LEGACY_COUNTER_PRESENTATION,
+    sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_ATTACK_PUSH,
+    fit: GUARD_ACTION_SEMANTIC_FIT.PROVISIONAL,
+    replacementRequired: false,
+    note: 'No replacement Counter animation is required. Melee_Block_Attack remains only for G3.4 regression evidence and may later be reused as Shield Bash / Guard Push.',
+  }),
 });
 
 function clamp(value, min, max) {

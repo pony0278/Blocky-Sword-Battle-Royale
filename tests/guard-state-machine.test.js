@@ -120,7 +120,7 @@ test('G3.1 re-press during exit re-enters guard without transient neutral', () =
   assert.equal(machine.guardHeld, true);
 });
 
-test('G3.4 authors Counter while preserving G3.2 transitions and G3.3.2 reactions', () => {
+test('G3.5 preserves Guard authority while sharing Block Hit presentation for Parry outcomes', () => {
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.GUARD_PRESS], 'local-intent');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.BLOCK_CONFIRMED], 'authoritative-combat');
   assert.equal(GUARD_EVENT_AUTHORITY[GUARD_EVENTS.PARRY_CONFIRMED], 'authoritative-combat');
@@ -155,12 +155,12 @@ test('G3.4 authors Counter while preserving G3.2 transitions and G3.3.2 reaction
   const parry = LONGSWORD_GUARD_PRESENTATION[GUARD_STATES.PARRY];
   assert.equal(parry.authored, true);
   assert.equal(parry.authoredStage, 'G3.3.2');
-  assert.equal(parry.clipId, 'SKYRIM_GUARD/shd_blockbash');
+  assert.equal(parry.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(parry.reactionProfileId, GUARD_REACTION_PROFILE_IDS.PARRY);
   assert.equal(parry.reactionVariant, GUARD_REACTION_VARIANTS.PARRY);
 
   const perfect = getGuardPresentation(GUARD_STATES.PARRY, { perfect: true });
-  assert.equal(perfect.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
+  assert.equal(perfect.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(perfect.reactionProfileId, GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY);
   assert.equal(perfect.reactionVariant, GUARD_REACTION_VARIANTS.PERFECT_PARRY);
 
@@ -175,7 +175,7 @@ test('G3.4 authors Counter while preserving G3.2 transitions and G3.3.2 reaction
   assert.equal(counter.inPlace, true);
 });
 
-test('G3.3.2 preserves the authoritative Perfect Parry payload in the active PARRY snapshot', () => {
+test('G3.5 preserves the authoritative Perfect Parry payload while sharing Block Hit presentation', () => {
   const machine = createGuardStateMachine();
   machine.send(GUARD_EVENTS.GUARD_PRESS);
   machine.send(GUARD_EVENTS.ENTER_COMPLETE);
@@ -188,7 +188,7 @@ test('G3.3.2 preserves the authoritative Perfect Parry payload in the active PAR
   assert.equal(result.snapshot.lastOutcome, 'parry');
   assert.equal(result.snapshot.lastTransition.authority, 'authoritative-combat');
   assert.equal(result.snapshot.lastTransition.payload.authorityTick, 451);
-  assert.equal(result.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
+  assert.equal(result.snapshot.presentation.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(result.snapshot.presentation.reactionVariant, 'perfect-parry');
 });
 

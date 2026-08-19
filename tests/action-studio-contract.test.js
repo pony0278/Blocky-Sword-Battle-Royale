@@ -99,7 +99,7 @@ test('G1 KayKit Guard Source Review exposes the four source clips and hold compa
   assert.doesNotMatch(`${html}\n${app}`, /attackDirection|incomingDirection|guardDirection/);
 });
 
-test('Action Studio authors Guard Runtime statically and binds the real G3.4 controller', async () => {
+test('G3.5.1 keeps the static Guard surface but production preview relabels Counter as Parry Advantage', async () => {
   const template = await readFile(new URL('../tools/action-studio/index.template.html', import.meta.url), 'utf8');
   const html = await readFile(new URL('../tools/action-studio/index.html', import.meta.url), 'utf8');
   const externalController = await readFile(new URL('../tools/action-studio/studio-external-animation-controller.js', import.meta.url), 'utf8');
@@ -108,7 +108,6 @@ test('Action Studio authors Guard Runtime statically and binds the real G3.4 con
   assert.match(externalController, /createStudioGuardRuntimeController/);
   for (const surface of [template, html]) {
     assert.equal((surface.match(/id="guardRuntimePanel"/g) || []).length, 1);
-    assert.match(surface, /Guard Runtime · G3\.4/);
     assert.match(surface, /data-guard-runtime-static="true"/);
     assert.match(surface, /data-controller-bound="false"/);
     assert.match(surface, /data-guard-runtime="hold"/);
@@ -122,12 +121,16 @@ test('Action Studio authors Guard Runtime statically and binds the real G3.4 con
   assert.match(guardController, /resolveGuardPanel/);
   assert.match(guardController, /data-controller-bound/);
   assert.match(guardController, /data-guard-runtime-button-count/);
-  assert.doesNotMatch(guardController, /insertAdjacentHTML|legacyGuardRow|quickActions\.querySelector/);
-  assert.match(guardController, /Melee_Block_Attack/);
-  assert.match(guardController, /GUARD_EVENTS\.COUNTER_CONFIRMED/);
-  assert.match(guardController, /GUARD_WEAPON_MOUNT_PROFILE_IDS\.KAYKIT_DEFAULT/);
+  assert.match(guardController, /G3\.5\.1/);
+  assert.match(guardController, /Parry Advantage/);
+  assert.match(guardController, /data-guard-runtime-semantic/);
+  assert.match(guardController, /freeAttackFollowupOpen/);
+  assert.match(guardController, /Top \/ Left \/ Right/);
+  assert.doesNotMatch(guardController, /loadKayKitAnimationLibrary/);
+  assert.doesNotMatch(guardController, /Melee_Block_Attack/);
+  assert.doesNotMatch(guardController, /GUARD_EVENTS\.COUNTER_CONFIRMED/);
+  assert.doesNotMatch(guardController, /GUARD_WEAPON_MOUNT_PROFILE_IDS\.KAYKIT_DEFAULT/);
   assert.match(guardController, /GUARD_WEAPON_MOUNT_PROFILE_IDS\.SKYRIM_GUARD/);
-  assert.doesNotMatch(guardController, /machine\.send\(GUARD_EVENTS\.COUNTER_COMPLETE/);
 });
 
 test('Three-dependent character modules are importable without gameplay globals', () => {
