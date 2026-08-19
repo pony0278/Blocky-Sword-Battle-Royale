@@ -19,6 +19,10 @@ import {
   resolveGuardRecoveryProfile,
   samplePoseMatchedRecovery,
 } from './guard-recovery-bridge.js';
+import {
+  sampleWorldSwordRecoveryOrientation,
+  solveLocalQuaternionForWorld,
+} from './guard-world-sword-orientation.js';
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
@@ -62,6 +66,31 @@ function counterCompletionPayload(report) {
   });
 }
 
+function captureWorldQuaternion(THREE, object3d) {
+  if (!object3d?.getWorldQuaternion || !THREE?.Quaternion) return null;
+  object3d.updateWorldMatrix?.(true, false);
+  const value = new THREE.Quaternion();
+  object3d.getWorldQuaternion(value);
+  return Object.freeze({ x: value.x, y: value.y, z: value.z, w: value.w });
+}
+
+function applyWorldQuaternion(THREE, object3d, desiredWorld) {
+  if (!object3d?.quaternion || !desiredWorld) return false;
+  const parent = object3d.parent;
+  if (!parent?.getWorldQuaternion || !THREE?.Quaternion) return false;
+  parent.updateWorldMatrix?.(true, false);
+  const parentWorld = new THREE.Quaternion();
+  parent.getWorldQuaternion(parentWorld);
+  const local = solveLocalQuaternionForWorld(parentWorld, desiredWorld);
+  if (typeof object3d.quaternion.set === 'function') {
+    object3d.quaternion.set(local.x, local.y, local.z, local.w);
+  } else {
+    Object.assign(object3d.quaternion, local);
+  }
+  object3d.updateMatrixWorld?.(true);
+  return true;
+}
+
 function defaultReport(snapshot) {
   return Object.freeze({
     managed: false,
@@ -80,6 +109,7 @@ function defaultReport(snapshot) {
     recoveryDurationMs: 0,
     recoveryMomentumActive: false,
     recoverySourceState: null,
+    worldSwordOrientationStabilized: false,
     complete: false,
     completionEvent: null,
   });
@@ -187,6 +217,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
 
   function beginRecoveryBridge(snapshot, camera) {
     const sourceMount = captureObjectTransform(weaponObject3d);
+    const sourceWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
     const presentation = preparePresentation(snapshot);
     const duration = positiveDuration(character, presentation.clipId, 1);
     character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
@@ -201,6 +232,8 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       targetPose: captureRigPose(character.rig),
       sourceMount,
       targetMount: captureObjectTransform(weaponObject3d),
+      sourceWorldQuaternion,
+      targetWorldQuaternion: captureWorldQuaternion(THREE, weaponObject3d),
       profile: resolveGuardRecoveryProfile(snapshot),
       targetClipDuration: duration,
     });
@@ -240,6 +273,20 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       );
       applyObjectTransform(weaponObject3d, mount);
     }
+
+    const stabilizeCounterSword = bridge.sourceState === GUARD_STATES.COUNTER
+      && bridge.sourceWorldQuaternion
+      && bridge.targetWorldQuaternion;
+    let worldSwordOrientationStabilized = false;
+    if (stabilizeCounterSword) {
+      const desiredWorld = sampleWorldSwordRecoveryOrientation(
+        bridge.sourceWorldQuaternion,
+        bridge.targetWorldQuaternion,
+        recovery.progress,
+      );
+      worldSwordOrientationStabilized = applyWorldQuaternion(THREE, weaponObject3d, desiredWorld);
+    }
+
     character.update?.(0, camera);
 
     return Object.freeze({
@@ -256,6 +303,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       recoveryDurationMs: recovery.durationMs,
       recoveryMomentumActive: recovery.momentumActive,
       recoverySourceState: bridge.sourceState,
+      worldSwordOrientationStabilized,
       complete: recovery.complete,
       completionEvent: GUARD_EVENTS.RECOVER_COMPLETE,
     });
