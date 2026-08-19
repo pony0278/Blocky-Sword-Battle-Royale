@@ -7,16 +7,14 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PR head for temporary standalone regeneration
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,22 +27,14 @@ jobs:
       - name: Build Action Studio
         run: npm run build:action-studio
 
-      - name: Commit regenerated standalone Action Studio
-        shell: bash
-        run: |
-          if git diff --quiet -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
-            echo 'Standalone Action Studio already current.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
-          git commit -m 'G3.5.1P-T3 rebuild standalone Action Studio'
-          git push origin HEAD:${{ github.head_ref }}
-
       - name: Verify standalone Action Studio files are current
         shell: bash
-        run: git diff --exit-code -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+        run: |
+          if ! git diff --exit-code -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
+            echo 'Generated standalone Action Studio files are stale.' >&2
+            echo 'Run npm run build:action-studio and commit tools/action-studio/action-studio.bundle.js + index.html.' >&2
+            exit 1
+          fi
 
       - name: Verify Action Studio Guard Runtime browser surface
         shell: bash
