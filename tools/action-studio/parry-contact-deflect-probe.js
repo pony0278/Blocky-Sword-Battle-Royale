@@ -36,6 +36,36 @@ let elapsedMs = 0;
 let playing = false;
 let lastFrameAt = performance.now();
 
+function createDebugShieldMarker(opacity) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({
+    color:0x8fc7ff,
+    wireframe:true,
+    transparent:true,
+    opacity,
+    depthTest:false,
+  });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.055, 8, 1, false), material);
+  body.rotation.x = Math.PI / 2;
+  body.renderOrder = 10;
+  group.add(body);
+  const boss = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6), material.clone());
+  boss.position.z = 0.04;
+  boss.renderOrder = 11;
+  group.add(boss);
+  return group;
+}
+
+const liveShieldMarker = createDebugShieldMarker(0.92);
+const contactShieldGhost = createDebugShieldMarker(0.22);
+scene.add(contactShieldGhost, liveShieldMarker);
+const shieldContactWorld = new THREE.Vector3();
+const shieldCurrentWorld = new THREE.Vector3();
+const shieldVectorGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const shieldVector = new THREE.Line(shieldVectorGeometry, new THREE.LineBasicMaterial({ color:0x9fd0ff, transparent:true, opacity:0.75, depthTest:false }));
+shieldVector.renderOrder = 12;
+scene.add(shieldVector);
+
 const ui = Object.fromEntries([
   'hudState','hudDetail','timeline','timeLabel','contactEnd','contactEndValue','holdMs','holdValue','blendMs','blendValue',
   'deflectStart','deflectStartValue','deflectEnd','deflectEndValue','blendLead','blendLeadValue','deflectRate','deflectRateValue',
@@ -63,14 +93,18 @@ function playbackOptions() {
   return { inPlace:true, rootRotationPolicy:'lock', loop:false };
 }
 
-function captureBonePose(clipId, sourceTimeSeconds) {
-  character.sampleAnimation(clipId, sourceTimeSeconds, playbackOptions());
-  character.object3d.updateMatrixWorld(true);
+function snapshotBonePose() {
   return Object.fromEntries(Object.entries(character.rig.bones).map(([name,bone]) => [name, {
     position: bone.position.clone(),
     quaternion: bone.quaternion.clone(),
     scale: bone.scale.clone(),
   }]));
+}
+
+function captureBonePose(clipId, sourceTimeSeconds) {
+  character.sampleAnimation(clipId, sourceTimeSeconds, playbackOptions());
+  character.object3d.updateMatrixWorld(true);
+  return snapshotBonePose();
 }
 
 function applyBonePose(snapshot) {
@@ -83,6 +117,28 @@ function applyBonePose(snapshot) {
   }
   character.object3d.updateMatrixWorld(true);
   character.update(0, camera);
+}
+
+function computeContactShieldReference() {
+  if (!profile || !library) return;
+  const current = snapshotBonePose();
+  character.sampleAnimation(profile.contactClipId, profile.contactWindow.endSeconds, playbackOptions());
+  character.object3d.updateMatrixWorld(true);
+  character.sockets.HAND_L.getWorldPosition(shieldContactWorld);
+  contactShieldGhost.position.copy(shieldContactWorld);
+  applyBonePose(current);
+}
+
+function updateShieldMarkers() {
+  character.sockets.HAND_L.getWorldPosition(shieldCurrentWorld);
+  liveShieldMarker.position.copy(shieldCurrentWorld);
+  const positions = shieldVector.geometry.attributes.position;
+  positions.setXYZ(0, shieldContactWorld.x, shieldContactWorld.y, shieldContactWorld.z);
+  positions.setXYZ(1, shieldCurrentWorld.x, shieldCurrentWorld.y, shieldCurrentWorld.z);
+  positions.needsUpdate = true;
+  shieldVector.visible = Boolean(profile);
+  contactShieldGhost.visible = Boolean(profile);
+  liveShieldMarker.visible = Boolean(profile);
 }
 
 function applyBlendedPose(sample) {
@@ -108,6 +164,7 @@ function applySample(sample) {
   character.object3d.updateMatrixWorld(true);
   character.update(0, camera);
   sword?.update();
+  updateShieldMarkers();
 }
 
 function readOverrides() {
@@ -150,6 +207,7 @@ function rebuildProfile({ preserveElapsed = true } = {}) {
   if (!preserveElapsed) elapsedMs = 0;
   elapsedMs = Math.max(0, Math.min(elapsedMs, profile.durationMs));
   ui.timeline.value = String(Math.round(elapsedMs));
+  if (library) computeContactShieldReference();
   displayAt(elapsedMs);
 }
 
@@ -163,8 +221,9 @@ function displayAt(nextElapsedMs) {
   const source = sample.phase === PARRY_CONTACT_DEFLECT_PHASES.BLEND
     ? `${sample.fromClipId.replace('SKYRIM_GUARD/','')} → ${sample.toClipId.replace('SKYRIM_GUARD/','')} · blend ${Math.round(sample.blendAlpha * 100)}%`
     : `${sample.clipId.replace('SKYRIM_GUARD/','')} @ ${Number(sample.sourceTimeSeconds).toFixed(3)}s`;
+  const shieldDelta = shieldCurrentWorld.distanceTo(shieldContactWorld);
   ui.hudState.textContent = `${activeVariant.toUpperCase()} · ${activePreset.toUpperCase()} · ${sample.phase.toUpperCase()}`;
-  ui.hudDetail.textContent = `${source} · root rotation LOCK`;
+  ui.hudDetail.textContent = `${source} · shield Δ ${shieldDelta.toFixed(3)}m · root rotation LOCK`;
   return sample;
 }
 
@@ -227,6 +286,7 @@ function runVerification() {
     allThreeSourcesPresent:[
       'SKYRIM_GUARD/shd_blockhit','SKYRIM_GUARD/shd_blockbash','SKYRIM_GUARD/shd_blockbashpower',
     ].every((id) => library.clips.has(id)),
+    handLAvailable:Boolean(character.sockets?.HAND_L),
     sourceWindowsValid:flat.every((entry) => entry.sourceWindowsValid),
     contactBeforeDeflect:flat.every((entry) => entry.contactBeforeDeflect),
     rootRotationLocked:flat.every((entry) => entry.rootRotationLocked),
@@ -240,7 +300,8 @@ function runVerification() {
   document.documentElement.dataset.g351pNormal = scenarios.parry.compact.contactBeforeDeflect ? 'pass' : 'fail';
   document.documentElement.dataset.g351pPerfect = scenarios.perfect.compact.contactBeforeDeflect ? 'pass' : 'fail';
   document.documentElement.dataset.g351pTuning = gates.compactHoldsContactLonger && gates.compactTrimsDeflect ? 'pass' : 'fail';
-  ui.status.textContent = `G3.5.1P-T1 ${report.pass ? 'PASS' : 'FAIL'} · P0 ↔ compact redirect A/B`;
+  document.documentElement.dataset.g351pShield = gates.handLAvailable ? 'pass' : 'fail';
+  ui.status.textContent = `G3.5.1P-T1 ${report.pass ? 'PASS' : 'FAIL'} · P0 ↔ compact redirect A/B + HAND_L shield marker`;
   ui.status.className = report.pass ? 'good' : 'bad';
   ui.report.textContent = JSON.stringify(report,null,2);
   window.__G351P_RESULT__ = report;
