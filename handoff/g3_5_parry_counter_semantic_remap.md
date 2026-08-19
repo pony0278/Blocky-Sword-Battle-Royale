@@ -4,51 +4,87 @@
 
 Make Guard animation naming match what the player can actually read on screen.
 
-G3.5 does **not** change authoritative combat outcomes or Guard state-machine transitions. It classifies the currently wired animation sources honestly, preserves technically useful assets, and defines the acceptance criteria for replacement Parry / Perfect Parry / Counter motions.
+G3.5 does **not** change authoritative combat outcomes or Guard state-machine transitions. It separates defensive contact presentation from gameplay outcome, so Block / Parry / Perfect Parry may share one defensive reaction while Counter remains the offensive payoff.
 
-## Current semantic audit
+## Final semantic audit
 
-| Runtime role | Current source | What it actually reads as | G3.5 decision |
+| Runtime role | Production source | Readable meaning | G3.5 decision |
 | --- | --- | --- | --- |
-| Block Hit | `SKYRIM_GUARD/shd_blockhit` | Defensive impact / recoil | **KEEP** |
-| Parry | `SKYRIM_GUARD/shd_blockbash` | Shield bash | **REPLACE for Parry; keep as Shield Bash candidate** |
-| Perfect Parry | `SKYRIM_GUARD/shd_blockbashpower` | Strong / powered shield bash | **REPLACE for Perfect Parry; keep as Power Shield Bash candidate** |
+| Block Hit | `SKYRIM_GUARD/shd_blockhit` | Defensive contact / recoil | **KEEP** |
+| Parry | `SKYRIM_GUARD/shd_blockhit` | Successful timed block | **SHARE Block Hit motion** |
+| Perfect Parry | `SKYRIM_GUARD/shd_blockhit` | Higher-quality successful timed block | **SHARE Block Hit motion** |
 | Counter | `Melee_Block_Attack` | Block attack / shield-forward push | **REPLACE for Counter; keep as Shield Bash / Guard Push candidate** |
 
-## Semantic contract
+## Core semantic decision
 
-### Guard
+Parry is **not** a separate attack animation requirement.
 
-Readable meaning: sustained defensive posture. The sword + shield close the body opening and face the opponent.
+For this combat model:
 
-### Parry
+- **Block** = the defender successfully stops an incoming attack;
+- **Parry** = the defender stops it with correct timing and earns a Counter opportunity;
+- **Perfect Parry** = the same defensive contact outcome with a stronger gameplay reward / presentation accent;
+- **Counter** = the actual offensive retaliation after a confirmed Parry.
 
-Readable meaning: a short defensive **deflection**, not an attack.
+Therefore Block, Parry and Perfect Parry can legitimately share the same validated defensive contact animation.
 
-Replacement motion criteria:
+The semantic difference belongs primarily in:
 
-- short, reactive defensive movement;
-- shield or sword redirects the incoming attack line laterally or upward;
-- limited forward body displacement;
-- should not look like the character is trying to hit the opponent with the shield;
-- finishes in a weapon-ready pose that can immediately flow into Counter.
+- authoritative combat outcome;
+- Counter Window timing;
+- opponent stagger / vulnerability;
+- hit-stop;
+- FX / audio;
+- UI feedback if desired.
 
-### Perfect Parry
+It does **not** require a separate shield-bash or deflect animation merely to prove that a Parry happened.
 
-Readable meaning: the same defensive deflection language as normal Parry, but with a stronger and clearer contact accent.
+## Runtime mapping
 
-Replacement motion criteria:
+### Shared defensive contact
 
-- still reads primarily as a deflection rather than a shield bash;
-- may commit the torso/arms more strongly;
-- contact should visibly open the opponent's attack line;
-- must leave a readable Counter opportunity.
+`SKYRIM_GUARD/shd_blockhit`
 
-### Counter
+- source asset duration: `0.80s`
+- validated production window: `0.00–0.60s`
+- root rotation policy: `lock`
 
-Readable meaning: the offensive payoff after a successful Parry.
+All three defensive outcomes now sample this same source window.
 
-Replacement motion criteria:
+Their gameplay/presentation windows remain distinct:
+
+- Block Hit Counter Window: `0.24–0.60s`
+- Parry Counter Window: `0.08–0.333...s`
+- Perfect Parry Counter Window: `0.10–0.48s`
+
+Sharing one animation therefore does **not** collapse the three outcomes into one state.
+
+## Shield Bash assets
+
+The following clips are no longer used as Parry presentation sources:
+
+- `shd_blockbash`
+- `shd_blockbashpower`
+
+Do not delete them. They remain useful future candidates for a dedicated Shield Bash / Power Shield Bash mechanic.
+
+This is a semantic cleanup, not asset rejection.
+
+## Counter
+
+Counter remains the only unresolved semantic gap in G3.5.
+
+Current source:
+
+`Melee_Block_Attack`
+
+Current problem:
+
+- reads as a shield-forward push / block attack;
+- right-hand longsword is not the clear offensive payoff;
+- therefore it does not communicate a true retaliation after Parry.
+
+### Counter replacement criteria
 
 - **right-hand longsword is the primary attacking tool**;
 - clear slash or thrust contact silhouette shortly after launch;
@@ -56,44 +92,26 @@ Replacement motion criteria:
 - should feel faster and more decisive than a normal neutral attack;
 - recovery must be able to blend back into Triangle Guard.
 
-## Asset policy
+## Recommended next stage
 
-Do not delete the current mismatched sources. They are technically valid and useful for a future Shield Bash family:
+### G3.5.1 — Counter Source Replacement
 
-- `shd_blockbash` → Shield Bash candidate
-- `shd_blockbashpower` → Power Shield Bash candidate
-- `Melee_Block_Attack` → Shield Bash / Guard Push candidate
+A dedicated Parry source search is no longer required.
 
-This avoids wasting already-retargeted and runtime-safe animation work.
+Search only for the missing offensive response. Useful keywords:
 
-## Runtime policy for G3.5
-
-Until replacement motions are supplied:
-
-- keep current clips wired so existing Guard flow, CI, and Action Studio inspection remain functional;
-- mark Parry / Perfect Parry / Counter profiles with `semanticFit: mismatch` and `replacementRequired: true`;
-- do not call these animations visually approved in future handoffs;
-- Block Hit remains semantically approved.
-
-## Suggested next stage
-
-### G3.5.1 — Parry Source Replacement
-
-When a candidate animation is available, review it first against the Parry semantic checklist before changing runtime mapping.
-
-### G3.5.2 — Counter Source Replacement
-
-Prefer a compact longsword slash or thrust with a clear early contact pose. Only after visual approval should the existing `Melee_Block_Attack` mapping be replaced.
-
-## Search brief for new animation assets
-
-Useful search terms:
-
-- `shield parry animation`
-- `weapon deflect animation`
-- `sword parry animation`
 - `one handed sword riposte animation`
 - `longsword counter attack animation`
 - `sword riposte FBX`
+- `sword counter slash animation`
+- `sword counter thrust animation`
 
-For Counter, **riposte** is often a better search term than `counter`, because it specifically describes an immediate attack following a successful parry.
+For this role, **riposte** is a particularly useful search term because it describes the immediate offensive answer after a successful parry.
+
+## Non-goals
+
+- no Guard FSM redesign;
+- no authority changes;
+- no removal of Skyrim shield-bash assets;
+- no new Counter asset adopted in this stage;
+- no claim that Block / Parry / Perfect Parry are identical gameplay outcomes — only their defensive contact motion is shared.
