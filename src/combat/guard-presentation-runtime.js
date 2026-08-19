@@ -19,10 +19,7 @@ import {
   resolveGuardRecoveryProfile,
   samplePoseMatchedRecovery,
 } from './guard-recovery-bridge.js';
-import {
-  sampleWorldSwordRecoveryOrientation,
-  solveLocalQuaternionForWorld,
-} from './guard-world-sword-orientation.js';
+import { sampleWorldSwordRecoveryOrientation } from './guard-world-sword-orientation.js';
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
@@ -74,43 +71,47 @@ function captureWorldQuaternion(THREE, object3d) {
   return Object.freeze({ x: value.x, y: value.y, z: value.z, w: value.w });
 }
 
+function releaseWorldMatrixOverride(object3d) {
+  if (!object3d || object3d.matrixAutoUpdate !== false) return;
+  object3d.matrixAutoUpdate = true;
+}
+
 function applyWorldQuaternion(THREE, object3d, desiredWorld) {
-  if (!object3d?.quaternion || !desiredWorld || !THREE?.Quaternion) return false;
+  if (!object3d || !desiredWorld || !THREE?.Matrix4 || !THREE?.Vector3 || !THREE?.Quaternion) return false;
   const parent = object3d.parent;
-  if (!parent?.getWorldQuaternion) return false;
+  if (!parent?.matrixWorld) return false;
 
   parent.updateWorldMatrix?.(true, false);
-  const parentWorld = new THREE.Quaternion();
-  parent.getWorldQuaternion(parentWorld);
-
-  const local = solveLocalQuaternionForWorld(parentWorld, desiredWorld);
-  if (typeof object3d.quaternion.set === 'function') {
-    object3d.quaternion.set(local.x, local.y, local.z, local.w);
-  } else {
-    Object.assign(object3d.quaternion, local);
-  }
-
-  const desired = new THREE.Quaternion(desiredWorld.x, desiredWorld.y, desiredWorld.z, desiredWorld.w).normalize();
-  const actual = new THREE.Quaternion();
-  const worldError = new THREE.Quaternion();
-  const parentInverse = new THREE.Quaternion();
-  const localError = new THREE.Quaternion();
-  const scratch = new THREE.Quaternion();
-
-  for (let iteration = 0; iteration < 6; iteration += 1) {
-    object3d.updateWorldMatrix?.(true, false);
-    object3d.getWorldQuaternion(actual);
-    if (actual.angleTo(desired) <= 1e-5) break;
-
-    parent.updateWorldMatrix?.(true, false);
-    parent.getWorldQuaternion(parentWorld);
-    worldError.copy(desired).multiply(scratch.copy(actual).invert()).normalize();
-    parentInverse.copy(parentWorld).invert();
-    localError.copy(parentInverse).multiply(worldError).multiply(parentWorld).normalize();
-    object3d.quaternion.premultiply(localError).normalize();
-  }
-
   object3d.updateWorldMatrix?.(true, false);
+
+  const worldPosition = new THREE.Vector3();
+  const currentWorldQuaternion = new THREE.Quaternion();
+  const worldScale = new THREE.Vector3();
+  object3d.matrixWorld.decompose(worldPosition, currentWorldQuaternion, worldScale);
+
+  const desiredQuaternion = new THREE.Quaternion(
+    desiredWorld.x,
+    desiredWorld.y,
+    desiredWorld.z,
+    desiredWorld.w,
+  ).normalize();
+  const desiredWorldMatrix = new THREE.Matrix4().compose(
+    worldPosition,
+    desiredQuaternion,
+    worldScale,
+  );
+  const localMatrix = new THREE.Matrix4()
+    .copy(parent.matrixWorld)
+    .invert()
+    .multiply(desiredWorldMatrix);
+
+  // A scaled bone hierarchy can require a local counter-shear to realize an exact
+  // world-space sword rotation. Preserve that matrix only for this recovery frame;
+  // the next runtime sample restores normal authored TRS before applying its mount.
+  object3d.matrixAutoUpdate = false;
+  object3d.matrix.copy(localMatrix);
+  object3d.matrixWorld.copy(parent.matrixWorld).multiply(object3d.matrix);
+  object3d.matrixWorldNeedsUpdate = false;
   return true;
 }
 
@@ -166,6 +167,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
   let stableGuardWorldQuaternion = null;
 
   function preparePresentation(snapshot) {
+    releaseWorldMatrixOverride(weaponObject3d);
     const presentation = snapshot?.presentation || {};
     applyWeaponMountProfile(presentation.weaponMountProfileId || null, snapshot);
     return presentation;
@@ -422,6 +424,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     }
     if (snapshot.state === GUARD_STATES.NEUTRAL && lastStoppedSequence !== snapshot.sequence) {
       clearRecoveryBridge();
+      releaseWorldMatrixOverride(weaponObject3d);
       sourcePoseSample = null;
       previousPoseSample = null;
       character.stopAnimation?.();
