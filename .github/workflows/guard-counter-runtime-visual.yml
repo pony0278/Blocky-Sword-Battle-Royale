@@ -12,6 +12,7 @@ on:
       - 'src/character/character-sockets.js'
       - 'src/character/default-character-mount.js'
       - 'tools/action-studio/guard-counter-runtime-lab.*'
+      - 'tools/action-studio/counter-recover-first-frame-lab.*'
       - '.github/workflows/guard-counter-runtime-visual.yml'
   workflow_dispatch:
 
@@ -44,6 +45,7 @@ jobs:
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
           BASE='http://127.0.0.1:4173/tools/action-studio/guard-counter-runtime-lab.html'
+          FIRST_FRAME_BASE='http://127.0.0.1:4173/tools/action-studio/counter-recover-first-frame-lab.html'
 
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=35000 --dump-dom \
@@ -59,6 +61,20 @@ jobs:
           grep -q 'data-g34-perfect="pass"' artifacts/g3-4/g34-dom.html
           grep -q 'data-g34-counter-clip="pass"' artifacts/g3-4/g34-dom.html
           grep -q 'data-g3411-world-sword="pass"' artifacts/g3-4/g34-dom.html
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1200,900 --virtual-time-budget=35000 --dump-dom \
+            "${FIRST_FRAME_BASE}" > artifacts/g3-4/g3412-first-frame-dom.html
+
+          if ! grep -q 'data-g3412="pass"' artifacts/g3-4/g3412-first-frame-dom.html; then
+            echo 'G3.4.1.2 Counter Recover first-frame continuity gate failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-4/g3412-first-frame-dom.html || true
+            cat /tmp/g34-http.log || true
+            exit 1
+          fi
+          grep -q 'data-g3412-zero="pass"' artifacts/g3-4/g3412-first-frame-dom.html
+          grep -q 'data-g3412-first-frame="pass"' artifacts/g3-4/g3412-first-frame-dom.html
+          grep -q 'data-g3412-second-frame="pass"' artifacts/g3-4/g3412-first-frame-dom.html
 
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1500,1000 --virtual-time-budget=25000 \
