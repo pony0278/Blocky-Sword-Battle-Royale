@@ -85,6 +85,17 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
     },
     sampleAnimation(name, timeSeconds, sampleOptions = {}) {
       prepareAnimation(name, sampleOptions);
+      // Guard correction layers are multiplicative local quaternion offsets. A random-access
+      // Skyrim Guard sample must therefore begin from both a clean rig pose and a clean
+      // AnimationMixer action state. Restoring bones alone is insufficient because the
+      // active action/bindings can retain the previously evaluated result until a later
+      // mixer evaluation. Reset both layers, then sample the requested source time exactly.
+      const deterministicSample = sampleOptions.resetPose === true
+        || String(name || '').startsWith('SKYRIM_GUARD/');
+      if (deterministicSample) {
+        animation.stop();
+        resetForAnimation();
+      }
       mode = 'kaykit';
       externalAnimationClock = true;
       return animation.sample(name, timeSeconds, sampleOptions);

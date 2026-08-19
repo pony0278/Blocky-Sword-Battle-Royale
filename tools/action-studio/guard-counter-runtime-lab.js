@@ -21,7 +21,9 @@ const key=new THREE.DirectionalLight(0xffffff,.95); key.position.set(3,5,4); sce
 scene.add(new THREE.GridHelper(8,16,0x34435d,0x202a3b));
 const character=createDefaultCharacter(THREE); scene.add(character.object3d);
 const machine=createGuardStateMachine();
+const RIGHT_CHAIN=Object.freeze(['chest','upperarm.r','lowerarm.r','wrist.r','hand.r','handslot.r']);
 let runtime,sword,mountRuntime,activeVariant='normal',counterDurationMs=750;
+let lastCanonicalGuardWorldQuaternion=null,lastCanonicalGuardRig=null,lastCanonicalGuardMount=null;
 const mountHistory=[];
 const status=document.getElementById('status'), reportNode=document.getElementById('report');
 const hudState=document.getElementById('hudState'), hudDetail=document.getElementById('hudDetail');
@@ -34,11 +36,55 @@ function setView(v){
 }
 function resize(){ const w=Math.max(1,canvas.clientWidth),h=Math.max(1,canvas.clientHeight); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 function applyMount(profileId,snapshot){ const r=mountRuntime?.apply(profileId); if(r?.applied){ mountHistory.push({profileId,state:snapshot?.state||null,sequence:snapshot?.sequence??null}); sword?.update(); } }
-function mountSnapshot(){ const o=sword?.object3d; return o?{p:[o.position.x,o.position.y,o.position.z],q:[o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w],s:[o.scale.x,o.scale.y,o.scale.z]}:null; }
-function mountDelta(a,b){ if(!a||!b)return Infinity; return Math.max(...a.p.map((v,i)=>Math.abs(v-b.p[i])),...a.q.map((v,i)=>Math.abs(v-b.q[i])),...a.s.map((v,i)=>Math.abs(v-b.s[i]))); }
+function mountSnapshot(){ const o=sword?.object3d; return o?{p:[o.position.x,o.position.y,o.position.z],q:[o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w],s:[o.scale.x,o.scale.y,o.scale.z],matrixAutoUpdate:o.matrixAutoUpdate}:null; }
+function rigSnapshot(){ return Object.fromEntries(RIGHT_CHAIN.map(id=>{const b=character.rig?.bones?.[id];return [id,b?[b.quaternion.x,b.quaternion.y,b.quaternion.z,b.quaternion.w]:null]})); }
+function quaternionComponentDelta(a,b){
+  if(!a||!b)return Infinity;
+  const direct=Math.max(...a.map((v,i)=>Math.abs(v-b[i]))),flipped=Math.max(...a.map((v,i)=>Math.abs(v+b[i])));
+  return Math.min(direct,flipped);
+}
+function mountPositionScaleDelta(a,b){ if(!a||!b)return Infinity; return Math.max(...a.p.map((v,i)=>Math.abs(v-b.p[i])),...a.s.map((v,i)=>Math.abs(v-b.s[i]))); }
+function mountDelta(a,b){ if(!a||!b)return Infinity; return Math.max(mountPositionScaleDelta(a,b),quaternionComponentDelta(a.q,b.q)); }
+function worldQuaternionSnapshot(){
+  const o=sword?.object3d; if(!o)return null; o.updateWorldMatrix?.(true,false);
+  const q=new THREE.Quaternion(); o.getWorldQuaternion(q); return [q.x,q.y,q.z,q.w];
+}
+function quaternionAngleDegrees(a,b){
+  if(!a||!b)return Infinity;
+  const dot=Math.abs(a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3]);
+  return 2*Math.acos(Math.max(-1,Math.min(1,dot)))*180/Math.PI;
+}
+function rigDiffDegrees(a,b){return Object.fromEntries(RIGHT_CHAIN.map(id=>[id,quaternionAngleDegrees(a?.[id],b?.[id])]))}
+function clipTargetSummary(clip){
+  const names=(clip?.tracks||[]).map(track=>String(track.name||''));
+  return Object.fromEntries(RIGHT_CHAIN.map(id=>[id,names.filter(name=>name.startsWith(`${id}.`))]));
+}
+function analyzeWorldOrientation(samples,target){
+  const rows=samples.map(sample=>({progress:sample.progress,angleToGuardDeg:quaternionAngleDegrees(sample.quaternion,target),stabilized:sample.stabilized}));
+  const monotonic=rows.every((row,index)=>index===0||row.angleToGuardDeg<=rows[index-1].angleToGuardDeg+.25);
+  const activeBeforeFinish=rows.filter(row=>row.progress<1).every(row=>row.stabilized);
+  return {rows,monotonic,activeBeforeFinish};
+}
 function resetToHold(){
   machine.send(GUARD_EVENTS.RESET); runtime.sync(camera); machine.send(GUARD_EVENTS.GUARD_PRESS); runtime.sync(camera);
-  const r=runtime.update(180,camera); if(r.snapshot.state!==GUARD_STATES.HOLD) throw new Error(`Guard Enter failed: ${r.snapshot.state}`); return r;
+  const r=runtime.update(180,camera); if(r.snapshot.state!==GUARD_STATES.HOLD) throw new Error(`Guard Enter failed: ${r.snapshot.state}`);
+  lastCanonicalGuardWorldQuaternion=worldQuaternionSnapshot(); lastCanonicalGuardRig=rigSnapshot(); lastCanonicalGuardMount=mountSnapshot();
+  return r;
+}
+function probeHoldRepeatability(){
+  resetToHold();
+  const first={rig:rigSnapshot(),mount:mountSnapshot(),world:worldQuaternionSnapshot()};
+  runtime.sync(camera);
+  const second={rig:rigSnapshot(),mount:mountSnapshot(),world:worldQuaternionSnapshot()};
+  runtime.sync(camera);
+  const third={rig:rigSnapshot(),mount:mountSnapshot(),world:worldQuaternionSnapshot()};
+  const firstToSecond={rig:rigDiffDegrees(first.rig,second.rig),mount:mountDelta(first.mount,second.mount),worldDeg:quaternionAngleDegrees(first.world,second.world)};
+  const secondToThird={rig:rigDiffDegrees(second.rig,third.rig),mount:mountDelta(second.mount,third.mount),worldDeg:quaternionAngleDegrees(second.world,third.world)};
+  const maxRig=Math.max(...Object.values(firstToSecond.rig),...Object.values(secondToThird.rig));
+  // The scaled procedural hierarchy introduces about 0.054 degrees of getWorldQuaternion
+  // decomposition noise even for an identical clean Guard sample. Keep the local rig and
+  // mount gates strict, while allowing a sub-0.1-degree world-space numerical tolerance.
+  return {pass:maxRig<.01&&firstToSecond.mount<1e-6&&secondToThird.mount<1e-6&&firstToSecond.worldDeg<.1&&secondToThird.worldDeg<.1,firstToSecond,secondToThird};
 }
 function openCounterWindow(variant){
   resetToHold(); const perfect=variant==='perfect';
@@ -61,17 +107,30 @@ function displayCounter(variant,elapsedMs){
   character.object3d.updateMatrixWorld(true); sword?.update(); return r;
 }
 function verifyScenario(variant){
-  const historyStart=mountHistory.length, window=openCounterWindow(variant);
+  const historyStart=mountHistory.length, window=openCounterWindow(variant),canonicalGuardWorldQuaternion=[...(lastCanonicalGuardWorldQuaternion||[])],canonicalGuardRig=lastCanonicalGuardRig,canonicalGuardMount=lastCanonicalGuardMount;
   const noAuto=window.snapshot.state===GUARD_STATES.PARRY&&window.report.counterWindowOpen&&window.snapshot.lastOutcome==='parry';
   const {confirmed,synced:start}=confirmCounter(variant);
-  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot();
-  const ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition, recoverStartMount=mountSnapshot();
+  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot(),sourceWorldQuaternion=worldQuaternionSnapshot();
+  const ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition, recoverStartMount=mountSnapshot(),recoverStartWorldQuaternion=worldQuaternionSnapshot();
   const recoveryDurationMs=Number(ended.report.recoveryDurationMs)||0;
   const recoveryProfileId=ended.report.recoveryProfileId||null;
-  const startMountContinuous=mountDelta(sourceMount,recoverStartMount)<1e-5;
-  const mid=recoveryDurationMs>0?runtime.update(recoveryDurationMs*.5,camera):ended, midMount=mountSnapshot();
-  const finish=recoveryDurationMs>0?runtime.update(recoveryDurationMs*.5,camera):mid;
-  const targetMount=mountSnapshot();
+  const startWorldOrientationDeltaDeg=quaternionAngleDegrees(sourceWorldQuaternion,recoverStartWorldQuaternion);
+  const startMountPositionScaleContinuous=mountPositionScaleDelta(sourceMount,recoverStartMount)<1e-5;
+  const startMountContinuous=startMountPositionScaleContinuous&&startWorldOrientationDeltaDeg<2;
+  const progressPoints=[0,.05,.10,.25,.50,.75,1];
+  const worldSamples=[{progress:0,quaternion:recoverStartWorldQuaternion,stabilized:Boolean(ended.report.recoveryWorldSwordStabilized)}];
+  let current=ended,lastProgress=0,midMount=null;
+  for(const progress of progressPoints.slice(1)){
+    current=recoveryDurationMs>0?runtime.update(recoveryDurationMs*(progress-lastProgress),camera):current;
+    if(Math.abs(progress-.5)<1e-6)midMount=mountSnapshot();
+    worldSamples.push({progress,quaternion:worldQuaternionSnapshot(),stabilized:progress>=1||Boolean(current.report.recoveryWorldSwordStabilized)});
+    lastProgress=progress;
+  }
+  const finish=current,targetMount=mountSnapshot(),targetWorldQuaternion=worldQuaternionSnapshot(),finalGuardRig=rigSnapshot();
+  const canonicalToFinalGuardDeg=quaternionAngleDegrees(canonicalGuardWorldQuaternion,targetWorldQuaternion);
+  const canonicalRigDiffDegrees=rigDiffDegrees(canonicalGuardRig,finalGuardRig);
+  const canonicalMountDelta=mountDelta(canonicalGuardMount,targetMount);
+  const worldOrientation=analyzeWorldOrientation(worldSamples,targetWorldQuaternion);
   const mountActuallyBlends=startMountContinuous&&mountDelta(recoverStartMount,midMount)>1e-5&&mountDelta(midMount,targetMount)>1e-5;
   const history=mountHistory.slice(historyStart);
   const sawKayKit=history.some(x=>x.profileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT);
@@ -81,28 +140,39 @@ function verifyScenario(variant){
     &&start.report.correctionWeight===0&&before.snapshot.state===GUARD_STATES.COUNTER&&completion?.event===GUARD_EVENTS.COUNTER_COMPLETE
     &&completion?.authority==='presentation'&&completion?.payload?.counterProfileId===GUARD_COUNTER_PROFILE_IDS.LONGSWORD
     &&ended.snapshot.state===GUARD_STATES.RECOVER&&ended.report.weaponMountProfileId===GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD
-    &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&startMountContinuous&&mountActuallyBlends&&finish.snapshot.state===GUARD_STATES.HOLD
+    &&Boolean(recoveryProfileId)&&recoveryDurationMs>0&&startMountContinuous&&mountActuallyBlends
+    &&canonicalToFinalGuardDeg<.25&&worldOrientation.activeBeforeFinish&&worldOrientation.monotonic&&finish.snapshot.state===GUARD_STATES.HOLD
     &&sawKayKit&&sawSkyrimRecover;
   return {variant,noAutoCounter:noAuto,confirmAuthority:confirmed.snapshot.lastTransition?.authority||null,counterClip:start.report.clipId,
     counterProfileId:start.report.counterProfileId,counterMount:start.report.weaponMountProfileId,counterCorrectionWeight:start.report.correctionWeight,
     beforeEndState:before.snapshot.state,completionEvent:completion?.event||null,completionAuthority:completion?.authority||null,
     completionProfileId:completion?.payload?.counterProfileId||null,afterCounterState:ended.snapshot.state,afterCounterMount:ended.report.weaponMountProfileId,
-    recoveryProfileId,recoveryDurationMs,startMountContinuous,mountActuallyBlends,afterRecoveryState:finish.snapshot.state,
+    recoveryProfileId,recoveryDurationMs,startMountPositionScaleContinuous,startWorldOrientationDeltaDeg,startMountContinuous,mountActuallyBlends,
+    canonicalToFinalGuardDeg,canonicalRigDiffDegrees,canonicalMountDelta,canonicalGuardMount,finalGuardMount:targetMount,
+    recoveryWorldSwordStabilized:worldOrientation.activeBeforeFinish,worldSwordOrientationMonotonic:worldOrientation.monotonic,
+    worldSwordOrientation:worldOrientation.rows,afterRecoveryState:finish.snapshot.state,
     sawKayKitMount:sawKayKit,sawSkyrimRecoverMount:sawSkyrimRecover,pass};
 }
 function runVerification(kaykit,skyrim){
-  const clip=kaykit.clips.get('Melee_Block_Attack'); counterDurationMs=Math.max(.001,Number(clip?.duration)||0)*1000;
+  const clip=kaykit.clips.get('Melee_Block_Attack'),guardClip=skyrim.clips.get('SKYRIM_GUARD/shd_blockidle'); counterDurationMs=Math.max(.001,Number(clip?.duration)||0)*1000;
   const diagnostics=character.animation.getPreparedClipDiagnostics('Melee_Block_Attack',true);
+  const holdRepeatability=probeHoldRepeatability();
   const normal=verifyScenario('normal'),perfect=verifyScenario('perfect');
   const gates={skyrimGuardFamilyLoaded:skyrim.clips.size===4,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
-    inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
-    poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends};
-  const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1',pass:failures.length===0,
-    counterClip:{name:clip?.name||null,durationSeconds:Number(clip?.duration)||0,diagnostics},scenarios:{normal,perfect},mountHistory:[...mountHistory],gates,failures};
+    inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,guardHoldRepeatable:holdRepeatability.pass,
+    normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
+    poseMatchedMountRecovery:normal.startMountContinuous&&normal.mountActuallyBlends&&perfect.startMountContinuous&&perfect.mountActuallyBlends,
+    canonicalGuardTargetStable:normal.canonicalToFinalGuardDeg<.25&&perfect.canonicalToFinalGuardDeg<.25,
+    worldSpaceSwordOrientationStabilized:normal.recoveryWorldSwordStabilized&&normal.worldSwordOrientationMonotonic
+      &&perfect.recoveryWorldSwordStabilized&&perfect.worldSwordOrientationMonotonic};
+  const failures=Object.entries(gates).filter(([,v])=>!v).map(([k])=>k), report={stage:'G3.4.1.1',pass:failures.length===0,
+    counterClip:{name:clip?.name||null,durationSeconds:Number(clip?.duration)||0,diagnostics},holdRepeatability,
+    trackCoverage:{guard:clipTargetSummary(guardClip),counter:clipTargetSummary(clip)},scenarios:{normal,perfect},mountHistory:[...mountHistory],gates,failures};
   document.documentElement.dataset.g34=report.pass?'pass':'fail'; document.documentElement.dataset.g34Normal=normal.pass?'pass':'fail';
   document.documentElement.dataset.g34Perfect=perfect.pass?'pass':'fail'; document.documentElement.dataset.g34CounterClip=clip?'pass':'fail';
   document.documentElement.dataset.g341Recovery=gates.poseMatchedMountRecovery?'pass':'fail';
-  reportNode.textContent=JSON.stringify(report,null,2); window.__G34_RESULT__=report; status.textContent=`G3.4.1 ${report.pass?'PASS':'FAIL'} · authoritative Counter + inertial recovery`; status.className=report.pass?'good':'bad'; return report;
+  document.documentElement.dataset.g3411WorldSword=gates.worldSpaceSwordOrientationStabilized?'pass':'fail';
+  reportNode.textContent=JSON.stringify(report,null,2); window.__G34_RESULT__=report; status.textContent=`G3.4.1.1 ${report.pass?'PASS':'FAIL'} · Counter world-space sword stabilization`; status.className=report.pass?'good':'bad'; return report;
 }
 async function main(){
   const loader=new THREE.GLTFLoader();
@@ -123,5 +193,5 @@ document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',(
 timeline.addEventListener('input',()=>displayCounter(activeVariant,Number(timeline.value)));
 setView(new URLSearchParams(location.search).get('view')||'three'); resize(); addEventListener('resize',resize);
 (function frame(){if(sword)sword.update();renderer.render(scene,camera);requestAnimationFrame(frame)})();
-main().catch(error=>{document.documentElement.dataset.g34='fail';status.textContent=`G3.4.1 FAIL · ${error?.message||error}`;status.className='bad';reportNode.textContent=error?.stack||String(error);window.__G34_RESULT__={stage:'G3.4.1',pass:false,error:error?.stack||String(error)}});
+main().catch(error=>{document.documentElement.dataset.g34='fail';status.textContent=`G3.4.1.1 FAIL · ${error?.message||error}`;status.className='bad';reportNode.textContent=error?.stack||String(error);window.__G34_RESULT__={stage:'G3.4.1.1',pass:false,error:error?.stack||String(error)}});
 window.__G34_LAB__={displayCounter};
