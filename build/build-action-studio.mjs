@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,15 @@ const moduleBlocks = [];
 
 function normalizedRelativePath(filename) {
   return path.relative(repositoryRoot, filename).replaceAll(path.sep, '/');
+}
+
+function gitBlobVersion(content) {
+  const body = Buffer.from(content, 'utf8');
+  return createHash('sha1')
+    .update(Buffer.from(`blob ${body.length}\0`, 'utf8'))
+    .update(body)
+    .digest('hex')
+    .slice(0, 12);
 }
 
 async function compileModule(filename) {
@@ -66,6 +76,7 @@ const banner = [
 ].join('\n');
 const output = `${banner}\n(() => {\n'use strict';\n${moduleBlocks.join('\n\n')}\n})();\n`;
 await writeFile(outputFile, output, 'utf8');
+const bundleVersion = gitBlobVersion(output);
 
 const htmlTemplate = await readFile(htmlTemplateFile, 'utf8');
 const moduleTag = '<script type="module" src="./action-studio.js"></script>';
@@ -87,24 +98,58 @@ if (!moduleEntry) {
 const protocolAwareEntry = [
   '<script>',
   "    window.__ACTION_STUDIO_RUNTIME_STAGE = 'G2.5.2';",
+  `    window.__ACTION_STUDIO_BUNDLE_VERSION = '${bundleVersion}';`,
+  '    const actionStudioParams = new URLSearchParams(location.search);',
   "    if (location.protocol === 'file:') {",
-  "      window.__ACTION_STUDIO_ENTRY_MODE = 'bundle';",
+  "      window.__ACTION_STUDIO_ENTRY_MODE = 'bundle-file';",
+  "      document.documentElement.dataset.actionStudioEntry = 'bundle-file';",
   "      document.getElementById('feelAbControls')?.setAttribute('hidden', '');",
   "      const script = document.createElement('script');",
   "      script.src = './action-studio.bundle.js';",
+  "      script.dataset.actionStudioVersion = window.__ACTION_STUDIO_BUNDLE_VERSION;",
   '      document.body.appendChild(script);',
-  '    } else {',
+  "    } else if (actionStudioParams.get('g252') === '1') {",
   "      window.__ACTION_STUDIO_ENTRY_MODE = 'module';",
-  "      import('./action-studio.js').then(() => {",
-  "        if (new URLSearchParams(location.search).get('g252') === '1') {",
-  "          return import('./action-studio-runtime-parity.js');",
+  "      document.documentElement.dataset.actionStudioEntry = 'module';",
+  "      import('./action-studio.js').then(() => import('./action-studio-runtime-parity.js'));",
+  '    } else {',
+  "      window.__ACTION_STUDIO_ENTRY_MODE = 'bundle-http';",
+  "      document.documentElement.dataset.actionStudioEntry = 'bundle-http';",
+  "      const script = document.createElement('script');",
+  `      script.src = './action-studio.bundle.js?v=${bundleVersion}';`,
+  "      script.dataset.actionStudioVersion = window.__ACTION_STUDIO_BUNDLE_VERSION;",
+  '      script.onload = async () => {',
+  "        document.documentElement.dataset.actionStudioBoot = 'pass';",
+  "        if (actionStudioParams.get('pagesGuardGate') !== '1') return;",
+  '        const root = document.documentElement;',
+  '        try {',
+  '          const runtime = window.__ACTION_STUDIO_GUARD_RUNTIME__;',
+  "          if (!runtime?.start) throw new Error('Guard Runtime controller unavailable after bundle boot');",
+  "          await runtime.start('parry');",
+  '          await new Promise((resolve) => setTimeout(resolve, 380));',
+  '          const report = runtime.report || {};',
+  "          const clipId = String(report.clipId || '');",
+  '          const sourceMs = Math.round((Number(report.sourceTimeSeconds) || 0) * 1000);',
+  "          const pass = runtime.mode === 'parry'",
+  "            && clipId === 'SKYRIM_GUARD/parry_contact_deflect_t3'",
+  '            && sourceMs >= 320',
+  '            && sourceMs <= 520;',
+  "          root.dataset.pagesGuardGate = pass ? 'pass' : 'fail';",
+  '          root.dataset.pagesGuardClip = clipId;',
+  '          root.dataset.pagesGuardSourceMs = String(sourceMs);',
+  '        } catch (error) {',
+  "          root.dataset.pagesGuardGate = 'fail';",
+  "          root.dataset.pagesGuardError = String(error?.message || error);",
   '        }',
-  '        return null;',
-  '      });',
+  '      };',
+  '      script.onerror = () => {',
+  "        document.documentElement.dataset.actionStudioBoot = 'fail';",
+  '      };',
+  '      document.body.appendChild(script);',
   '    }',
   '  </script>',
 ].join('\n');
 const standaloneHtml = htmlTemplate.replace(moduleEntry, protocolAwareEntry);
 await writeFile(htmlOutputFile, standaloneHtml, 'utf8');
 console.log(`Built ${normalizedRelativePath(outputFile)} from ${moduleIds.size} ES modules (${output.length} bytes).`);
-console.log(`Built ${normalizedRelativePath(htmlOutputFile)} from ${normalizedRelativePath(htmlTemplateFile)}.`);
+console.log(`Built ${normalizedRelativePath(htmlOutputFile)} from ${normalizedRelativePath(htmlTemplateFile)} · HTTP bundle ${bundleVersion}.`);
