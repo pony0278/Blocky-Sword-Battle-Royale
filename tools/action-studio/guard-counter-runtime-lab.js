@@ -35,7 +35,13 @@ function setView(v){
 function resize(){ const w=Math.max(1,canvas.clientWidth),h=Math.max(1,canvas.clientHeight); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 function applyMount(profileId,snapshot){ const r=mountRuntime?.apply(profileId); if(r?.applied){ mountHistory.push({profileId,state:snapshot?.state||null,sequence:snapshot?.sequence??null}); sword?.update(); } }
 function mountSnapshot(){ const o=sword?.object3d; return o?{p:[o.position.x,o.position.y,o.position.z],q:[o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w],s:[o.scale.x,o.scale.y,o.scale.z]}:null; }
-function mountDelta(a,b){ if(!a||!b)return Infinity; return Math.max(...a.p.map((v,i)=>Math.abs(v-b.p[i])),...a.q.map((v,i)=>Math.abs(v-b.q[i])),...a.s.map((v,i)=>Math.abs(v-b.s[i]))); }
+function quaternionComponentDelta(a,b){
+  if(!a||!b)return Infinity;
+  const direct=Math.max(...a.map((v,i)=>Math.abs(v-b[i]))),flipped=Math.max(...a.map((v,i)=>Math.abs(v+b[i])));
+  return Math.min(direct,flipped);
+}
+function mountPositionScaleDelta(a,b){ if(!a||!b)return Infinity; return Math.max(...a.p.map((v,i)=>Math.abs(v-b.p[i])),...a.s.map((v,i)=>Math.abs(v-b.s[i]))); }
+function mountDelta(a,b){ if(!a||!b)return Infinity; return Math.max(mountPositionScaleDelta(a,b),quaternionComponentDelta(a.q,b.q)); }
 function worldQuaternionSnapshot(){
   const o=sword?.object3d; if(!o)return null; o.updateWorldMatrix?.(true,false);
   const q=new THREE.Quaternion(); o.getWorldQuaternion(q); return [q.x,q.y,q.z,q.w];
@@ -79,13 +85,15 @@ function verifyScenario(variant){
   const historyStart=mountHistory.length, window=openCounterWindow(variant);
   const noAuto=window.snapshot.state===GUARD_STATES.PARRY&&window.report.counterWindowOpen&&window.snapshot.lastOutcome==='parry';
   const {confirmed,synced:start}=confirmCounter(variant);
-  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot();
-  const ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition, recoverStartMount=mountSnapshot();
+  const before=runtime.update(Math.max(0,counterDurationMs-2),camera), sourceMount=mountSnapshot(),sourceWorldQuaternion=worldQuaternionSnapshot();
+  const ended=runtime.update(3,camera), completion=ended.snapshot.lastTransition, recoverStartMount=mountSnapshot(),recoverStartWorldQuaternion=worldQuaternionSnapshot();
   const recoveryDurationMs=Number(ended.report.recoveryDurationMs)||0;
   const recoveryProfileId=ended.report.recoveryProfileId||null;
-  const startMountContinuous=mountDelta(sourceMount,recoverStartMount)<1e-5;
+  const startWorldOrientationDeltaDeg=quaternionAngleDegrees(sourceWorldQuaternion,recoverStartWorldQuaternion);
+  const startMountPositionScaleContinuous=mountPositionScaleDelta(sourceMount,recoverStartMount)<1e-5;
+  const startMountContinuous=startMountPositionScaleContinuous&&startWorldOrientationDeltaDeg<2;
   const progressPoints=[0,.05,.10,.25,.50,.75,1];
-  const worldSamples=[{progress:0,quaternion:worldQuaternionSnapshot(),stabilized:Boolean(ended.report.recoveryWorldSwordStabilized)}];
+  const worldSamples=[{progress:0,quaternion:recoverStartWorldQuaternion,stabilized:Boolean(ended.report.recoveryWorldSwordStabilized)}];
   let current=ended,lastProgress=0,midMount=null;
   for(const progress of progressPoints.slice(1)){
     current=recoveryDurationMs>0?runtime.update(recoveryDurationMs*(progress-lastProgress),camera):current;
@@ -111,8 +119,9 @@ function verifyScenario(variant){
     counterProfileId:start.report.counterProfileId,counterMount:start.report.weaponMountProfileId,counterCorrectionWeight:start.report.correctionWeight,
     beforeEndState:before.snapshot.state,completionEvent:completion?.event||null,completionAuthority:completion?.authority||null,
     completionProfileId:completion?.payload?.counterProfileId||null,afterCounterState:ended.snapshot.state,afterCounterMount:ended.report.weaponMountProfileId,
-    recoveryProfileId,recoveryDurationMs,startMountContinuous,mountActuallyBlends,recoveryWorldSwordStabilized:worldOrientation.activeBeforeFinish,
-    worldSwordOrientationMonotonic:worldOrientation.monotonic,worldSwordOrientation:worldOrientation.rows,afterRecoveryState:finish.snapshot.state,
+    recoveryProfileId,recoveryDurationMs,startMountPositionScaleContinuous,startWorldOrientationDeltaDeg,startMountContinuous,mountActuallyBlends,
+    recoveryWorldSwordStabilized:worldOrientation.activeBeforeFinish,worldSwordOrientationMonotonic:worldOrientation.monotonic,
+    worldSwordOrientation:worldOrientation.rows,afterRecoveryState:finish.snapshot.state,
     sawKayKitMount:sawKayKit,sawSkyrimRecoverMount:sawSkyrimRecover,pass};
 }
 function runVerification(kaykit,skyrim){
