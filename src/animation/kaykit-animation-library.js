@@ -184,8 +184,18 @@ export function createKayKitAnimationController(THREE, object3d) {
       configureLoop(action, options.loop === true);
       action.enabled = true;
       action.paused = false;
-      action.time = Math.max(0, Number(timeSeconds) || 0);
-      mixer.update(0);
+      const sourceTime = Math.max(0, Number(timeSeconds) || 0);
+
+      // sample(name, t) is a random-access pose query driven by an external clock. Directly
+      // assigning action.time and then calling update(0) can leave the previously evaluated
+      // pose visible when the same action is sampled twice inside one presentation update
+      // (Guard Enter at 0.18s immediately followed by Guard Hold at 0s). AnimationMixer
+      // setTime() resets active action clocks and evaluates bindings immediately at t.
+      if (typeof mixer.setTime === 'function') mixer.setTime(sourceTime);
+      else {
+        action.time = sourceTime;
+        mixer.update(0);
+      }
       action.paused = true;
       currentAction = action;
       currentClipName = name;
