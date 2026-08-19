@@ -1,0 +1,62 @@
+name: G3.5.1P-T3.2 Parry Rotation Continuity
+
+on:
+  pull_request:
+    paths:
+      - 'src/animation/parry-rotation-continuity.js'
+      - 'src/animation/skyrim-converted-animation-library.js'
+      - 'src/animation/parry-contact-deflect-runtime-clip.js'
+      - 'src/combat/guard-*.js'
+      - 'tools/action-studio/parry-rotation-continuity-lab.*'
+      - 'tests/parry-rotation-continuity.test.js'
+      - '.github/workflows/parry-rotation-continuity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T3.2 rotation policy unit tests
+        run: node --test tests/parry-rotation-continuity.test.js tests/parry-contact-deflect-runtime-clip.test.js
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Verify 0-599ms production Parry rotation continuity
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-5-1p-t3-2
+          python3 -m http.server 4173 > /tmp/g351pt32-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          URL='http://127.0.0.1:4173/tools/action-studio/parry-rotation-continuity-lab.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1280,900 --virtual-time-budget=30000 --dump-dom \
+            "$URL" > artifacts/g3-5-1p-t3-2/continuity-dom.html
+
+          grep -q 'data-g351pt32="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
+          grep -q 'data-g351pt32-policy="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
+          grep -q 'data-g351pt32-parry="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
+          grep -q 'data-g351pt32-perfect="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
+          grep -q 'data-g351pt32-root="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
+          grep -q 'data-g351pt32-hips="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
+
+      - name: Upload T3.2 continuity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-5-1p-t3-2-parry-rotation-continuity
+          path: artifacts/g3-5-1p-t3-2
