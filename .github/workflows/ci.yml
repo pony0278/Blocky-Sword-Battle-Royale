@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test:
@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -27,13 +29,18 @@ jobs:
       - name: Build Action Studio
         run: npm run build:action-studio
 
-      - name: Upload regenerated Action Studio files
-        uses: actions/upload-artifact@v4
-        with:
-          name: action-studio-generated
-          path: |
-            tools/action-studio/action-studio.bundle.js
-            tools/action-studio/index.html
+      - name: Commit regenerated Action Studio files on G3.4.1.1 branch
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/g3-4-1-1-world-space-sword-stabilization'
+        shell: bash
+        run: |
+          if git diff --quiet -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+          git commit -m 'Regenerate Action Studio standalone files'
+          git push origin HEAD:${{ github.head_ref }}
 
       - name: Verify standalone Action Studio files are current
         shell: bash
