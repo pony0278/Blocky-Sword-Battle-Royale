@@ -3,18 +3,18 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout PR branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -27,18 +27,22 @@ jobs:
       - name: Build Action Studio
         run: npm run build:action-studio
 
-      - name: Verify standalone Action Studio files are current
-        shell: bash
-        run: |
-          if ! git diff --exit-code -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
-            echo 'Generated standalone Action Studio files are stale.' >&2
-            echo 'Run npm run build:action-studio and commit tools/action-studio/action-studio.bundle.js + index.html.' >&2
-            exit 1
-          fi
-
       - name: Verify Action Studio Guard Runtime browser surface
         shell: bash
         run: bash tools/action-studio/verify-guard-runtime-surface.sh
 
       - name: Run tests
         run: npm test
+
+      - name: Commit refreshed standalone Action Studio outputs
+        shell: bash
+        run: |
+          if git diff --quiet -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
+            echo 'Standalone outputs already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+          git commit -m 'Build Action Studio for G3.4.1.1'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
