@@ -34,6 +34,9 @@ grep -q 'id="guardRuntimePanel"' "$DOM_FILE" || fail 'static #guardRuntimePanel 
 grep -q 'data-guard-runtime-static="true"' "$DOM_FILE" || fail 'panel is not authored as static HTML'
 grep -q 'data-controller-bound="true"' "$DOM_FILE" || fail 'Guard Runtime controller did not bind after browser boot'
 grep -q 'data-guard-runtime-button-count="5"' "$DOM_FILE" || fail 'controller did not validate all five Guard actions'
+grep -q 'data-stage="G3.5.1P-T3"' "$DOM_FILE" || fail 'main Guard Runtime surface is not labeled G3.5.1P-T3'
+grep -q 'data-parry-presentation="contact-deflect"' "$DOM_FILE" || fail 'main Guard Runtime surface does not declare contact-deflect Parry presentation'
+grep -q 'Contact → Deflect → Parry Advantage' "$DOM_FILE" || fail 'main Guard Runtime surface still describes the old Block-Hit-only Parry presentation'
 
 for mode in hold block parry perfect counter; do
   grep -q "data-guard-runtime=\"${mode}\"" "$DOM_FILE" || fail "missing ${mode} Guard Runtime button"
@@ -46,4 +49,4 @@ if grep -Eq 'data-template="(guard|parry|counter)"' "$DOM_FILE"; then
   fail 'legacy Phase A Guard/Parry/Counter template buttons are still rendered'
 fi
 
-echo "Action Studio Guard Runtime browser gate passed · 5 static buttons · controller bound."
+echo "Action Studio Guard Runtime browser gate passed · G3.5.1P-T3 contact-deflect surface · 5 static buttons · controller bound."
