@@ -9446,11 +9446,134 @@ function createProductionParryDeflectClips(THREE, clipMap, options = {}) {
 return Object.freeze({ PRODUCTION_PARRY_DEFLECT_STAGE, PRODUCTION_PARRY_DEFLECT_VARIANTS, PRODUCTION_PARRY_DEFLECT_PHASES, PRODUCTION_PARRY_DEFLECT_CLIP_IDS, getProductionParryDeflectProfile, sampleProductionParryDeflectTimeline, canCreateProductionParryDeflectClips, createProductionParryDeflectClip, createProductionParryDeflectClips });
 })();
 
+// src/animation/parry-rotation-continuity.js
+const __actionStudioModule44 = (() => {
+const { sanitizeAnimationTargetName } = __actionStudioModule6;
+
+const PARRY_ROTATION_CONTINUITY_STAGE = 'G3.5.1P-T3.2';
+
+const PARRY_ROTATION_CONTINUITY_CONTACT_LOCK_TARGETS = Object.freeze([
+  'root',
+  'hips',
+  'upperleg.l',
+  'lowerleg.l',
+  'foot.l',
+  'toes.l',
+  'upperleg.r',
+  'lowerleg.r',
+  'foot.r',
+  'toes.r',
+]);
+
+const LOCKED_TARGETS = new Set(
+  PARRY_ROTATION_CONTINUITY_CONTACT_LOCK_TARGETS.map((target) => sanitizeAnimationTargetName(target)),
+);
+const LOCKED_PROPERTIES = new Set(['position', 'quaternion']);
+
+function trackTargetName(trackName) {
+  const value = String(trackName || '');
+  const propertyIndex = value.lastIndexOf('.');
+  return propertyIndex < 0 ? value : value.slice(0, propertyIndex);
+}
+
+function trackPropertyName(trackName) {
+  const value = String(trackName || '');
+  const propertyIndex = value.lastIndexOf('.');
+  return propertyIndex < 0 ? '' : value.slice(propertyIndex + 1);
+}
+
+function isParryRotationContinuityContactLockedTrack(trackName) {
+  const target = sanitizeAnimationTargetName(trackTargetName(trackName));
+  const property = trackPropertyName(trackName);
+  return LOCKED_TARGETS.has(target) && LOCKED_PROPERTIES.has(property);
+}
+
+function canSampleTrack(track) {
+  return Boolean(
+    track?.name
+    && track?.times?.length
+    && track?.values?.length
+    && typeof track.getValueSize === 'function'
+    && typeof track.createInterpolant === 'function'
+  );
+}
+
+function sampleTrack(track, timeSeconds, durationSeconds) {
+  if (!canSampleTrack(track)) return null;
+  const time = Math.max(0, Math.min(Number(timeSeconds) || 0, Math.max(0, Number(durationSeconds) || 0)));
+  const value = track.createInterpolant().evaluate(time);
+  return Array.from(value).slice(0, track.getValueSize());
+}
+
+function freezeTrackAfter(track, cutoffSeconds, frozenValue) {
+  if (!canSampleTrack(track) || !frozenValue?.length) return false;
+  const size = track.getValueSize();
+  let changed = false;
+  for (let index = 0; index < track.times.length; index += 1) {
+    if ((Number(track.times[index]) || 0) + 1e-7 < cutoffSeconds) continue;
+    const offset = index * size;
+    for (let component = 0; component < size; component += 1) {
+      track.values[offset + component] = frozenValue[component] ?? track.values[offset + component];
+    }
+    changed = true;
+  }
+  return changed;
+}
+
+function stabilizeProductionParryDeflectClip(clip, sourceClipMap, options = {}) {
+  const metadata = clip?.userData?.productionParryDeflect;
+  if (!metadata?.productionEnabled || !clip?.tracks?.length) return clip;
+
+  const contactClip = sourceClipMap?.get?.(metadata.contactClipId) || null;
+  if (!contactClip) {
+    throw new Error(`${PARRY_ROTATION_CONTINUITY_STAGE} requires contact source ${metadata.contactClipId}`);
+  }
+
+  const cutoffSeconds = Math.max(0, Number(options.contactEndSeconds ?? metadata.contactEndSeconds) || 0);
+  const contactTracks = new Map((contactClip.tracks || []).map((track) => [track.name, track]));
+  const stabilizedTracks = [];
+  const fallbackTracks = [];
+
+  for (const track of clip.tracks) {
+    if (!isParryRotationContinuityContactLockedTrack(track.name)) continue;
+    const sourceTrack = contactTracks.get(track.name) || track;
+    const sourceDuration = sourceTrack === track ? clip.duration : contactClip.duration;
+    const frozenValue = sampleTrack(sourceTrack, cutoffSeconds, sourceDuration);
+    if (!frozenValue?.length) continue;
+    if (sourceTrack === track) fallbackTracks.push(track.name);
+    if (freezeTrackAfter(track, cutoffSeconds, frozenValue)) stabilizedTracks.push(track.name);
+  }
+
+  clip.userData = {
+    ...(clip.userData || {}),
+    productionParryDeflect: Object.freeze({
+      ...metadata,
+      rotationContinuity: Object.freeze({
+        stage: PARRY_ROTATION_CONTINUITY_STAGE,
+        policy: 'contact-lock-lower-body-after-contact',
+        contactEndSeconds: cutoffSeconds,
+        contactLockedTargets: PARRY_ROTATION_CONTINUITY_CONTACT_LOCK_TARGETS,
+        stabilizedTrackCount: stabilizedTracks.length,
+        stabilizedTracks: Object.freeze([...stabilizedTracks]),
+        fallbackTracks: Object.freeze([...fallbackTracks]),
+      }),
+    }),
+  };
+  return clip;
+}
+
+function stabilizeProductionParryDeflectClips(clips, sourceClipMap, options = {}) {
+  return Array.from(clips || [], (clip) => stabilizeProductionParryDeflectClip(clip, sourceClipMap, options));
+}
+return Object.freeze({ PARRY_ROTATION_CONTINUITY_STAGE, PARRY_ROTATION_CONTINUITY_CONTACT_LOCK_TARGETS, isParryRotationContinuityContactLockedTrack, stabilizeProductionParryDeflectClip, stabilizeProductionParryDeflectClips });
+})();
+
 // src/animation/skyrim-converted-animation-library.js
 const __actionStudioModule40 = (() => {
 const { retargetSkyrimClip } = __actionStudioModule41;
 const { computeSkyrimWeaponBindCalibration } = __actionStudioModule42;
 const { canCreateProductionParryDeflectClips, createProductionParryDeflectClips } = __actionStudioModule43;
+const { stabilizeProductionParryDeflectClips } = __actionStudioModule44;
 
 const SKYRIM_GUARD_HOLD_CONVERTED_FILE = Object.freeze({
   id: 'shd_blockidle',
@@ -9597,9 +9720,12 @@ const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) => {
 
   const sourceClipMap = new Map(clips.map((clip) => [clip.name, clip]));
   const virtualClips = canCreateProductionParryDeflectClips(THREE, sourceClipMap)
-    ? createProductionParryDeflectClips(THREE, sourceClipMap, {
-      fps: Math.max(60, Number(options.productionParryFps) || 60),
-    })
+    ? stabilizeProductionParryDeflectClips(
+      createProductionParryDeflectClips(THREE, sourceClipMap, {
+        fps: Math.max(60, Number(options.productionParryFps) || 60),
+      }),
+      sourceClipMap,
+    )
     : [];
   clips.push(...virtualClips);
 
@@ -9639,7 +9765,7 @@ return Object.freeze({ SKYRIM_GUARD_HOLD_CONVERTED_FILE, SKYRIM_GUARD_REACTION_C
 })();
 
 // src/combat/longsword-directional-metadata.js
-const __actionStudioModule44 = (() => {
+const __actionStudioModule45 = (() => {
 const LONGSWORD_ATTACK_DIRECTIONS = Object.freeze(['top', 'right', 'left']);
 
 const LONGSWORD_DIRECTIONAL_ATTACKS = Object.freeze({
@@ -9679,7 +9805,7 @@ return Object.freeze({ LONGSWORD_ATTACK_DIRECTIONS, LONGSWORD_DIRECTIONAL_ATTACK
 })();
 
 // tools/action-studio/studio-editor-view.js
-const __actionStudioModule45 = (() => {
+const __actionStudioModule46 = (() => {
 const { POSE_KEYS } = __actionStudioModule10;
 const { normalizeAnimationBinding } = __actionStudioModule19;
 const { clipMarkerSummary } = __actionStudioModule16;
@@ -9905,7 +10031,7 @@ return Object.freeze({ renderTimelineView, updateTimelineReadoutView, renderKeyE
 })();
 
 // tools/action-studio/studio-skyrim-bridge-controls.js
-const __actionStudioModule46 = (() => {
+const __actionStudioModule47 = (() => {
 function installStudioSkyrimBridgeControls() {
   const sourceSelect = document.getElementById('animationPackSource');
   if (sourceSelect && typeof sourceSelect.querySelector === 'function'
@@ -9940,7 +10066,7 @@ return Object.freeze({ installStudioSkyrimBridgeControls });
 })();
 
 // src/combat/longsword-guard-metadata.js
-const __actionStudioModule49 = (() => {
+const __actionStudioModule50 = (() => {
 const freezeRange = (range) => Object.freeze({ ...range });
 const freezeEuler = (value) => Object.freeze({ x:value.x, y:value.y, z:value.z });
 const freezeQuaternion = (value) => Object.freeze([...value]);
@@ -10097,8 +10223,8 @@ return Object.freeze({ LONGSWORD_GUARD_BASE, LONGSWORD_TRIANGLE_GUARD_TARGETS, L
 })();
 
 // src/combat/guard-transition-presentation.js
-const __actionStudioModule50 = (() => {
-const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule49;
+const __actionStudioModule51 = (() => {
+const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule50;
 
 const GUARD_TRANSITION_PROFILE_IDS = Object.freeze({
   ENTER: 'longsword_guard_enter_v1',
@@ -10212,7 +10338,7 @@ return Object.freeze({ GUARD_TRANSITION_PROFILE_IDS, LONGSWORD_GUARD_TRANSITION_
 })();
 
 // src/combat/guard-action-semantics.js
-const __actionStudioModule52 = (() => {
+const __actionStudioModule53 = (() => {
 const GUARD_ACTION_SEMANTIC_FIT = Object.freeze({
   MATCH: 'match',
   PROVISIONAL: 'provisional',
@@ -10260,7 +10386,7 @@ return Object.freeze({ GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, G
 })();
 
 // src/combat/parry-advantage.js
-const __actionStudioModule53 = (() => {
+const __actionStudioModule54 = (() => {
 const PARRY_ADVANTAGE_STAGE = 'G3.5.1';
 const PARRY_ADVANTAGE_FOLLOWUP_MODE = 'normal-directional-attack';
 const PARRY_ADVANTAGE_ENEMY_RESPONSE = 'authoritative-stagger';
@@ -10301,9 +10427,9 @@ return Object.freeze({ PARRY_ADVANTAGE_STAGE, PARRY_ADVANTAGE_FOLLOWUP_MODE, PAR
 })();
 
 // src/combat/guard-reaction-presentation.js
-const __actionStudioModule51 = (() => {
-const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule52;
-const { createParryAdvantageContract, isFreeAttackFollowupOpen } = __actionStudioModule53;
+const __actionStudioModule52 = (() => {
+const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule53;
+const { createParryAdvantageContract, isFreeAttackFollowupOpen } = __actionStudioModule54;
 const { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } = __actionStudioModule43;
 
 const GUARD_REACTION_VARIANTS = Object.freeze({
@@ -10517,8 +10643,8 @@ return Object.freeze({ GUARD_REACTION_VARIANTS, GUARD_REACTION_PROFILE_IDS, LONG
 })();
 
 // src/combat/guard-counter-presentation.js
-const __actionStudioModule54 = (() => {
-const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule52;
+const __actionStudioModule55 = (() => {
+const { GUARD_ACTION_SEMANTIC_FIT, GUARD_ACTION_SEMANTIC_ROLES, guardActionSemanticAssessment } = __actionStudioModule53;
 
 const GUARD_COUNTER_PROFILE_IDS = Object.freeze({
   LONGSWORD: 'longsword_guard_counter_melee_block_attack_v1',
@@ -10620,11 +10746,11 @@ return Object.freeze({ GUARD_COUNTER_PROFILE_IDS, GUARD_WEAPON_MOUNT_PROFILE_IDS
 })();
 
 // src/combat/guard-state-machine.js
-const __actionStudioModule48 = (() => {
-const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule49;
-const { GUARD_TRANSITION_PROFILE_IDS } = __actionStudioModule50;
-const { GUARD_REACTION_VARIANTS, LONGSWORD_GUARD_REACTION_PROFILES, getGuardReactionProfile } = __actionStudioModule51;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule54;
+const __actionStudioModule49 = (() => {
+const { LONGSWORD_GUARD_BASE, LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule50;
+const { GUARD_TRANSITION_PROFILE_IDS } = __actionStudioModule51;
+const { GUARD_REACTION_VARIANTS, LONGSWORD_GUARD_REACTION_PROFILES, getGuardReactionProfile } = __actionStudioModule52;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS, LONGSWORD_GUARD_COUNTER_PROFILE } = __actionStudioModule55;
 
 const GUARD_STATE_AUTHORITY_NOTE =
   'Presentation state only. Authoritative combat simulation confirms block, parry and counter outcomes.';
@@ -10955,8 +11081,8 @@ return Object.freeze({ GUARD_STATE_AUTHORITY_NOTE, GUARD_STATES, GUARD_EVENTS, G
 })();
 
 // src/combat/longsword-guard-correction.js
-const __actionStudioModule56 = (() => {
-const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = __actionStudioModule49;
+const __actionStudioModule57 = (() => {
+const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = __actionStudioModule50;
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -11112,7 +11238,7 @@ return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quatern
 })();
 
 // src/combat/guard-recovery-bridge.js
-const __actionStudioModule57 = (() => {
+const __actionStudioModule58 = (() => {
 const EPSILON = 1e-8;
 const COUNTER_CONTINUITY_HOLD_MS = 1000 / 60;
 
@@ -11402,7 +11528,7 @@ return Object.freeze({ GUARD_RECOVERY_PROFILE_IDS, GUARD_RECOVERY_PROFILES, capt
 })();
 
 // src/combat/guard-world-sword-orientation.js
-const __actionStudioModule58 = (() => {
+const __actionStudioModule59 = (() => {
 const EPSILON = 1e-8;
 
 function clamp01(value) {
@@ -11502,15 +11628,15 @@ return Object.freeze({ quaternionAngleDegrees, slerpShortestQuaternion, sampleWo
 })();
 
 // src/combat/guard-presentation-runtime.js
-const __actionStudioModule55 = (() => {
-const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule48;
-const { sampleGuardPresentationWeights, sampleGuardTransitionProfile } = __actionStudioModule50;
-const { sampleGuardReactionProfile } = __actionStudioModule51;
-const { sampleGuardCounterProfile } = __actionStudioModule54;
-const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule49;
-const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule56;
-const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule57;
-const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule58;
+const __actionStudioModule56 = (() => {
+const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule49;
+const { sampleGuardPresentationWeights, sampleGuardTransitionProfile } = __actionStudioModule51;
+const { sampleGuardReactionProfile } = __actionStudioModule52;
+const { sampleGuardCounterProfile } = __actionStudioModule55;
+const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule50;
+const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule57;
+const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule58;
+const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule59;
 
 const GUARD_ROOT_ROTATION_POLICY = 'lock';
 
@@ -12008,7 +12134,7 @@ return Object.freeze({ createGuardPresentationRuntime });
 })();
 
 // src/combat/guard-weapon-mount-runtime.js
-const __actionStudioModule59 = (() => {
+const __actionStudioModule60 = (() => {
 const { applyMountCalibration } = __actionStudioModule3;
 
 function createGuardWeaponMountRuntime(options = {}) {
@@ -12048,16 +12174,16 @@ return Object.freeze({ createGuardWeaponMountRuntime });
 })();
 
 // tools/action-studio/studio-guard-runtime-controller.js
-const __actionStudioModule47 = (() => {
+const __actionStudioModule48 = (() => {
 const { DEFAULT_KAYKIT_SWORD_MOUNT } = __actionStudioModule15;
 const { applyMountCalibration } = __actionStudioModule3;
 const { loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
 const { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } = __actionStudioModule43;
 const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
-const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule48;
-const { createGuardPresentationRuntime } = __actionStudioModule55;
-const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule54;
-const { createGuardWeaponMountRuntime } = __actionStudioModule59;
+const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule49;
+const { createGuardPresentationRuntime } = __actionStudioModule56;
+const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule55;
+const { createGuardWeaponMountRuntime } = __actionStudioModule60;
 
 const GUARD_RUNTIME_STAGE = 'G3.5.1P-T3';
 const MODE_LABELS = Object.freeze({
@@ -12444,10 +12570,10 @@ const { KAYKIT_ANIMATION_PACKS, loadKayKitAnimationLibrary } = __actionStudioMod
 const { UAL1_ANIMATION_FILES, loadUal1AnimationLibrary } = __actionStudioModule37;
 const { UAL2_ANIMATION_FILES, loadUal2AnimationLibrary } = __actionStudioModule39;
 const { SKYRIM_GUARD_CONVERTED_FILES, importSkyrimConvertedAnimationFile, loadSkyrimConvertedAnimationLibrary } = __actionStudioModule40;
-const { getCanonicalMotionContactSeconds, getLongswordMotionMetadata } = __actionStudioModule44;
-const { readAnimationBindingView } = __actionStudioModule45;
-const { installStudioSkyrimBridgeControls } = __actionStudioModule46;
-const { createStudioGuardRuntimeController } = __actionStudioModule47;
+const { getCanonicalMotionContactSeconds, getLongswordMotionMetadata } = __actionStudioModule45;
+const { readAnimationBindingView } = __actionStudioModule46;
+const { installStudioSkyrimBridgeControls } = __actionStudioModule47;
+const { createStudioGuardRuntimeController } = __actionStudioModule48;
 
 const SOURCE_INFO = Object.freeze({
   ual2: Object.freeze({ label: 'UAL2 Sword Combat', count: UAL2_ANIMATION_FILES.length, defaultClip: 'UAL2/Sword_Regular_A' }),
@@ -12907,7 +13033,7 @@ const { createStudioPoseDragController } = __actionStudioModule29;
 const { captureNextBlockingKey, createStudioBlockingWorkflow } = __actionStudioModule32;
 const { createStudioProjectIoController } = __actionStudioModule33;
 const { createStudioExternalAnimationController } = __actionStudioModule36;
-const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule45;
+const { renderComboQueueView, renderAnimationBindingView, renderKeyEditorView, renderLibraryView, renderMountEditorView, renderPoseControlsView, renderTimelineView, renderWindowEditorView, updateTimelineReadoutView } = __actionStudioModule46;
 const { buildComboProjectData, cloneSerializable, createStudioProject, readStoredJson, writeStoredJson } = __actionStudioModule35;
 
 const THREE = window.THREE;
