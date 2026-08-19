@@ -1,4 +1,5 @@
 export const PARRY_CONTACT_DEFLECT_PROBE_STAGE = 'G3.5.1P';
+export const PARRY_CONTACT_DEFLECT_TUNING_STAGE = 'G3.5.1P-T1';
 
 export const PARRY_CONTACT_DEFLECT_VARIANTS = Object.freeze({
   PARRY: 'parry',
@@ -13,29 +14,66 @@ export const PARRY_CONTACT_DEFLECT_PHASES = Object.freeze({
   COMPLETE: 'complete',
 });
 
+export const PARRY_CONTACT_DEFLECT_TUNING_PRESETS = Object.freeze({
+  BASELINE: 'baseline-p0',
+  COMPACT: 'compact-t1',
+});
+
 const CONTACT_CLIP_ID = 'SKYRIM_GUARD/shd_blockhit';
 const ROOT_ROTATION_POLICY = 'lock';
 
-const DEFAULTS = Object.freeze({
+const PRESETS = Object.freeze({
   [PARRY_CONTACT_DEFLECT_VARIANTS.PARRY]: Object.freeze({
-    id: 'g351p_parry_contact_to_deflect',
-    deflectClipId: 'SKYRIM_GUARD/shd_blockbash',
-    contactEndSeconds: 0.18,
-    contactHoldMs: 65,
-    blendMs: 55,
-    deflectStartSeconds: 0.04,
-    deflectEndSeconds: 0.30,
-    blendLeadSeconds: 0.045,
+    [PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE]: Object.freeze({
+      id: 'g351p_parry_contact_to_deflect_p0',
+      deflectClipId: 'SKYRIM_GUARD/shd_blockbash',
+      contactEndSeconds: 0.18,
+      contactHoldMs: 65,
+      blendMs: 55,
+      deflectStartSeconds: 0.04,
+      deflectEndSeconds: 0.30,
+      blendLeadSeconds: 0.045,
+      deflectRate: 1,
+      visualHypothesis: 'P0 baseline keeps most of the bash source for comparison.',
+    }),
+    [PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT]: Object.freeze({
+      id: 'g351p_parry_contact_to_deflect_t1',
+      deflectClipId: 'SKYRIM_GUARD/shd_blockbash',
+      contactEndSeconds: 0.16,
+      contactHoldMs: 85,
+      blendMs: 70,
+      deflectStartSeconds: 0.09,
+      deflectEndSeconds: 0.22,
+      blendLeadSeconds: 0.03,
+      deflectRate: 1.15,
+      visualHypothesis: 'T1 freezes a readable shield contact longer, skips early bash preparation, and removes late forward follow-through so the source reads as a compact redirect.',
+    }),
   }),
   [PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT]: Object.freeze({
-    id: 'g351p_perfect_contact_to_power_deflect',
-    deflectClipId: 'SKYRIM_GUARD/shd_blockbashpower',
-    contactEndSeconds: 0.18,
-    contactHoldMs: 75,
-    blendMs: 60,
-    deflectStartSeconds: 0.08,
-    deflectEndSeconds: 0.46,
-    blendLeadSeconds: 0.06,
+    [PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE]: Object.freeze({
+      id: 'g351p_perfect_contact_to_power_deflect_p0',
+      deflectClipId: 'SKYRIM_GUARD/shd_blockbashpower',
+      contactEndSeconds: 0.18,
+      contactHoldMs: 75,
+      blendMs: 60,
+      deflectStartSeconds: 0.08,
+      deflectEndSeconds: 0.46,
+      blendLeadSeconds: 0.06,
+      deflectRate: 1,
+      visualHypothesis: 'P0 baseline preserves the longer power-bash displacement for comparison.',
+    }),
+    [PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT]: Object.freeze({
+      id: 'g351p_perfect_contact_to_power_deflect_t1',
+      deflectClipId: 'SKYRIM_GUARD/shd_blockbashpower',
+      contactEndSeconds: 0.16,
+      contactHoldMs: 95,
+      blendMs: 75,
+      deflectStartSeconds: 0.12,
+      deflectEndSeconds: 0.28,
+      blendLeadSeconds: 0.035,
+      deflectRate: 1.10,
+      visualHypothesis: 'T1 keeps the stronger Perfect Parry accent but trims the power-bash before it develops into a forward body-check / shield strike.',
+    }),
   }),
 });
 
@@ -48,8 +86,22 @@ function finiteOr(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function resolveVariant(value) {
+  return value === PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT
+    ? PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT
+    : PARRY_CONTACT_DEFLECT_VARIANTS.PARRY;
+}
+
+function resolvePreset(value) {
+  return value === PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE
+    ? PARRY_CONTACT_DEFLECT_TUNING_PRESETS.BASELINE
+    : PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT;
+}
+
 export function createParryContactDeflectProbeProfile(variant = PARRY_CONTACT_DEFLECT_VARIANTS.PARRY, overrides = {}) {
-  const base = DEFAULTS[variant] || DEFAULTS[PARRY_CONTACT_DEFLECT_VARIANTS.PARRY];
+  const resolvedVariant = resolveVariant(variant);
+  const tuningPreset = resolvePreset(overrides.tuningPreset);
+  const base = PRESETS[resolvedVariant][tuningPreset];
   const contactEndSeconds = clamp(finiteOr(overrides.contactEndSeconds, base.contactEndSeconds), 0.02, 0.60);
   const contactHoldMs = clamp(finiteOr(overrides.contactHoldMs, base.contactHoldMs), 0, 180);
   const blendMs = clamp(finiteOr(overrides.blendMs, base.blendMs), 0, 180);
@@ -60,16 +112,16 @@ export function createParryContactDeflectProbeProfile(variant = PARRY_CONTACT_DE
     0,
     deflectEndSeconds - deflectStartSeconds,
   );
-  const deflectRate = clamp(finiteOr(overrides.deflectRate, 1), 0.25, 2.5);
+  const deflectRate = clamp(finiteOr(overrides.deflectRate, base.deflectRate), 0.25, 2.5);
   const deflectPlaybackSeconds = (deflectEndSeconds - deflectStartSeconds - blendLeadSeconds) / deflectRate;
   const durationMs = contactEndSeconds * 1000 + contactHoldMs + blendMs + deflectPlaybackSeconds * 1000;
 
   return Object.freeze({
     stage: PARRY_CONTACT_DEFLECT_PROBE_STAGE,
+    tuningStage: PARRY_CONTACT_DEFLECT_TUNING_STAGE,
+    tuningPreset,
     id: base.id,
-    variant: base === DEFAULTS[PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT]
-      ? PARRY_CONTACT_DEFLECT_VARIANTS.PERFECT
-      : PARRY_CONTACT_DEFLECT_VARIANTS.PARRY,
+    variant: resolvedVariant,
     productionEnabled: false,
     probeOnly: true,
     contactClipId: CONTACT_CLIP_ID,
@@ -84,6 +136,10 @@ export function createParryContactDeflectProbeProfile(variant = PARRY_CONTACT_DE
     rootRotationPolicy: ROOT_ROTATION_POLICY,
     inPlace: true,
     semanticIntent: 'incoming attack contacts shield first, then shield redirects the attack line outward',
+    visualHypothesis: base.visualHypothesis,
+    shieldBashRiskControl: tuningPreset === PARRY_CONTACT_DEFLECT_TUNING_PRESETS.COMPACT
+      ? 'compact-middle-segment-trim-plus-longer-contact-read'
+      : 'baseline-comparison-only',
     authority: 'presentation-probe-only',
   });
 }
