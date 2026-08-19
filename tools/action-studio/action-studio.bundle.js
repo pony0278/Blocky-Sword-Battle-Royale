@@ -9890,7 +9890,7 @@ function reactionProfile({
     inPlace: true,
     loop: false,
     authored: true,
-    authoredStage: 'G3.3.2',
+    authoredStage: 'G3.4.0',
     visualDecision,
   });
 }
@@ -9904,9 +9904,9 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     file: 'shd_blockhit.source.glb',
     clipId: 'SKYRIM_GUARD/shd_blockhit',
     sourceDurationSeconds: 0.8,
-    sourceEndSeconds: 0.6,
+    sourceEndSeconds: 0.8,
     counterWindowSeconds: [0.24, 0.6],
-    visualDecision: 'ADOPT WITH CORRECTIONS — preserve recoil, replace the late 0.20s with G3.2 Recover',
+    visualDecision: 'ADOPT FULL SOURCE — preserve authored recoil + settle; keep the existing 0.24–0.60s presentation counter window',
   }),
   [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
@@ -9918,7 +9918,7 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     sourceDurationSeconds: 1 / 3,
     sourceEndSeconds: 1 / 3,
     counterWindowSeconds: [0.08, 1 / 3],
-    visualDecision: 'ADOPT — compact active longsword deflect; use the complete source motion',
+    visualDecision: 'ADOPT FULL SOURCE — compact active longsword deflect; preserve the complete authored motion',
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY,
@@ -9928,9 +9928,9 @@ const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     file: 'shd_blockbashpower.source.glb',
     clipId: 'SKYRIM_GUARD/shd_blockbashpower',
     sourceDurationSeconds: 0.7,
-    sourceEndSeconds: 0.48,
+    sourceEndSeconds: 0.7,
     counterWindowSeconds: [0.1, 0.48],
-    visualDecision: 'ADOPT WITH CORRECTIONS — keep the strong displacement, trim the late 0.22s counter-like follow-through',
+    visualDecision: 'ADOPT FULL SOURCE — preserve strong displacement + authored settle; keep the existing 0.10–0.48s presentation counter window',
   }),
 });
 
