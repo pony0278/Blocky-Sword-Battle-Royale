@@ -21,6 +21,8 @@ import {
 } from './guard-recovery-bridge.js';
 import { sampleWorldSwordRecoveryOrientation } from './guard-world-sword-orientation.js';
 
+const GUARD_ROOT_ROTATION_POLICY = 'lock';
+
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -124,6 +126,7 @@ function defaultReport(snapshot) {
     reactionVariant: null,
     counterProfileId: null,
     counterWindowOpen: false,
+    rootRotationPolicy: null,
     weaponMountProfileId: snapshot?.presentation?.weaponMountProfileId || null,
     recoveryProfileId: null,
     recoveryProgress: 0,
@@ -204,6 +207,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
       loop: presentation.loop !== false,
       inPlace: presentation.inPlace !== false,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     if (!stableGuardBasePose && snapshot.state === GUARD_STATES.HOLD) {
       stableGuardBasePose = captureRigPose(character.rig);
@@ -221,6 +225,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds,
       correctionWeight: weights.correctionWeight,
       reactionOverlayWeight: weights.reactionOverlayWeight,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
     });
   }
@@ -238,6 +243,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
       loop: true,
       inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     if (!stableGuardBasePose && snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0) {
       stableGuardBasePose = captureRigPose(character.rig);
@@ -252,6 +258,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds,
       correctionWeight: transition.weights.correctionWeight,
       reactionOverlayWeight: transition.weights.reactionOverlayWeight,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: transition.complete,
       completionEvent: transition.completionEvent,
@@ -264,7 +271,11 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     const presentation = preparePresentation(snapshot);
     const duration = positiveDuration(character, presentation.clipId, 1);
     restoreStableGuardBase();
-    character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    character.sampleAnimation(presentation.clipId, 0, {
+      loop: true,
+      inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
+    });
     if (!stableGuardBasePose) stableGuardBasePose = captureRigPose(character.rig);
     applyCorrection(1);
     character.update?.(0, camera);
@@ -296,7 +307,11 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     const presentation = preparePresentation(snapshot);
 
     restoreStableGuardBase();
-    character.sampleAnimation(presentation.clipId, 0, { loop: true, inPlace: true });
+    character.sampleAnimation(presentation.clipId, 0, {
+      loop: true,
+      inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
+    });
     applyCorrection(1);
 
     const recovery = samplePoseMatchedRecovery(
@@ -343,6 +358,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds: 0,
       correctionWeight: 1,
       reactionOverlayWeight: 1 - recovery.eased,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       recoveryProfileId: recovery.profile.id,
       recoveryProgress: recovery.progress,
@@ -364,11 +380,13 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     const clipId = reaction.profile.clipId;
     const registeredDuration = positiveDuration(character, clipId, reaction.profile.sourceDurationSeconds);
     if (registeredDuration + 1e-4 < reaction.profile.sourceWindow.endSeconds) {
-      throw new Error(`Guard reaction ${clipId} is shorter than its G3.3.2 source window`);
+      throw new Error(`Guard reaction ${clipId} is shorter than its configured source window`);
     }
+    const rootRotationPolicy = reaction.profile.rootRotationPolicy || GUARD_ROOT_ROTATION_POLICY;
     character.sampleAnimation(clipId, Math.min(reaction.sourceTimeSeconds, registeredDuration), {
       loop: false,
       inPlace: true,
+      rootRotationPolicy,
     });
     applyCorrection(reaction.profile.correctionWeight);
     character.update?.(0, camera);
@@ -384,6 +402,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       reactionProfileId: reaction.profile.id,
       reactionVariant: reaction.profile.variant,
       counterWindowOpen: reaction.counterWindowOpen,
+      rootRotationPolicy,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: reaction.complete,
       completionEvent: reaction.completionEvent,
@@ -400,6 +419,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     character.sampleAnimation(clipId, counter.sourceTimeSeconds, {
       loop: false,
       inPlace: true,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     applyCorrection(counter.profile.correctionWeight);
     character.update?.(0, camera);
@@ -412,6 +432,7 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       sourceTimeSeconds: counter.sourceTimeSeconds,
       correctionWeight: counter.profile.correctionWeight,
       counterProfileId: counter.profile.id,
+      rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       complete: counter.complete,
       completionEvent: counter.completionEvent,

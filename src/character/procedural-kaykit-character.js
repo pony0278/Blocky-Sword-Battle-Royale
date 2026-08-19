@@ -5,9 +5,19 @@ import {
 } from './procedural-kaykit-rig.js';
 import { applyPoseToProceduralKayKitRig } from '../animation/kaykit-pose-adapter.js';
 import {
+  ROOT_ROTATION_POLICIES,
   createKayKitAnimationController,
+  normalizeRootRotationPolicy,
   validateKayKitClipBindings,
 } from '../animation/kaykit-animation-library.js';
+
+export function createAnimationPlaybackSignature(name, playOptions = {}) {
+  const inPlace = playOptions.inPlace !== false;
+  const rootRotationPolicy = inPlace
+    ? normalizeRootRotationPolicy(playOptions.rootRotationPolicy)
+    : ROOT_ROTATION_POLICIES.PRESERVE;
+  return `${String(name || '')}|${inPlace ? 'in-place' : 'root-motion'}|root-rotation-${rootRotationPolicy}`;
+}
 
 export function createProceduralKayKitCharacter(THREE, options = {}) {
   const rig = createProceduralKayKitRig(THREE, options);
@@ -25,12 +35,8 @@ export function createProceduralKayKitCharacter(THREE, options = {}) {
     rig.updateAppearance();
   }
 
-  function signatureFor(name, playOptions = {}) {
-    return `${String(name || '')}|${playOptions.inPlace !== false ? 'in-place' : 'root-motion'}`;
-  }
-
   function prepareAnimation(name, playOptions = {}) {
-    const nextSignature = signatureFor(name, playOptions);
+    const nextSignature = createAnimationPlaybackSignature(name, playOptions);
     if (mode !== 'kaykit' || playbackSignature !== nextSignature) {
       animation.stop();
       resetForAnimation();

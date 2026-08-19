@@ -58,21 +58,21 @@ function createHarness(options = {}) {
   return { machine, character, correctionWeights, mountProfiles, runtime };
 }
 
-test('G3.4.0 runtime plays full 0.80s Block Hit before reusing G3.2 Recover', () => {
+test('G3.4.2R completes Block Hit at 0.60s and requests locked root rotation', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
+  const holdSample = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockidle').at(-1);
+  assert.equal(holdSample.options.inPlace, true);
+  assert.equal(holdSample.options.rootRotationPolicy, 'lock');
+
   machine.send(GUARD_EVENTS.BLOCK_CONFIRMED, { attackId: 'attack-block' });
-  let result = runtime.update(600);
+  let result = runtime.update(599);
   assert.equal(result.snapshot.state, GUARD_STATES.BLOCK_HIT);
   assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockhit');
   assert.equal(result.report.counterWindowOpen, true);
-  assert.equal(result.report.sourceTimeSeconds, 0.6);
-
-  result = runtime.update(199);
-  assert.equal(result.snapshot.state, GUARD_STATES.BLOCK_HIT);
-  assert.equal(result.report.counterWindowOpen, false);
-  assert.ok(result.report.sourceTimeSeconds < 0.8);
+  assert.equal(result.report.rootRotationPolicy, 'lock');
+  assert.ok(result.report.sourceTimeSeconds < 0.6);
 
   result = runtime.update(1);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
@@ -80,16 +80,18 @@ test('G3.4.0 runtime plays full 0.80s Block Hit before reusing G3.2 Recover', ()
   assert.equal(completion.event, GUARD_EVENTS.REACTION_COMPLETE);
   assert.equal(completion.authority, 'presentation');
   assert.equal(completion.payload.reactionVariant, 'block-hit');
-  assert.equal(completion.payload.sourceTimeSeconds, 0.8);
+  assert.equal(completion.payload.sourceTimeSeconds, 0.6);
 
   const blockSamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockhit');
-  assert.equal(blockSamples.at(-1).timeSeconds, 0.8);
+  assert.equal(blockSamples.at(-1).timeSeconds, 0.6);
+  assert.equal(blockSamples.at(-1).options.inPlace, true);
+  assert.equal(blockSamples.at(-1).options.rootRotationPolicy, 'lock');
 
   result = runtime.update(140);
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
 });
 
-test('G3.4.0 runtime uses complete 0.333s Bash for normal Parry', () => {
+test('G3.4.2R runtime uses complete 0.333s Bash for normal Parry with root rotation locked', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
@@ -98,14 +100,16 @@ test('G3.4.0 runtime uses complete 0.333s Bash for normal Parry', () => {
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
   assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockbash');
   assert.equal(result.report.reactionVariant, 'parry');
+  assert.equal(result.report.rootRotationPolicy, 'lock');
 
   result = runtime.update(0.01);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
   const parrySamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockbash');
   assert.ok(Math.abs(parrySamples.at(-1).timeSeconds - (1 / 3)) < 1e-9);
+  assert.equal(parrySamples.at(-1).options.rootRotationPolicy, 'lock');
 });
 
-test('G3.4.0 runtime plays full 0.70s Bash Power for Perfect Parry', () => {
+test('G3.4.2R runtime keeps full 0.70s Bash Power but locks its root rotation', () => {
   const { machine, character, runtime } = createHarness();
   enterHold(machine, runtime);
 
@@ -118,6 +122,7 @@ test('G3.4.0 runtime plays full 0.70s Bash Power for Perfect Parry', () => {
   assert.equal(result.snapshot.state, GUARD_STATES.PARRY);
   assert.equal(result.report.clipId, 'SKYRIM_GUARD/shd_blockbashpower');
   assert.equal(result.report.counterWindowOpen, true);
+  assert.equal(result.report.rootRotationPolicy, 'lock');
   assert.equal(result.report.sourceTimeSeconds, 0.48);
 
   result = runtime.update(219);
@@ -130,6 +135,7 @@ test('G3.4.0 runtime plays full 0.70s Bash Power for Perfect Parry', () => {
   assert.equal(result.snapshot.lastTransition.payload.reactionVariant, 'perfect-parry');
   const perfectSamples = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockbashpower');
   assert.equal(perfectSamples.at(-1).timeSeconds, 0.7);
+  assert.equal(perfectSamples.at(-1).options.rootRotationPolicy, 'lock');
 });
 
 test('G3.4 counter window remains presentation-only until authoritative COUNTER_CONFIRMED', () => {
@@ -150,6 +156,7 @@ test('G3.4 counter window remains presentation-only until authoritative COUNTER_
   const synced = runtime.sync();
   assert.equal(synced.report.clipId, 'Melee_Block_Attack');
   assert.equal(synced.report.counterProfileId, GUARD_COUNTER_PROFILE_IDS.LONGSWORD);
+  assert.equal(synced.report.rootRotationPolicy, 'lock');
 });
 
 test('G3.4 runtime plays full Melee_Block_Attack then presentation-completes into G3.2 Recover', () => {
@@ -168,6 +175,7 @@ test('G3.4 runtime plays full Melee_Block_Attack then presentation-completes int
   assert.equal(result.report.counterProfileId, GUARD_COUNTER_PROFILE_IDS.LONGSWORD);
   assert.equal(result.report.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT);
   assert.equal(result.report.complete, false);
+  assert.equal(result.report.rootRotationPolicy, 'lock');
   assert.equal(correctionWeights.at(-1), 0);
   assert.ok(result.report.sourceTimeSeconds < 0.75);
 
@@ -180,11 +188,13 @@ test('G3.4 runtime plays full Melee_Block_Attack then presentation-completes int
   assert.equal(completion.payload.clipId, 'Melee_Block_Attack');
   assert.equal(completion.payload.sourceTimeSeconds, 0.75);
   assert.equal(result.report.weaponMountProfileId, GUARD_WEAPON_MOUNT_PROFILE_IDS.SKYRIM_GUARD);
+  assert.equal(result.report.rootRotationPolicy, 'lock');
 
   const counterSamples = character.samples.filter((entry) => entry.name === 'Melee_Block_Attack');
   assert.equal(counterSamples.at(-1).timeSeconds, 0.75);
   assert.equal(counterSamples.at(-1).options.inPlace, true);
   assert.equal(counterSamples.at(-1).options.loop, false);
+  assert.equal(counterSamples.at(-1).options.rootRotationPolicy, 'lock');
   assert.ok(mountProfiles.some((entry) => entry.state === GUARD_STATES.COUNTER
     && entry.profileId === GUARD_WEAPON_MOUNT_PROFILE_IDS.KAYKIT_DEFAULT));
   assert.ok(mountProfiles.some((entry) => entry.state === GUARD_STATES.RECOVER
@@ -198,7 +208,7 @@ test('G3.4 delayed authoritative Counter from Recover still gets the authored Co
   const { machine, runtime } = createHarness();
   enterHold(machine, runtime);
   machine.send(GUARD_EVENTS.BLOCK_CONFIRMED);
-  let result = runtime.update(800);
+  let result = runtime.update(600);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
 
   const counter = machine.send(GUARD_EVENTS.COUNTER_CONFIRMED, { authorityTick: 1200 });
@@ -207,6 +217,7 @@ test('G3.4 delayed authoritative Counter from Recover still gets the authored Co
   result = runtime.sync();
   assert.equal(result.report.clipId, 'Melee_Block_Attack');
   assert.equal(result.report.sourceTimeSeconds, 0);
+  assert.equal(result.report.rootRotationPolicy, 'lock');
 });
 
 test('G3.4 fails loudly if the Counter animation was not registered', () => {

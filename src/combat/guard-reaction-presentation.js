@@ -11,6 +11,8 @@ export const GUARD_REACTION_PROFILE_IDS = Object.freeze({
 });
 
 const REACTION_COMPLETE_EVENT = 'reaction_complete';
+const GUARD_ROOT_ROTATION_POLICY = 'lock';
+const GUARD_ROOT_ROTATION_SAFETY_STAGE = 'G3.4.2R';
 
 function reactionProfile({
   id,
@@ -46,6 +48,8 @@ function reactionProfile({
     completionEvent: REACTION_COMPLETE_EVENT,
     correctionWeight: 1,
     inPlace: true,
+    rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
+    rootRotationSafetyStage: GUARD_ROOT_ROTATION_SAFETY_STAGE,
     loop: false,
     authored: true,
     authoredStage: 'G3.4.0',
@@ -62,9 +66,9 @@ export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     file: 'shd_blockhit.source.glb',
     clipId: 'SKYRIM_GUARD/shd_blockhit',
     sourceDurationSeconds: 0.8,
-    sourceEndSeconds: 0.8,
+    sourceEndSeconds: 0.6,
     counterWindowSeconds: [0.24, 0.6],
-    visualDecision: 'ADOPT FULL SOURCE — preserve authored recoil + settle; keep the existing 0.24–0.60s presentation counter window',
+    visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; do not expose the unverified 0.60–0.80s tail while root-rotation safety is enforced',
   }),
   [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
