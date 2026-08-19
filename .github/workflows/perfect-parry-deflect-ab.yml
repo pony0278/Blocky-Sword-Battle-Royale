@@ -1,0 +1,101 @@
+name: G3.5.1P-T2 Perfect Parry Deflect A-B
+
+on:
+  pull_request:
+    paths:
+      - 'assets/skyrim/guard/converted/**'
+      - 'src/animation/skyrim-converted-animation-library.js'
+      - 'src/combat/parry-contact-deflect-probe.js'
+      - 'src/combat/perfect-parry-deflect-ab.js'
+      - 'tools/action-studio/perfect-parry-deflect-ab.*'
+      - 'tests/perfect-parry-deflect-ab.test.js'
+      - '.github/workflows/perfect-parry-deflect-ab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify frozen source assets
+        shell: bash
+        run: |
+          test "$(sha256sum assets/skyrim/guard/converted/shd_blockhit.source.glb | cut -d' ' -f1)" = "270d68b5c62a7de68c39112ab9a813f27a758ac737a078fe55b21896cfce1f28"
+          test "$(sha256sum assets/skyrim/guard/converted/shd_blockbash.source.glb | cut -d' ' -f1)" = "bae74b1cdf8724eb17073a7347192946fef8cc9cedcdb8c9728e6ea9004ea637"
+          test "$(sha256sum assets/skyrim/guard/converted/shd_blockbashpower.source.glb | cut -d' ' -f1)" = "603cf8326501ca2dd3628e8f47c37c6cbad6bec491b224123af418e70c36fd47"
+
+      - name: Run G3.5.1P-T2 unit test
+        run: node --test tests/perfect-parry-deflect-ab.test.js
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Verify Shared versus Power Perfect Parry visual runtime
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-5-1p-t2
+          python3 -m http.server 4173 > /tmp/g351pt2-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          BASE='http://127.0.0.1:4173/tools/action-studio/perfect-parry-deflect-ab.html'
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=30000 --dump-dom \
+            "${BASE}?candidate=shared-normal-t1&elapsed=390&view=three" > artifacts/g3-5-1p-t2/g351pt2-dom.html
+          grep -q 'data-g351pt2="pass"' artifacts/g3-5-1p-t2/g351pt2-dom.html
+          grep -q 'data-g351pt2-shared="pass"' artifacts/g3-5-1p-t2/g351pt2-dom.html
+          grep -q 'data-g351pt2-power="pass"' artifacts/g3-5-1p-t2/g351pt2-dom.html
+          grep -q 'data-g351pt2-contact="pass"' artifacts/g3-5-1p-t2/g351pt2-dom.html
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/shared-perfect-contact-150ms.png" \
+            "${BASE}?candidate=shared-normal-t1&elapsed=150&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/shared-perfect-blend-295ms.png" \
+            "${BASE}?candidate=shared-normal-t1&elapsed=295&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/shared-perfect-deflect-390ms.png" \
+            "${BASE}?candidate=shared-normal-t1&elapsed=390&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/shared-perfect-deflect-side-390ms.png" \
+            "${BASE}?candidate=shared-normal-t1&elapsed=390&view=side"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/shared-perfect-end-417ms.png" \
+            "${BASE}?candidate=shared-normal-t1&elapsed=417&view=three"
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/power-perfect-deflect-390ms.png" \
+            "${BASE}?candidate=power-t1&elapsed=390&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/power-perfect-deflect-side-390ms.png" \
+            "${BASE}?candidate=power-t1&elapsed=390&view=side"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p-t2/power-perfect-end-444ms.png" \
+            "${BASE}?candidate=power-t1&elapsed=444&view=three"
+
+      - name: Upload G3.5.1P-T2 visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-5-1p-t2-perfect-parry-deflect-ab
+          path: artifacts/g3-5-1p-t2
