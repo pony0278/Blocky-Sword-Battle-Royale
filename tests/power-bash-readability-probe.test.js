@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   POWER_BASH_READABILITY_CANDIDATE_IDS,
@@ -55,4 +56,22 @@ test('G3.6.1 Full Source resolves dynamically to the entire clip and samples by 
   assert.equal(full.playbackRate, 0.5);
   assert.equal(full.visualDurationSeconds, 3.6);
   assert.equal(samplePowerBashReadabilityCandidateProgress(full, 0.5, 1.8), 0.9);
+});
+
+test('G3.6.1.1 exposes Orbit Camera review controls without changing the Power Bash probe contract', async () => {
+  const html = await readFile(new URL('../tools/action-studio/power-bash-readability-lab.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../tools/action-studio/power-bash-readability-lab.js', import.meta.url), 'utf8');
+  assert.match(html, /OrbitControls\.js/);
+  assert.match(html, /data-view="side"/);
+  assert.match(html, /data-view="back"/);
+  assert.match(html, /id="resetCamera"/);
+  assert.match(html, /Left drag orbit/);
+  assert.match(app, /new THREE\.OrbitControls\(camera, canvas\)/);
+  assert.match(app, /CAMERA_TARGET/);
+  assert.match(app, /CAMERA_PRESETS/);
+  assert.match(app, /G3\.6\.1\.1/);
+  assert.match(app, /__G3611_ORBIT_CAMERA__/);
+  assert.match(app, /dataset\.g3611Orbit/);
+  assert.match(app, /THREE\.MOUSE\.ROTATE/);
+  assert.match(app, /THREE\.MOUSE\.PAN/);
 });
