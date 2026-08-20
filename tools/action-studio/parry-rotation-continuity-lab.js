@@ -8,7 +8,9 @@ import {
 } from '../../src/animation/parry-upper-body-continuity.js';
 import {
   PRODUCTION_PARRY_DEFLECT_CLIP_IDS,
+  PRODUCTION_PARRY_DEFLECT_STAGE,
   PRODUCTION_PARRY_DEFLECT_VARIANTS,
+  getProductionParryDeflectProfile,
   sampleProductionParryDeflectTimeline,
 } from '../../src/animation/parry-contact-deflect-runtime-clip.js';
 import {
@@ -27,12 +29,11 @@ const runtime = createGuardPresentationRuntime(THREE, { machine, character });
 const status = document.getElementById('status');
 const reportNode = document.getElementById('report');
 const STEP_MS = 1000 / 60;
-const END_MS = 599;
+const END_MS = 959;
 const WATCH_BONES = Object.freeze(['root', 'hips', 'spine', 'chest']);
 
-// G3.6 distinguishes continuity safety from style. Power Bash is allowed to
-// travel much farther than T3.3; the hard gate focuses on per-frame snaps,
-// root/hips stability and only broad excursion/travel sanity envelopes.
+// G3.6.3 keeps the proven T3.2/T3.3 safety policies, but the continuity probe
+// now spans the entire promoted D production chain including authored recovery.
 const THRESHOLDS = Object.freeze({
   root: Object.freeze({ maxStepDegrees: 1, cumulativeTravelDegrees: 5 }),
   hips: Object.freeze({ maxStepDegrees: 20, cumulativeTravelDegrees: 90 }),
@@ -53,9 +54,9 @@ function snapshotBoneQuaternion(id) {
 }
 
 function resetToHold() {
-  machine.send(GUARD_EVENTS.RESET, { verification: 'g36-reset' });
+  machine.send(GUARD_EVENTS.RESET, { verification: 'g363-reset' });
   runtime.sync();
-  machine.send(GUARD_EVENTS.GUARD_PRESS, { verification: 'g36-guard-press' });
+  machine.send(GUARD_EVENTS.GUARD_PRESS, { verification: 'g363-guard-press' });
   runtime.sync();
   const enter = runtime.update(180);
   if (enter.snapshot.state !== GUARD_STATES.HOLD) {
@@ -66,7 +67,7 @@ function resetToHold() {
 function beginParry(perfect) {
   resetToHold();
   const result = machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
-    verification: perfect ? 'g36-perfect' : 'g36-parry',
+    verification: perfect ? 'g363-perfect' : 'g363-parry',
     perfect,
   });
   if (!result.accepted) throw new Error(`${PARRY_UPPER_BODY_CONTINUITY_STAGE} Parry event rejected`);
@@ -101,7 +102,7 @@ function measureVariant(perfect) {
     const result = runtime.update(nextMs - elapsedMs);
     elapsedMs = nextMs;
     if (result.snapshot.state !== GUARD_STATES.PARRY) {
-      throw new Error(`${PARRY_UPPER_BODY_CONTINUITY_STAGE} left guard_parry early at ${elapsedMs.toFixed(2)}ms`);
+      throw new Error(`${PRODUCTION_PARRY_DEFLECT_STAGE} left guard_parry early at ${elapsedMs.toFixed(2)}ms`);
     }
     const phase = sampleProductionParryDeflectTimeline(variant, elapsedMs / 1000).phase;
     for (const id of WATCH_BONES) {
@@ -149,7 +150,7 @@ function measureVariant(perfect) {
 }
 
 async function main() {
-  status.textContent = `${PARRY_UPPER_BODY_CONTINUITY_STAGE} loading production Skyrim Power Parry clips…`;
+  status.textContent = `${PRODUCTION_PARRY_DEFLECT_STAGE} loading promoted D production clips…`;
   const library = await loadSkyrimConvertedAnimationLibrary(new THREE.GLTFLoader(), {
     THREE,
     rig: character.rig,
@@ -165,6 +166,8 @@ async function main() {
   const perfectPolicy = perfectMetadata?.rotationContinuity || null;
   const parryUpperPolicy = parryMetadata?.upperBodyContinuity || null;
   const perfectUpperPolicy = perfectMetadata?.upperBodyContinuity || null;
+  const productionProfile = getProductionParryDeflectProfile(PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY);
+
   const policyPass = [parryPolicy, perfectPolicy].every((policy) => (
     policy?.stage === PARRY_ROTATION_CONTINUITY_STAGE
     && policy?.policy === 'contact-lock-lower-body-after-contact'
@@ -172,7 +175,7 @@ async function main() {
     && policy?.contactLockedTargets?.includes('hips')
   ));
   const upperPolicyPass = [parryUpperPolicy, perfectUpperPolicy].every((policy) => (
-    policy?.stage === 'G3.6'
+    policy?.stage === PARRY_UPPER_BODY_CONTINUITY_STAGE
     && policy?.policy === 'contact-relative-wide-torso-safety-cap'
     && policy?.limitsDegrees?.spine === 42
     && policy?.limitsDegrees?.chest === 60
@@ -180,22 +183,35 @@ async function main() {
     && policy?.stabilizedTracks?.some((track) => track.startsWith('chest.'))
   ));
   const powerSourcePass = [parryMetadata, perfectMetadata].every((metadata) => (
-    metadata?.stage === 'G3.6'
+    metadata?.stage === PRODUCTION_PARRY_DEFLECT_STAGE
+    && metadata?.sourceDecision === 'G3_6_3_PROMOTE_D_FULL_RECOVERY'
     && metadata?.deflectClipId === 'SKYRIM_GUARD/shd_blockbashpower'
-    && metadata?.sharedMotionFamily === 'g36-blockhit-powerbash'
+    && metadata?.sharedMotionFamily === 'g363-blockhit-powerbash-full-recovery'
     && metadata?.sharedMotionContract === true
+    && JSON.stringify(metadata?.powerWindow) === JSON.stringify([0.08, 0.55])
+    && JSON.stringify(metadata?.recoveryWindow) === JSON.stringify([0.55, 0.7])
+    && metadata?.deflectRate === 0.95
+    && metadata?.recoveryRate === 1
+    && Math.abs((metadata?.reactionDurationSeconds || 0) - 0.96) < 1e-9
   ));
+  const timelinePass = Math.abs(productionProfile.deflectRecoveryEndAtSeconds - 0.9097368421052632) < 1e-9
+    && productionProfile.reactionDurationSeconds === 0.96
+    && productionProfile.deflectBlendLeadSeconds === 0;
 
   const parry = measureVariant(false);
   const perfect = measureVariant(true);
-  const pass = policyPass && upperPolicyPass && powerSourcePass && parry.pass && perfect.pass;
+  const pass = policyPass && upperPolicyPass && powerSourcePass && timelinePass && parry.pass && perfect.pass;
   const report = {
-    stage: 'G3.6',
+    stage: PRODUCTION_PARRY_DEFLECT_STAGE,
     lowerBodyStage: PARRY_ROTATION_CONTINUITY_STAGE,
+    upperBodyStage: PARRY_UPPER_BODY_CONTINUITY_STAGE,
+    measuredThroughMs: END_MS,
     pass,
     policyPass,
     upperPolicyPass,
     powerSourcePass,
+    timelinePass,
+    productionProfile,
     policies: {
       parry: { lower: parryPolicy, upper: parryUpperPolicy },
       perfect: { lower: perfectPolicy, upper: perfectUpperPolicy },
@@ -205,14 +221,21 @@ async function main() {
     thresholds: THRESHOLDS,
   };
 
+  document.documentElement.dataset.g363 = pass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Policy = policyPass && upperPolicyPass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Power = powerSourcePass && timelinePass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Root = parry.rootPass && perfect.rootPass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Hips = parry.hipsPass && perfect.hipsPass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Spine = parry.spinePass && perfect.spinePass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Chest = parry.chestPass && perfect.chestPass ? 'pass' : 'fail';
+  // G3.6 compatibility signals for older evidence consumers.
   document.documentElement.dataset.g36 = pass ? 'pass' : 'fail';
-  document.documentElement.dataset.g36Policy = policyPass && upperPolicyPass && powerSourcePass ? 'pass' : 'fail';
-  document.documentElement.dataset.g36Power = powerSourcePass ? 'pass' : 'fail';
+  document.documentElement.dataset.g36Policy = policyPass && upperPolicyPass && powerSourcePass && timelinePass ? 'pass' : 'fail';
+  document.documentElement.dataset.g36Power = powerSourcePass && timelinePass ? 'pass' : 'fail';
   document.documentElement.dataset.g36Root = parry.rootPass && perfect.rootPass ? 'pass' : 'fail';
   document.documentElement.dataset.g36Hips = parry.hipsPass && perfect.hipsPass ? 'pass' : 'fail';
   document.documentElement.dataset.g36Spine = parry.spinePass && perfect.spinePass ? 'pass' : 'fail';
   document.documentElement.dataset.g36Chest = parry.chestPass && perfect.chestPass ? 'pass' : 'fail';
-  // Preserve legacy attributes for older consumers that only need safety status.
   document.documentElement.dataset.g351pt32 = pass ? 'pass' : 'fail';
   document.documentElement.dataset.g351pt32Root = parry.rootPass && perfect.rootPass ? 'pass' : 'fail';
   document.documentElement.dataset.g351pt32Hips = parry.hipsPass && perfect.hipsPass ? 'pass' : 'fail';
@@ -221,17 +244,21 @@ async function main() {
   document.documentElement.dataset.g351pt33Spine = parry.spinePass && perfect.spinePass ? 'pass' : 'fail';
   document.documentElement.dataset.g351pt33Chest = parry.chestPass && perfect.chestPass ? 'pass' : 'fail';
   reportNode.textContent = JSON.stringify(report, null, 2);
-  status.textContent = `G3.6 ${pass ? 'PASS' : 'FAIL'} · Power Parry 0–599ms @60fps continuity without compact-motion clamp`;
+  status.textContent = `${PRODUCTION_PARRY_DEFLECT_STAGE} ${pass ? 'PASS' : 'FAIL'} · promoted D 0–959ms @60fps continuity including authored recovery`;
   status.className = pass ? 'good' : 'bad';
+  window.__G363_POWER_PARRY_CONTINUITY_RESULT__ = report;
   window.__G36_POWER_PARRY_CONTINUITY_RESULT__ = report;
 }
 
 main().catch((error) => {
+  document.documentElement.dataset.g363 = 'fail';
   document.documentElement.dataset.g36 = 'fail';
   document.documentElement.dataset.g351pt32 = 'fail';
   document.documentElement.dataset.g351pt33 = 'fail';
-  status.textContent = `G3.6 FAIL · ${error?.message || error}`;
+  status.textContent = `${PRODUCTION_PARRY_DEFLECT_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G36_POWER_PARRY_CONTINUITY_RESULT__ = { stage: 'G3.6', pass: false, error: error?.stack || String(error) };
+  const report = { stage: PRODUCTION_PARRY_DEFLECT_STAGE, pass: false, error: error?.stack || String(error) };
+  window.__G363_POWER_PARRY_CONTINUITY_RESULT__ = report;
+  window.__G36_POWER_PARRY_CONTINUITY_RESULT__ = report;
 });
