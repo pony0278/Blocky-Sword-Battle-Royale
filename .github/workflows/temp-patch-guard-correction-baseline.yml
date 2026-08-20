@@ -1,0 +1,43 @@
+name: TEMP Patch Guard Correction Baseline
+
+on:
+  push:
+    branches:
+      - agent/t3-3-g3-5-2-guard-visual-stability
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/t3-3-g3-5-2-guard-visual-stability
+      - name: Move stable Guard base authority to canonical HOLD
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/combat/guard-presentation-runtime.js')
+          text = path.read_text()
+          old = """    if (!stableGuardBasePose && snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0) {\n      stableGuardBasePose = captureRigPose(character.rig);\n    }\n"""
+          if old in text:
+              text = text.replace(old, '', 1)
+              path.write_text(text)
+          elif "snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0" in text:
+              raise SystemExit('Unexpected ENTER stable-base block shape')
+          PY
+      - name: Commit patch if needed
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/combat/guard-presentation-runtime.js
+          if git diff --cached --quiet; then
+            echo 'Canonical HOLD stable-base patch already applied.'
+            exit 0
+          fi
+          git commit -m 'G3.5.2 capture stable Guard base at canonical HOLD'
+          git push origin HEAD:agent/t3-3-g3-5-2-guard-visual-stability
