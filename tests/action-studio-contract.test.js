@@ -115,6 +115,9 @@ test('G3.6 keeps the static Guard surface while production preview exposes share
     assert.match(surface, /data-guard-runtime="parry"/);
     assert.match(surface, /data-guard-runtime="perfect"/);
     assert.match(surface, /data-guard-runtime="counter"/);
+    assert.match(surface, /id="powerBashReadabilityLink"/);
+    assert.match(surface, /power-bash-readability-lab\.html/);
+    assert.match(surface, /G3\.6\.1 · Open Power Bash A\/B\/C Readability/);
     assert.doesNotMatch(surface, /data-template="(?:guard|parry|counter)"/);
   }
 
