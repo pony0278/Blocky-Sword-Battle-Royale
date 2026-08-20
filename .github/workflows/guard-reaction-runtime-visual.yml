@@ -113,7 +113,7 @@ jobs:
             --screenshot="artifacts/g3-6-power-parry/perfect-power-side-315ms.png" \
             "${BASE}?reaction=perfect&elapsed=315&view=side"
 
-      - name: Verify G3.6.1 Full Power Bash readability probe
+      - name: Verify G3.6.2 D Extended + Full Recovery readability probe
         shell: bash
         env:
           BROWSER: ${{ steps.browser.outputs.browser }}
@@ -125,28 +125,38 @@ jobs:
           sleep 2
           BASE='http://127.0.0.1:4174/tools/action-studio/power-bash-readability-lab.html'
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
-            --window-size=1600,1100 --virtual-time-budget=30000 --dump-dom \
-            "${BASE}?progress=0.50&view=three" > artifacts/g3-6-1-power-bash-readability/g361-dom.html
-          if ! grep -q 'data-g361="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html; then
-            echo 'G3.6.1 Full Power Bash readability probe failed.' >&2
-            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-6-1-power-bash-readability/g361-dom.html || true
+            --window-size=1700,1100 --virtual-time-budget=30000 --dump-dom \
+            "${BASE}?progress=0.90&view=three" > artifacts/g3-6-1-power-bash-readability/g362-dom.html
+          if ! grep -q 'data-g361="pass"' artifacts/g3-6-1-power-bash-readability/g362-dom.html; then
+            echo 'G3.6.2 D Full Recovery readability probe failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-6-1-power-bash-readability/g362-dom.html || true
             exit 1
           fi
-          grep -q 'data-g361-production-unchanged="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html
-          grep -q 'data-g361-current-short="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html
-          grep -q 'data-g361-extended-longer="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html
+          grep -q 'data-g361-production-unchanged="pass"' artifacts/g3-6-1-power-bash-readability/g362-dom.html
+          grep -q 'data-g361-current-short="pass"' artifacts/g3-6-1-power-bash-readability/g362-dom.html
+          grep -q 'data-g361-extended-longer="pass"' artifacts/g3-6-1-power-bash-readability/g362-dom.html
+          grep -q 'data-g362-power-matches-c="pass"' artifacts/g3-6-1-power-bash-readability/g362-dom.html
+          grep -q 'data-g362-recovery="pass"' artifacts/g3-6-1-power-bash-readability/g362-dom.html
 
-          for progress in 0.25 0.50 0.75; do
+          for progress in 0.25 0.50 0.75 0.90 1.00; do
             tag="${progress/./}"
             "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
-              --window-size=1600,1100 --virtual-time-budget=26000 \
-              --screenshot="artifacts/g3-6-1-power-bash-readability/abc-progress-${tag}.png" \
+              --window-size=1700,1100 --virtual-time-budget=26000 \
+              --screenshot="artifacts/g3-6-1-power-bash-readability/abcd-progress-${tag}.png" \
               "${BASE}?progress=${progress}&view=three"
           done
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
-            --window-size=1600,1100 --virtual-time-budget=26000 \
-            --screenshot="artifacts/g3-6-1-power-bash-readability/abc-front-progress-050.png" \
+            --window-size=1700,1100 --virtual-time-budget=26000 \
+            --screenshot="artifacts/g3-6-1-power-bash-readability/abcd-front-progress-050.png" \
             "${BASE}?progress=0.50&view=front"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1700,1100 --virtual-time-budget=26000 \
+            --screenshot="artifacts/g3-6-1-power-bash-readability/d-recovery-front-progress-090.png" \
+            "${BASE}?progress=0.90&view=front"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1700,1100 --virtual-time-budget=26000 \
+            --screenshot="artifacts/g3-6-1-power-bash-readability/d-reset-front-progress-100.png" \
+            "${BASE}?progress=1.00&view=front"
 
       - name: Upload G3.6 Power Parry runtime evidence
         if: always()
@@ -155,9 +165,9 @@ jobs:
           name: g3-6-power-parry-runtime-visual
           path: artifacts/g3-6-power-parry
 
-      - name: Upload G3.6.1 Power Bash readability evidence
+      - name: Upload G3.6.2 Power Bash recovery evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: g3-6-1-full-power-bash-readability
+          name: g3-6-2-d-full-recovery-readability
           path: artifacts/g3-6-1-power-bash-readability
