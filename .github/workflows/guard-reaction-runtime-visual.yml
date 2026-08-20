@@ -7,9 +7,12 @@ on:
       - 'src/animation/skyrim-converted-animation-library.js'
       - 'src/animation/parry-contact-deflect-runtime-clip.js'
       - 'src/animation/parry-upper-body-continuity.js'
+      - 'src/animation/power-bash-readability-probe.js'
       - 'src/combat/guard-*.js'
       - 'src/combat/longsword-guard-*.js'
+      - 'tests/power-bash-readability-probe.test.js'
       - 'tools/action-studio/guard-reaction-runtime-lab.*'
+      - 'tools/action-studio/power-bash-readability-lab.*'
       - '.github/workflows/guard-reaction-runtime-visual.yml'
   workflow_dispatch:
 
@@ -30,7 +33,7 @@ jobs:
           test "$(sha256sum assets/skyrim/guard/converted/shd_blockbashpower.source.glb | cut -d' ' -f1)" = "603cf8326501ca2dd3628e8f47c37c6cbad6bec491b224123af418e70c36fd47"
 
       - name: Run G3.6 production motion contract tests
-        run: node --test tests/parry-contact-deflect-runtime-clip.test.js tests/guard-reaction-presentation.test.js tests/guard-state-machine.test.js tests/guard-presentation-runtime.test.js
+        run: node --test tests/parry-contact-deflect-runtime-clip.test.js tests/guard-reaction-presentation.test.js tests/guard-state-machine.test.js tests/guard-presentation-runtime.test.js tests/power-bash-readability-probe.test.js
 
       - name: Locate headless browser
         id: browser
@@ -110,9 +113,51 @@ jobs:
             --screenshot="artifacts/g3-6-power-parry/perfect-power-side-315ms.png" \
             "${BASE}?reaction=perfect&elapsed=315&view=side"
 
+      - name: Verify G3.6.1 Full Power Bash readability probe
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-6-1-power-bash-readability
+          python3 -m http.server 4174 > /tmp/g361-readability-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          BASE='http://127.0.0.1:4174/tools/action-studio/power-bash-readability-lab.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1600,1100 --virtual-time-budget=30000 --dump-dom \
+            "${BASE}?progress=0.50&view=three" > artifacts/g3-6-1-power-bash-readability/g361-dom.html
+          if ! grep -q 'data-g361="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html; then
+            echo 'G3.6.1 Full Power Bash readability probe failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-6-1-power-bash-readability/g361-dom.html || true
+            exit 1
+          fi
+          grep -q 'data-g361-production-unchanged="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html
+          grep -q 'data-g361-current-short="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html
+          grep -q 'data-g361-extended-longer="pass"' artifacts/g3-6-1-power-bash-readability/g361-dom.html
+
+          for progress in 0.25 0.50 0.75; do
+            tag="${progress/./}"
+            "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+              --window-size=1600,1100 --virtual-time-budget=26000 \
+              --screenshot="artifacts/g3-6-1-power-bash-readability/abc-progress-${tag}.png" \
+              "${BASE}?progress=${progress}&view=three"
+          done
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1600,1100 --virtual-time-budget=26000 \
+            --screenshot="artifacts/g3-6-1-power-bash-readability/abc-front-progress-050.png" \
+            "${BASE}?progress=0.50&view=front"
+
       - name: Upload G3.6 Power Parry runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: g3-6-power-parry-runtime-visual
           path: artifacts/g3-6-power-parry
+
+      - name: Upload G3.6.1 Power Bash readability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-6-1-full-power-bash-readability
+          path: artifacts/g3-6-1-power-bash-readability
