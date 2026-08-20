@@ -9,6 +9,7 @@ import {
   POWER_BASH_READABILITY_SOURCE_CLIP_ID,
   POWER_BASH_READABILITY_STAGE,
   POWER_BASH_RECOVERY_PROBE_STAGE,
+  POWER_BASH_PRODUCTION_PROMOTION_STAGE,
   buildPowerBashReadabilityProbeReport,
   resolvePowerBashReadabilityCandidate,
   samplePowerBashReadabilityCandidate,
@@ -279,7 +280,8 @@ function buildReport() {
   const recoveredPower = recovered.resolved.segments.find((segment) => segment.role === 'power');
   const recoveredTail = recovered.resolved.segments.find((segment) => segment.role === 'recovery');
   const gates = {
-    productionUnchanged: contract.productionUnchanged === true,
+    productionPromoted: contract.productionPromoted === true && contract.productionCandidateId === POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED_FULL_RECOVERY,
+    historicalBaselinePreserved: contract.historicalBaselinePreserved === true,
     sourceClipPresent: Boolean(sourceClip?.tracks?.length),
     allCandidatesMeasured: slots.every((slot) => slot.metrics?.samples > 2),
     currentBeatUnderFiveFrames30: current.metrics.approximateFrames30 < 5,
@@ -295,17 +297,19 @@ function buildReport() {
     stage: POWER_BASH_READABILITY_STAGE,
     recoveryProbeStage: POWER_BASH_RECOVERY_PROBE_STAGE,
     pass: failures.length === 0,
-    productionChanged: false,
+    productionChanged: true,
+    productionPromotionStage: POWER_BASH_PRODUCTION_PROMOTION_STAGE,
     sourceClipId: POWER_BASH_READABILITY_SOURCE_CLIP_ID,
     sourceClipDurationSeconds: Number(sourceClip.duration.toFixed(6)),
     contract,
     metrics,
     gates,
     failures,
-    decision: 'PROBE_ONLY — compare C vs D. D must preserve C power exactly, then use the authored source tail through clip end for natural recovery.',
+    decision: 'PROMOTED — D is the G3.6.3 production Power Parry motion. A/B/C remain historical readability references.',
   };
   document.documentElement.dataset.g361 = report.pass ? 'pass' : 'fail';
-  document.documentElement.dataset.g361ProductionUnchanged = gates.productionUnchanged ? 'pass' : 'fail';
+  document.documentElement.dataset.g361ProductionUnchanged = 'historical';
+  document.documentElement.dataset.g363ProductionPromoted = gates.productionPromoted && gates.historicalBaselinePreserved ? 'pass' : 'fail';
   document.documentElement.dataset.g361CurrentShort = gates.currentBeatUnderFiveFrames30 ? 'pass' : 'fail';
   document.documentElement.dataset.g361ExtendedLonger = gates.extendedAtLeastThreeTimesLonger ? 'pass' : 'fail';
   document.documentElement.dataset.g362Recovery = gates.dRecoveryEndsAtClipEnd && gates.dAddsVisibleRecoveryTail ? 'pass' : 'fail';
@@ -313,6 +317,7 @@ function buildReport() {
   reportNode.textContent = JSON.stringify(report, null, 2);
   window.__G361_POWER_BASH_READABILITY_RESULT__ = report;
   window.__G362_D_RECOVERY_RESULT__ = report;
+  window.__G363_D_PRODUCTION_RESULT__ = report;
   return report;
 }
 
@@ -341,7 +346,7 @@ async function main() {
 
   const report = buildReport();
   const recovered = slots.find((slot) => slot.candidate.id === POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED_FULL_RECOVERY);
-  status.textContent = `${POWER_BASH_RECOVERY_PROBE_STAGE} ${report.pass ? 'READY' : 'FAIL'} · D ${recovered.metrics.visualDurationMilliseconds.toFixed(0)}ms / ~${recovered.metrics.approximateFrames30.toFixed(1)}f @30 · production remains G3.6`;
+  status.textContent = `${POWER_BASH_PRODUCTION_PROMOTION_STAGE} ${report.pass ? 'READY' : 'FAIL'} · D ${recovered.metrics.visualDurationMilliseconds.toFixed(0)}ms / ~${recovered.metrics.approximateFrames30.toFixed(1)}f @30 · D is production`;
   status.className = report.pass ? 'good' : 'bad';
   const params = new URLSearchParams(location.search);
   const requestedProgress = Number(params.get('progress'));
@@ -412,10 +417,12 @@ addEventListener('resize', resize);
 main().catch((error) => {
   document.documentElement.dataset.g361 = 'fail';
   document.documentElement.dataset.g362Recovery = 'fail';
+  document.documentElement.dataset.g363ProductionPromoted = 'fail';
   status.textContent = `${POWER_BASH_RECOVERY_PROBE_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
   const failure = { stage: POWER_BASH_RECOVERY_PROBE_STAGE, pass: false, error: error?.stack || String(error) };
   window.__G361_POWER_BASH_READABILITY_RESULT__ = failure;
   window.__G362_D_RECOVERY_RESULT__ = failure;
+  window.__G363_D_PRODUCTION_RESULT__ = failure;
 });
