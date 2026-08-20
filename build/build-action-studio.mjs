@@ -27,33 +27,24 @@ function gitBlobVersion(content) {
 async function compileModule(filename) {
   const absoluteFilename = path.resolve(filename);
   if (moduleIds.has(absoluteFilename)) return moduleIds.get(absoluteFilename);
-
   const moduleId = `__actionStudioModule${moduleIds.size}`;
   moduleIds.set(absoluteFilename, moduleId);
   let source = await readFile(absoluteFilename, 'utf8');
   const imports = [...source.matchAll(/import\s*\{([\s\S]*?)\}\s*from\s*['"]([^'"]+)['"]\s*;/g)];
-
   for (const match of imports) {
     const specifier = match[2];
-    if (!specifier.startsWith('.')) {
-      throw new Error(`${normalizedRelativePath(absoluteFilename)} imports unsupported package ${specifier}`);
-    }
+    if (!specifier.startsWith('.')) throw new Error(`${normalizedRelativePath(absoluteFilename)} imports unsupported package ${specifier}`);
     const dependencyFile = path.resolve(path.dirname(absoluteFilename), specifier);
     const dependencyId = await compileModule(dependencyFile);
     const bindings = match[1].split(',').map((name) => name.trim()).filter(Boolean).join(', ');
     source = source.replace(match[0], `const { ${bindings} } = ${dependencyId};`);
   }
-
   const exportNames = [];
   source = source.replace(/\bexport\s+(const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/g, (_match, kind, name) => {
     exportNames.push(name);
     return `${kind} ${name}`;
   });
-
-  if (/\b(?:import|export)\s/.test(source)) {
-    throw new Error(`Unsupported ESM syntax remains in ${normalizedRelativePath(absoluteFilename)}`);
-  }
-
+  if (/\b(?:import|export)\s/.test(source)) throw new Error(`Unsupported ESM syntax remains in ${normalizedRelativePath(absoluteFilename)}`);
   const block = [
     `// ${normalizedRelativePath(absoluteFilename)}`,
     `const ${moduleId} = (() => {`,
@@ -92,9 +83,8 @@ const moduleEntry = htmlTemplate.includes(moduleTag)
   : htmlTemplate.includes(moduleBootstrap)
     ? moduleBootstrap
     : (htmlTemplate.includes(moduleBootstrapCrlf) ? moduleBootstrapCrlf : null);
-if (!moduleEntry) {
-  throw new Error(`${normalizedRelativePath(htmlTemplateFile)} is missing the expected Action Studio module entry`);
-}
+if (!moduleEntry) throw new Error(`${normalizedRelativePath(htmlTemplateFile)} is missing the expected Action Studio module entry`);
+
 const protocolAwareEntry = [
   '<script>',
   "    window.__ACTION_STUDIO_RUNTIME_STAGE = 'G2.5.2';",
@@ -125,16 +115,16 @@ const protocolAwareEntry = [
   '        try {',
   '          const runtime = window.__ACTION_STUDIO_GUARD_RUNTIME__;',
   "          if (!runtime?.sampleAt) throw new Error('Guard Runtime deterministic sampler unavailable after bundle boot');",
-  "          const result = await runtime.sampleAt('parry', 360);",
+  "          const result = await runtime.sampleAt('parry', 820);",
   '          const report = result?.report || runtime.report || {};',
   "          const state = String(result?.snapshot?.state || runtime.snapshot?.state || '');",
   "          const clipId = String(report.clipId || '');",
   '          const sourceMs = Math.round((Number(report.sourceTimeSeconds) || 0) * 1000);',
   "          const pass = state === 'guard_parry'",
   "            && runtime.mode === 'parry'",
-  "            && clipId === 'SKYRIM_GUARD/power_parry_g36'",
-  '            && sourceMs >= 350',
-  '            && sourceMs <= 370;',
+  "            && clipId === 'SKYRIM_GUARD/power_parry_g363'",
+  '            && sourceMs >= 810',
+  '            && sourceMs <= 830;',
   "          root.dataset.pagesGuardGate = pass ? 'pass' : 'fail';",
   '          root.dataset.pagesGuardState = state;',
   '          root.dataset.pagesGuardClip = clipId;',
