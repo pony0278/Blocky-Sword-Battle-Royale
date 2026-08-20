@@ -46,10 +46,10 @@ export const LIVING_GUARD_IDLE_CANDIDATES = Object.freeze([
     slot: 'C',
     label: 'Living Triangle',
     strategy: 'canonical-plus-live-delta',
-    sourceRate: 0.85,
+    sourceRate: 1.0,
     productionReference: false,
     probeOnly: true,
-    note: 'Preserve the approved Triangle Guard silhouette while blending only a restrained upper-body delta from Skyrim idle.',
+    note: 'Preserve the approved Triangle Guard silhouette while blending only a restrained upper-body delta from the same authored Skyrim idle timing.',
   }),
 ]);
 
