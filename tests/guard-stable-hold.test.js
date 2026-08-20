@@ -10,7 +10,14 @@ import {
   GUARD_STATES,
   createGuardStateMachine,
 } from '../src/combat/guard-state-machine.js';
-import { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } from '../src/animation/parry-contact-deflect-runtime-clip.js';
+import {
+  PRODUCTION_PARRY_DEFLECT_CLIP_IDS,
+  PRODUCTION_PARRY_DEFLECT_VARIANTS,
+  getProductionParryDeflectProfile,
+} from '../src/animation/parry-contact-deflect-runtime-clip.js';
+
+const PARRY_DURATION = getProductionParryDeflectProfile(PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY).reactionDurationSeconds;
+const PERFECT_DURATION = getProductionParryDeflectProfile(PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY).reactionDurationSeconds;
 
 function transformComponent(values) {
   return { ...values, set(...args) {
@@ -31,8 +38,8 @@ function createCharacter() {
   const samples = [];
   const durations = new Map([
     ['SKYRIM_GUARD/shd_blockidle', 2],
-    [PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY, 0.6],
-    [PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY, 0.6],
+    [PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY, PARRY_DURATION],
+    [PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY, PERFECT_DURATION],
     ['SKYRIM_GUARD/shd_blockhit', 0.8],
     ['Melee_Block_Attack', 0.75],
   ]);
@@ -91,7 +98,7 @@ test('G3.5.2 Guard HOLD samples the same canonical pose instead of looping Skyri
   assert.equal(holdSample.options.loop, false);
 });
 
-test('G3.5.2 Parry Recover targets the same canonical Guard pose before returning to HOLD', () => {
+test('G3.6.3 Parry Recover targets the same canonical Guard pose after the complete D recovery tail', () => {
   const machine = createGuardStateMachine();
   const character = createCharacter();
   const runtime = createGuardPresentationRuntime(null, {
@@ -102,7 +109,7 @@ test('G3.5.2 Parry Recover targets the same canonical Guard pose before returnin
 
   enterHold(machine, runtime);
   machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { attackId: 'stable-hold-parry' });
-  let result = runtime.update(600);
+  let result = runtime.update(PARRY_DURATION * 1000);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
   assert.equal(result.report.sourceTimeSeconds, 1);
   assert.equal(result.report.stableGuardStage, STABLE_GUARD_HOLD_STAGE);
