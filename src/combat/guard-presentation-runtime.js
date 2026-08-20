@@ -258,9 +258,6 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       inPlace: true,
       rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
-    if (!stableGuardBasePose && snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0) {
-      stableGuardBasePose = captureRigPose(character.rig);
-    }
     applyCorrection(transition.weights.correctionWeight);
     character.update?.(0, camera);
     return Object.freeze({
