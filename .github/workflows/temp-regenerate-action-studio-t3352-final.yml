@@ -32,3 +32,5 @@ jobs:
           fi
           git commit -m 'Regenerate Action Studio for T3.3 and G3.5.2 final'
           git push origin HEAD:agent/t3-3-g3-5-2-guard-visual-stability
+
+# Connector trigger commit: workflow existed before this push.
