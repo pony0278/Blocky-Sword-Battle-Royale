@@ -16,8 +16,8 @@ Canonical longsword light attacks remain:
 
 Implementation:
 
-- `ActionDefinition` now carries optional `direction` metadata.
-- `src/combat/longsword-directional-attack-runtime.js` converts canonical direction/contact metadata into ordinary action definitions.
+- `src/combat/longsword-directional-attack-runtime.js` converts canonical direction/contact metadata into G4.1 longsword attack definitions.
+- The G4.1 attack-definition layer adds `direction` while leaving the shared `ActionDefinition` schema untouched, so existing Action Studio standalone bundles do not need unrelated regeneration.
 - Runtime phases are `idle → attack_windup → attack_active → attack_recovery → idle`.
 - Active, movement, weapon-trail and recovery-cancel windows are generated from the canonical contact point.
 - External animation binding remains source-authored at 1.00x and in-place with root rotation locked.

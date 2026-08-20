@@ -84,7 +84,6 @@ export function createLongswordDirectionalAttackDefinition(direction, options = 
     id: `longsword_light_${profile.direction}`,
     clipId: profile.clipId,
     category: 'attack',
-    direction: profile.direction,
     animationBinding: {
       source: profile.source,
       clipId: profile.clipId,
@@ -117,7 +116,13 @@ export function createLongswordDirectionalAttackDefinition(direction, options = 
       }],
     },
   }, maxFrame);
-  return Object.freeze({ ...action, runtime: profile, fps, durationFrames: maxFrame });
+  return Object.freeze({
+    ...action,
+    direction: profile.direction,
+    runtime: profile,
+    fps,
+    durationFrames: maxFrame,
+  });
 }
 
 export const LONGSWORD_DIRECTIONAL_ATTACK_DEFINITIONS = Object.freeze(Object.fromEntries(

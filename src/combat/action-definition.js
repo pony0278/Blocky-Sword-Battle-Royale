@@ -37,7 +37,6 @@ export function createActionDefinition(input = {}, maxFrame = Number.POSITIVE_IN
     id: String(input.id || 'untitled_action'),
     clipId,
     category: String(input.category || 'attack'),
-    direction: input.direction == null ? null : String(input.direction),
     animationBinding: normalizeAnimationBinding(input.animationBinding, clipId),
     windows,
     authority: ACTION_AUTHORITY_NOTE,
@@ -49,3 +48,4 @@ export function isFrameInWindow(action, type, frame) {
   const value = Number(frame) || 0;
   return action.windows[type].some((window) => value >= window.startFrame && value <= window.endFrame);
 }
+
