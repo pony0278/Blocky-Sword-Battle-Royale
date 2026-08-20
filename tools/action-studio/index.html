@@ -284,16 +284,16 @@
         try {
           const runtime = window.__ACTION_STUDIO_GUARD_RUNTIME__;
           if (!runtime?.sampleAt) throw new Error('Guard Runtime deterministic sampler unavailable after bundle boot');
-          const result = await runtime.sampleAt('parry', 360);
+          const result = await runtime.sampleAt('parry', 820);
           const report = result?.report || runtime.report || {};
           const state = String(result?.snapshot?.state || runtime.snapshot?.state || '');
           const clipId = String(report.clipId || '');
           const sourceMs = Math.round((Number(report.sourceTimeSeconds) || 0) * 1000);
           const pass = state === 'guard_parry'
             && runtime.mode === 'parry'
-            && clipId === 'SKYRIM_GUARD/power_parry_g36'
-            && sourceMs >= 350
-            && sourceMs <= 370;
+            && clipId === 'SKYRIM_GUARD/power_parry_g363'
+            && sourceMs >= 810
+            && sourceMs <= 830;
           root.dataset.pagesGuardGate = pass ? 'pass' : 'fail';
           root.dataset.pagesGuardState = state;
           root.dataset.pagesGuardClip = clipId;
