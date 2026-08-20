@@ -1,13 +1,15 @@
-import {
-  getProductionParryDeflectProfile,
-  PRODUCTION_PARRY_DEFLECT_VARIANTS,
-} from './parry-contact-deflect-runtime-clip.js';
-
 export const POWER_BASH_READABILITY_STAGE = 'G3.6.1';
 export const POWER_BASH_RECOVERY_PROBE_STAGE = 'G3.6.2';
+export const POWER_BASH_PRODUCTION_PROMOTION_STAGE = 'G3.6.3';
 export const POWER_BASH_READABILITY_SOURCE_CLIP_ID = 'SKYRIM_GUARD/shd_blockbashpower';
 
-const CURRENT_G36_PROFILE = getProductionParryDeflectProfile(PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY);
+// Historical baseline must stay frozen after G3.6.3 promotes D. Otherwise the
+// A/B/C/D decision lab would silently rewrite B to the new production timing.
+const FORMER_G36_PROFILE = Object.freeze({
+  deflectStartSeconds: 0.12,
+  deflectEndSeconds: 0.28,
+  deflectRate: 1.10,
+});
 
 export const POWER_BASH_READABILITY_CANDIDATE_IDS = Object.freeze({
   FULL_SOURCE: 'full-source',
@@ -30,13 +32,14 @@ export const POWER_BASH_READABILITY_CANDIDATES = Object.freeze([
   Object.freeze({
     id: POWER_BASH_READABILITY_CANDIDATE_IDS.CURRENT_G36,
     slot: 'B',
-    label: 'Current G3.6',
-    sourceStartSeconds: CURRENT_G36_PROFILE.deflectStartSeconds,
-    sourceEndSeconds: CURRENT_G36_PROFILE.deflectEndSeconds,
-    playbackRate: CURRENT_G36_PROFILE.deflectRate,
+    label: 'Former G3.6',
+    sourceStartSeconds: FORMER_G36_PROFILE.deflectStartSeconds,
+    sourceEndSeconds: FORMER_G36_PROFILE.deflectEndSeconds,
+    playbackRate: FORMER_G36_PROFILE.deflectRate,
     sourceEndPolicy: 'fixed',
-    productionReference: true,
-    intent: 'Exact Power Bash source window currently used by production G3.6 after the Block Hit contact beat.',
+    historicalProductionReference: true,
+    historicalStage: 'G3.6',
+    intent: 'Frozen historical production baseline used before D was promoted in G3.6.3.',
   }),
   Object.freeze({
     id: POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED,
@@ -47,13 +50,14 @@ export const POWER_BASH_READABILITY_CANDIDATES = Object.freeze([
     playbackRate: 0.95,
     sourceEndPolicy: 'fixed',
     probeOnly: true,
-    intent: 'Readability candidate only: preserve more shoulder/chest/weapon follow-through without changing production timing.',
+    intent: 'Readability candidate that exposed the stronger Power Bash body motion but stopped before authored recovery.',
   }),
   Object.freeze({
     id: POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED_FULL_RECOVERY,
     slot: 'D',
     label: 'Extended + Full Recovery',
-    probeOnly: true,
+    productionCandidate: true,
+    promotedInStage: POWER_BASH_PRODUCTION_PROMOTION_STAGE,
     composite: true,
     segments: Object.freeze([
       Object.freeze({
@@ -71,7 +75,7 @@ export const POWER_BASH_READABILITY_CANDIDATES = Object.freeze([
         playbackRate: 1.0,
       }),
     ]),
-    intent: 'Keep C unchanged through the strong Power Bash beat, then preserve the authored Skyrim recovery tail through clip end for a natural reset.',
+    intent: 'Approved production motion: keep C unchanged through the strong Power Bash beat, then preserve the authored Skyrim recovery tail through clip end for a natural reset.',
   }),
 ]);
 
@@ -163,23 +167,27 @@ export function buildPowerBashReadabilityProbeReport(clipDurationSeconds) {
   const candidates = POWER_BASH_READABILITY_CANDIDATES.map((candidate) => (
     resolvePowerBashReadabilityCandidate(candidate, clipDurationSeconds)
   ));
-  const current = candidates.find((entry) => entry.id === POWER_BASH_READABILITY_CANDIDATE_IDS.CURRENT_G36);
+  const former = candidates.find((entry) => entry.id === POWER_BASH_READABILITY_CANDIDATE_IDS.CURRENT_G36);
   const extended = candidates.find((entry) => entry.id === POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED);
   const recovered = candidates.find((entry) => entry.id === POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED_FULL_RECOVERY);
   return Object.freeze({
     stage: POWER_BASH_READABILITY_STAGE,
     recoveryProbeStage: POWER_BASH_RECOVERY_PROBE_STAGE,
+    productionPromotionStage: POWER_BASH_PRODUCTION_PROMOTION_STAGE,
     sourceClipId: POWER_BASH_READABILITY_SOURCE_CLIP_ID,
     clipDurationSeconds: Math.max(0, Number(clipDurationSeconds) || 0),
-    productionUnchanged: true,
+    productionUnchanged: false,
+    productionPromoted: true,
+    productionCandidateId: POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED_FULL_RECOVERY,
+    historicalBaselinePreserved: former.historicalProductionReference === true,
     candidates,
     diagnostics: Object.freeze({
-      currentPowerSegmentMilliseconds: current.visualDurationSeconds * 1000,
-      currentApproximateFrames30: current.approximateFrames30,
+      formerG36PowerSegmentMilliseconds: former.visualDurationSeconds * 1000,
+      formerG36ApproximateFrames30: former.approximateFrames30,
       extendedPowerSegmentMilliseconds: extended.visualDurationSeconds * 1000,
       extendedApproximateFrames30: extended.approximateFrames30,
-      extendedToCurrentDurationRatio: current.visualDurationSeconds > 0
-        ? extended.visualDurationSeconds / current.visualDurationSeconds
+      extendedToFormerG36DurationRatio: former.visualDurationSeconds > 0
+        ? extended.visualDurationSeconds / former.visualDurationSeconds
         : 0,
       extendedFullRecoveryMilliseconds: recovered.visualDurationSeconds * 1000,
       extendedFullRecoveryApproximateFrames30: recovered.approximateFrames30,
