@@ -8,6 +8,7 @@ import {
   POWER_BASH_READABILITY_CANDIDATES,
   POWER_BASH_READABILITY_SOURCE_CLIP_ID,
   POWER_BASH_READABILITY_STAGE,
+  POWER_BASH_RECOVERY_PROBE_STAGE,
   buildPowerBashReadabilityProbeReport,
   resolvePowerBashReadabilityCandidate,
   samplePowerBashReadabilityCandidate,
@@ -16,7 +17,7 @@ import {
 
 const THREE = window.THREE;
 if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader || !THREE?.Quaternion || !THREE?.OrbitControls) {
-  throw new Error(`${POWER_BASH_READABILITY_STAGE} requires Three.js + GLTFLoader + OrbitControls`);
+  throw new Error(`${POWER_BASH_RECOVERY_PROBE_STAGE} requires Three.js + GLTFLoader + OrbitControls`);
 }
 
 const canvas = document.getElementById('canvas');
@@ -28,10 +29,10 @@ scene.background = new THREE.Color(0x09101a);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
 const CAMERA_TARGET = new THREE.Vector3(0, 1.0, 0);
 const CAMERA_PRESETS = Object.freeze({
-  three: Object.freeze([5.9, 2.25, 8.3]),
-  front: Object.freeze([0, 1.55, 9.2]),
-  side: Object.freeze([9.2, 1.55, 0]),
-  back: Object.freeze([0, 1.55, -9.2]),
+  three: Object.freeze([6.5, 2.45, 9.2]),
+  front: Object.freeze([0, 1.55, 10.5]),
+  side: Object.freeze([10.5, 1.55, 0]),
+  back: Object.freeze([0, 1.55, -10.5]),
 });
 const orbitControls = new THREE.OrbitControls(camera, canvas);
 orbitControls.target.copy(CAMERA_TARGET);
@@ -39,7 +40,7 @@ orbitControls.enableDamping = false;
 orbitControls.enablePan = true;
 orbitControls.enableZoom = true;
 orbitControls.minDistance = 3.2;
-orbitControls.maxDistance = 18;
+orbitControls.maxDistance = 20;
 orbitControls.minPolarAngle = 0.12;
 orbitControls.maxPolarAngle = Math.PI - 0.12;
 orbitControls.screenSpacePanning = true;
@@ -52,7 +53,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x26344b, 1.35));
 const key = new THREE.DirectionalLight(0xffffff, 1.0);
 key.position.set(3, 6, 5);
 scene.add(key);
-scene.add(new THREE.GridHelper(12, 24, 0x34435d, 0x202a3b));
+scene.add(new THREE.GridHelper(14, 28, 0x34435d, 0x202a3b));
 
 const status = document.getElementById('status');
 const reportNode = document.getElementById('report');
@@ -63,13 +64,15 @@ const resetButton = document.getElementById('reset');
 const resetCameraButton = document.getElementById('resetCamera');
 const cards = new Map();
 
+const SLOT_SPACING = 2.35;
+const SLOT_CENTER_INDEX = (POWER_BASH_READABILITY_CANDIDATES.length - 1) / 2;
 const slots = POWER_BASH_READABILITY_CANDIDATES.map((candidate, index) => ({
   candidate,
   character: createDefaultCharacter(THREE),
   sword: null,
   resolved: null,
   metrics: null,
-  x: (index - 1) * 2.55,
+  x: (index - SLOT_CENTER_INDEX) * SLOT_SPACING,
 }));
 slots.forEach((slot) => {
   slot.character.object3d.position.x = slot.x;
@@ -108,14 +111,14 @@ function quaternionAngleDegrees(a, b) {
 
 function boneWorldQuaternion(slot, id) {
   const bone = slot.character.rig?.bones?.[id];
-  if (!bone?.getWorldQuaternion) throw new Error(`Missing ${POWER_BASH_READABILITY_STAGE} bone: ${id}`);
+  if (!bone?.getWorldQuaternion) throw new Error(`Missing ${POWER_BASH_RECOVERY_PROBE_STAGE} bone: ${id}`);
   slot.character.object3d.updateMatrixWorld(true);
   return bone.getWorldQuaternion(new THREE.Quaternion());
 }
 
 function boneWorldPosition(slot, id) {
   const bone = slot.character.rig?.bones?.[id];
-  if (!bone?.getWorldPosition) throw new Error(`Missing ${POWER_BASH_READABILITY_STAGE} bone: ${id}`);
+  if (!bone?.getWorldPosition) throw new Error(`Missing ${POWER_BASH_RECOVERY_PROBE_STAGE} bone: ${id}`);
   slot.character.object3d.updateMatrixWorld(true);
   return bone.getWorldPosition(new THREE.Vector3());
 }
@@ -192,22 +195,42 @@ function measureCandidate(slot) {
     previousTip = tip;
   }
 
-  const handEnd = previousHand;
-  const tipEnd = previousTip;
   return Object.freeze({
     sourceWindowSeconds: [slot.resolved.sourceStartSeconds, slot.resolved.sourceEndSeconds],
-    playbackRate: slot.resolved.playbackRate,
+    segments: slot.resolved.segments.map((segment) => ({
+      role: segment.role || 'motion',
+      sourceWindowSeconds: [segment.sourceStartSeconds, segment.sourceEndSeconds],
+      playbackRate: segment.playbackRate,
+      visualDurationMilliseconds: Number((segment.visualDurationSeconds * 1000).toFixed(2)),
+    })),
     visualDurationMilliseconds: Number((visualDuration * 1000).toFixed(2)),
     approximateFrames30: Number(slot.resolved.approximateFrames30.toFixed(2)),
     chestExcursionDegrees: Number(chestExcursionDegrees.toFixed(3)),
     weaponShoulderExcursionDegrees: Number(shoulderExcursionDegrees.toFixed(3)),
     weaponHandPathMeters: Number(handPathMeters.toFixed(4)),
-    weaponHandNetDisplacementMeters: Number(handEnd.distanceTo(handStart).toFixed(4)),
+    weaponHandNetDisplacementMeters: Number(previousHand.distanceTo(handStart).toFixed(4)),
     swordTipPathMeters: Number(swordTipPathMeters.toFixed(4)),
-    swordTipNetDisplacementMeters: Number(tipEnd.distanceTo(tipStart).toFixed(4)),
+    swordTipNetDisplacementMeters: Number(previousTip.distanceTo(tipStart).toFixed(4)),
     peakSwordTipSpeedMetersPerSecond: Number(peakSwordTipSpeedMetersPerSecond.toFixed(3)),
     samples: steps + 1,
   });
+}
+
+function describeSegments(slot) {
+  return slot.resolved.segments.map((segment) => {
+    const role = segment.role ? `${segment.role} ` : '';
+    return `${role}${segment.sourceStartSeconds.toFixed(3)}→${segment.sourceEndSeconds.toFixed(3)}s @${segment.playbackRate.toFixed(2)}×`;
+  }).join(' · ');
+}
+
+function resolveSourceRole(slot, sourceTime) {
+  if (!Number.isFinite(sourceTime)) return '';
+  const segment = slot.resolved.segments.find((entry, index) => {
+    const isLast = index === slot.resolved.segments.length - 1;
+    return sourceTime >= entry.sourceStartSeconds - 1e-6
+      && (sourceTime < entry.sourceEndSeconds - 1e-6 || (isLast && sourceTime <= entry.sourceEndSeconds + 1e-6));
+  });
+  return segment?.role || '';
 }
 
 function renderCards(sourceTimes = new Map()) {
@@ -215,10 +238,13 @@ function renderCards(sourceTimes = new Map()) {
     const card = cards.get(slot.candidate.id);
     if (!card) continue;
     const sourceTime = sourceTimes.get(slot.candidate.id);
-    card.querySelector('[data-role="window"]').textContent = `${slot.resolved.sourceStartSeconds.toFixed(3)} → ${slot.resolved.sourceEndSeconds.toFixed(3)}s · ${slot.resolved.playbackRate.toFixed(2)}×`;
+    const role = resolveSourceRole(slot, sourceTime);
+    card.querySelector('[data-role="window"]').textContent = describeSegments(slot);
     card.querySelector('[data-role="duration"]').textContent = `${slot.metrics.visualDurationMilliseconds.toFixed(0)}ms · ~${slot.metrics.approximateFrames30.toFixed(1)} frames @30fps`;
     card.querySelector('[data-role="motion"]').textContent = `chest ${slot.metrics.chestExcursionDegrees.toFixed(1)}° · shoulder ${slot.metrics.weaponShoulderExcursionDegrees.toFixed(1)}° · sword path ${slot.metrics.swordTipPathMeters.toFixed(3)}m`;
-    card.querySelector('[data-role="source"]').textContent = Number.isFinite(sourceTime) ? `source ${sourceTime.toFixed(3)}s` : 'source —';
+    card.querySelector('[data-role="source"]').textContent = Number.isFinite(sourceTime)
+      ? `source ${sourceTime.toFixed(3)}s${role ? ` · ${role.toUpperCase()}` : ''}`
+      : 'source —';
   }
 }
 
@@ -227,7 +253,7 @@ function applyStaticProgress(progress) {
   const times = new Map();
   for (const slot of slots) times.set(slot.candidate.id, sampleSlotProgress(slot, staticProgress));
   progressInput.value = String(staticProgress);
-  progressLabel.textContent = `${Math.round(staticProgress * 100)}% source-window progress`;
+  progressLabel.textContent = `${Math.round(staticProgress * 100)}% normalized candidate timeline`;
   renderCards(times);
 }
 
@@ -249,16 +275,25 @@ function buildReport() {
   const metrics = Object.fromEntries(slots.map((slot) => [slot.candidate.id, slot.metrics]));
   const current = slots.find((slot) => slot.candidate.id === POWER_BASH_READABILITY_CANDIDATE_IDS.CURRENT_G36);
   const extended = slots.find((slot) => slot.candidate.id === POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED);
+  const recovered = slots.find((slot) => slot.candidate.id === POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED_FULL_RECOVERY);
+  const recoveredPower = recovered.resolved.segments.find((segment) => segment.role === 'power');
+  const recoveredTail = recovered.resolved.segments.find((segment) => segment.role === 'recovery');
   const gates = {
     productionUnchanged: contract.productionUnchanged === true,
     sourceClipPresent: Boolean(sourceClip?.tracks?.length),
     allCandidatesMeasured: slots.every((slot) => slot.metrics?.samples > 2),
     currentBeatUnderFiveFrames30: current.metrics.approximateFrames30 < 5,
     extendedAtLeastThreeTimesLonger: extended.resolved.visualDurationSeconds >= current.resolved.visualDurationSeconds * 3,
+    dPowerMatchesC: Math.abs(recoveredPower.sourceStartSeconds - extended.resolved.sourceStartSeconds) < 1e-9
+      && Math.abs(recoveredPower.sourceEndSeconds - extended.resolved.sourceEndSeconds) < 1e-9
+      && Math.abs(recoveredPower.playbackRate - extended.resolved.playbackRate) < 1e-9,
+    dRecoveryEndsAtClipEnd: Math.abs(recoveredTail.sourceEndSeconds - sourceClip.duration) < 1e-6,
+    dAddsVisibleRecoveryTail: recovered.resolved.visualDurationSeconds >= extended.resolved.visualDurationSeconds + 0.12,
   };
   const failures = Object.entries(gates).filter(([, pass]) => !pass).map(([name]) => name);
   const report = {
     stage: POWER_BASH_READABILITY_STAGE,
+    recoveryProbeStage: POWER_BASH_RECOVERY_PROBE_STAGE,
     pass: failures.length === 0,
     productionChanged: false,
     sourceClipId: POWER_BASH_READABILITY_SOURCE_CLIP_ID,
@@ -267,19 +302,22 @@ function buildReport() {
     metrics,
     gates,
     failures,
-    decision: 'PROBE_ONLY — compare A/B/C visually; do not promote Extended until human review approves the authored Power Bash arc.',
+    decision: 'PROBE_ONLY — compare C vs D. D must preserve C power exactly, then use the authored source tail through clip end for natural recovery.',
   };
   document.documentElement.dataset.g361 = report.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g361ProductionUnchanged = gates.productionUnchanged ? 'pass' : 'fail';
   document.documentElement.dataset.g361CurrentShort = gates.currentBeatUnderFiveFrames30 ? 'pass' : 'fail';
   document.documentElement.dataset.g361ExtendedLonger = gates.extendedAtLeastThreeTimesLonger ? 'pass' : 'fail';
+  document.documentElement.dataset.g362Recovery = gates.dRecoveryEndsAtClipEnd && gates.dAddsVisibleRecoveryTail ? 'pass' : 'fail';
+  document.documentElement.dataset.g362PowerMatchesC = gates.dPowerMatchesC ? 'pass' : 'fail';
   reportNode.textContent = JSON.stringify(report, null, 2);
   window.__G361_POWER_BASH_READABILITY_RESULT__ = report;
+  window.__G362_D_RECOVERY_RESULT__ = report;
   return report;
 }
 
 async function main() {
-  status.textContent = `${POWER_BASH_READABILITY_STAGE} loading complete Skyrim Power Bash source…`;
+  status.textContent = `${POWER_BASH_RECOVERY_PROBE_STAGE} loading Skyrim Power Bash + authored recovery tail…`;
   const loader = new THREE.GLTFLoader();
   library = await loadSkyrimConvertedAnimationLibrary(loader, {
     THREE,
@@ -290,7 +328,7 @@ async function main() {
   if (!sourceClip) throw new Error(`Missing ${POWER_BASH_READABILITY_SOURCE_CLIP_ID}`);
   const idle = library.clips.get('SKYRIM_GUARD/shd_blockidle');
   const bind = idle?.userData?.weaponBindCalibration;
-  if (!bind?.correctionQuaternion) throw new Error(`${POWER_BASH_READABILITY_STAGE} requires accepted Skyrim weapon bind calibration`);
+  if (!bind?.correctionQuaternion) throw new Error(`${POWER_BASH_RECOVERY_PROBE_STAGE} requires accepted Skyrim weapon bind calibration`);
   const mount = composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind);
 
   for (const slot of slots) {
@@ -302,7 +340,8 @@ async function main() {
   }
 
   const report = buildReport();
-  status.textContent = `${POWER_BASH_READABILITY_STAGE} ${report.pass ? 'READY' : 'FAIL'} · source duration ${sourceClip.duration.toFixed(3)}s · production remains G3.6`;
+  const recovered = slots.find((slot) => slot.candidate.id === POWER_BASH_READABILITY_CANDIDATE_IDS.EXTENDED_FULL_RECOVERY);
+  status.textContent = `${POWER_BASH_RECOVERY_PROBE_STAGE} ${report.pass ? 'READY' : 'FAIL'} · D ${recovered.metrics.visualDurationMilliseconds.toFixed(0)}ms / ~${recovered.metrics.approximateFrames30.toFixed(1)}f @30 · production remains G3.6`;
   status.className = report.pass ? 'good' : 'bad';
   const params = new URLSearchParams(location.search);
   const requestedProgress = Number(params.get('progress'));
@@ -372,8 +411,11 @@ addEventListener('resize', resize);
 
 main().catch((error) => {
   document.documentElement.dataset.g361 = 'fail';
-  status.textContent = `${POWER_BASH_READABILITY_STAGE} FAIL · ${error?.message || error}`;
+  document.documentElement.dataset.g362Recovery = 'fail';
+  status.textContent = `${POWER_BASH_RECOVERY_PROBE_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G361_POWER_BASH_READABILITY_RESULT__ = { stage: POWER_BASH_READABILITY_STAGE, pass: false, error: error?.stack || String(error) };
+  const failure = { stage: POWER_BASH_RECOVERY_PROBE_STAGE, pass: false, error: error?.stack || String(error) };
+  window.__G361_POWER_BASH_READABILITY_RESULT__ = failure;
+  window.__G362_D_RECOVERY_RESULT__ = failure;
 });
