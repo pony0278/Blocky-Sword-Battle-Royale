@@ -184,7 +184,10 @@ function setWorldDirectionDelta(THREE, bone, effectorWorld, targetWorld, maxDegr
   if (rawAngle < 1e-6) return 0;
   const maxRadians = Math.max(0, finite(maxDegrees)) * Math.PI / 180;
   const appliedAngle = Math.min(rawAngle, maxRadians);
-  const limitedWorldDelta = new THREE.Quaternion().slerpQuaternions(
+  // Three.js r128 mutates the target Quaternion but does not return `this` here.
+  // Keep the instance explicitly so callers never multiply by an undefined chain result.
+  const limitedWorldDelta = new THREE.Quaternion();
+  limitedWorldDelta.slerpQuaternions(
     new THREE.Quaternion(), desiredWorldDelta, appliedAngle / rawAngle,
   );
   const parentWorld = new THREE.Quaternion();
