@@ -50,15 +50,20 @@ jobs:
             --window-size=1280,900 --virtual-time-budget=30000 --dump-dom \
             "$URL" > artifacts/g3-5-1p-t3-3/continuity-dom.html
 
+          if ! grep -q 'data-g351pt33="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html; then
+            echo 'G3.5.1P-T3.3 continuity report:' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-5-1p-t3-3/continuity-dom.html >&2 || true
+            exit 1
+          fi
           grep -q 'data-g351pt32="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
           grep -q 'data-g351pt32-root="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
           grep -q 'data-g351pt32-hips="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
-          grep -q 'data-g351pt33="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
           grep -q 'data-g351pt33-policy="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
           grep -q 'data-g351pt33-spine="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
           grep -q 'data-g351pt33-chest="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
 
       - name: Upload T3.3 continuity evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: g3-5-1p-t3-3-parry-rotation-continuity
