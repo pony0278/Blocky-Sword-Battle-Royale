@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -161,3 +161,65 @@ jobs:
         with:
           name: g3-6-1-full-power-bash-readability
           path: artifacts/g3-6-1-power-bash-readability
+
+  finalize-action-studio:
+    needs: verify
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Add G3.6.1 entry to Action Studio
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          template = Path('tools/action-studio/index.template.html')
+          text = template.read_text()
+          marker = '        <div id="guardRuntimeDetail" class="status-line">Counter = Melee_Block_Attack · presentation never self-confirms combat authority</div>'
+          entry = '''        <div class="status-line" data-g361-readability-entry="true">
+            <a id="powerBashReadabilityLink" href="./power-bash-readability-lab.html" target="_blank" rel="noopener">G3.6.1 · Open Power Bash A/B/C Readability →</a>
+          </div>'''
+          if 'id="powerBashReadabilityLink"' not in text:
+              if marker not in text:
+                  raise SystemExit('Guard Runtime insertion marker not found')
+              text = text.replace(marker, marker + '\n' + entry, 1)
+              template.write_text(text)
+
+          test = Path('tests/action-studio-contract.test.js')
+          test_text = test.read_text()
+          needle = '    assert.match(surface, /data-guard-runtime="counter"/);\n'
+          extra = (
+              '    assert.match(surface, /id="powerBashReadabilityLink"/);\n'
+              '    assert.match(surface, /power-bash-readability-lab\\.html/);\n'
+              '    assert.match(surface, /G3\\.6\\.1 · Open Power Bash A\\/B\\/C Readability/);\n'
+          )
+          if 'powerBashReadabilityLink' not in test_text:
+              if needle not in test_text:
+                  raise SystemExit('Action Studio contract insertion marker not found')
+              test_text = test_text.replace(needle, needle + extra, 1)
+              test.write_text(test_text)
+          PY
+          npm run build:action-studio
+          node --test tests/action-studio-contract.test.js tests/power-bash-readability-probe.test.js
+          git diff --check
+      - name: Commit Action Studio integration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Action Studio integration already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- tools/action-studio/index.template.html tools/action-studio/index.html tests/action-studio-contract.test.js
+          git commit -m 'feat: expose G3.6.1 readability probe in Action Studio'
+          git push origin HEAD:${{ github.head_ref }}
