@@ -1,4 +1,4 @@
-export const PRODUCTION_PARRY_DEFLECT_STAGE = 'G3.5.1P-T3';
+export const PRODUCTION_PARRY_DEFLECT_STAGE = 'G3.6';
 
 export const PRODUCTION_PARRY_DEFLECT_VARIANTS = Object.freeze({
   PARRY: 'parry',
@@ -14,33 +14,45 @@ export const PRODUCTION_PARRY_DEFLECT_PHASES = Object.freeze({
 });
 
 export const PRODUCTION_PARRY_DEFLECT_CLIP_IDS = Object.freeze({
-  PARRY: 'SKYRIM_GUARD/parry_contact_deflect_t3',
-  PERFECT_PARRY: 'SKYRIM_GUARD/perfect_parry_contact_deflect_t3',
+  PARRY: 'SKYRIM_GUARD/power_parry_g36',
+  PERFECT_PARRY: 'SKYRIM_GUARD/perfect_power_parry_g36',
 });
 
 const CONTACT_CLIP_ID = 'SKYRIM_GUARD/shd_blockhit';
-const DEFLECT_CLIP_ID = 'SKYRIM_GUARD/shd_blockbash';
+const DEFLECT_CLIP_ID = 'SKYRIM_GUARD/shd_blockbashpower';
 const REACTION_DURATION_SECONDS = 0.6;
 const CONTACT_END_SECONDS = 0.16;
-const DEFLECT_START_SECONDS = 0.09;
-const DEFLECT_END_SECONDS = 0.22;
-const DEFLECT_BLEND_LEAD_SECONDS = 0.03;
-const DEFLECT_RATE = 1.15;
+
+// G3.6 intentionally promotes the former T2 Power T1 candidate. It was
+// previously rejected because its push-like displacement was too bash-like
+// for a compact redirect. That same forceful displacement is now the desired
+// semantic: catch the weapon, then power it off-line and create advantage.
+const DEFLECT_START_SECONDS = 0.12;
+const DEFLECT_END_SECONDS = 0.28;
+const DEFLECT_BLEND_LEAD_SECONDS = 0.035;
+const DEFLECT_RATE = 1.10;
+const SHARED_CONTACT_HOLD_SECONDS = 0.05;
+const SHARED_BLEND_SECONDS = 0.055;
+
+export const G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES = Object.freeze({
+  spine: 42,
+  chest: 60,
+});
 
 const PROFILES = Object.freeze({
   [PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY]: Object.freeze({
-    id: 'g351p_t3_parry_contact_deflect',
+    id: 'g36_parry_contact_power_deflect',
     variant: PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY,
     clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
-    contactHoldSeconds: 0.085,
-    blendSeconds: 0.070,
+    contactHoldSeconds: SHARED_CONTACT_HOLD_SECONDS,
+    blendSeconds: SHARED_BLEND_SECONDS,
   }),
   [PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY]: Object.freeze({
-    id: 'g351p_t3_perfect_parry_contact_deflect',
+    id: 'g36_perfect_parry_contact_power_deflect',
     variant: PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY,
     clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
-    contactHoldSeconds: 0.095,
-    blendSeconds: 0.075,
+    contactHoldSeconds: SHARED_CONTACT_HOLD_SECONDS,
+    blendSeconds: SHARED_BLEND_SECONDS,
   }),
 });
 
@@ -81,11 +93,14 @@ export function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFL
     deflectRate: DEFLECT_RATE,
     deflectEndAtSeconds,
     reactionDurationSeconds: REACTION_DURATION_SECONDS,
-    semanticIntent: 'incoming weapon contacts shield, impact reads, then the shield redirects the attack line upward/laterally',
-    sourceDecision: 'T2_SHARED_NORMAL_T1',
+    sharedMotionFamily: 'g36-blockhit-powerbash',
+    sharedMotionContract: true,
+    upperBodySafetyLimitsDegrees: G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES,
+    semanticIntent: 'weapon contact is read first, then a short Power Bash displacement forcefully knocks the incoming weapon off-line and creates Parry Advantage',
+    sourceDecision: 'G3_6_PROMOTE_T2_POWER_T1',
     perfectDifferentiation: base.variant === PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY
-      ? 'longer-contact-hold-and-blend; stronger stagger/hitfeel remains external to this clip'
-      : 'normal-parry-contact-deflect',
+      ? 'same-motion-as-parry-advantage; stronger timing reward/stagger/hitstop/FX/audio/camera remain external'
+      : 'shared-power-parry-motion; normal advantage reward remains external',
   });
 }
 
@@ -243,7 +258,7 @@ export function canCreateProductionParryDeflectClips(THREE, clipMap) {
 
 export function createProductionParryDeflectClip(THREE, clipMap, variant, options = {}) {
   if (!canCreateProductionParryDeflectClips(THREE, clipMap)) {
-    throw new Error('G3.5.1P-T3 production Parry clip synthesis requires retargeted Block Hit + Block Bash tracks and Three.js AnimationClip support');
+    throw new Error('G3.6 Power Parry synthesis requires retargeted Block Hit + Block Bash Power tracks and Three.js AnimationClip support');
   }
   const profile = getProductionParryDeflectProfile(variant);
   const contactClip = clipMap.get(profile.contactClipId);
@@ -272,7 +287,7 @@ export function createProductionParryDeflectClip(THREE, clipMap, variant, option
         contactClip.duration,
         deflectClip.duration,
       );
-      if (!value?.length) throw new Error(`G3.5.1P-T3 could not sample track ${name}`);
+      if (!value?.length) throw new Error(`G3.6 could not sample track ${name}`);
       values.push(...value);
     }
     tracks.push(new template.constructor(
@@ -292,6 +307,8 @@ export function createProductionParryDeflectClip(THREE, clipMap, variant, option
       probeOnly: false,
       variant: profile.variant,
       sourceDecision: profile.sourceDecision,
+      sharedMotionFamily: profile.sharedMotionFamily,
+      sharedMotionContract: profile.sharedMotionContract,
       contactClipId: profile.contactClipId,
       deflectClipId: profile.deflectClipId,
       contactEndSeconds: profile.contactEndSeconds,
@@ -301,6 +318,7 @@ export function createProductionParryDeflectClip(THREE, clipMap, variant, option
       deflectRate: profile.deflectRate,
       visualChainEndSeconds: profile.deflectEndAtSeconds,
       reactionDurationSeconds: profile.reactionDurationSeconds,
+      upperBodySafetyLimitsDegrees: profile.upperBodySafetyLimitsDegrees,
     }),
   };
   return clip;
