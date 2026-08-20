@@ -6,6 +6,9 @@ import { loadUal2AnimationLibrary } from '../../src/animation/ual2-animation-lib
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
 import {
+  PRODUCTION_PARRY_DEFLECT_CLIP_IDS,
+} from '../../src/animation/parry-contact-deflect-runtime-clip.js';
+import {
   GUARD_EVENTS,
   GUARD_STATES,
   createGuardStateMachine,
@@ -13,13 +16,25 @@ import {
 import { createGuardPresentationRuntime } from '../../src/combat/guard-presentation-runtime.js';
 import {
   LONGSWORD_ATTACK_RUNTIME_STAGE,
-  LONGSWORD_ATTACK_PHASES,
   LONGSWORD_DIRECTIONAL_ATTACK_DEFINITIONS,
   createLongswordDirectionalAttackRuntime,
 } from '../../src/combat/longsword-directional-attack-runtime.js';
+import {
+  LONGSWORD_CONTACT_RECOVERY_STAGE,
+  getLongswordContactRecoveryProfile,
+  sampleLongswordAttackRecovery,
+  sampleLongswordParryPreContact,
+} from '../../src/combat/longsword-contact-recovery-presentation.js';
+import {
+  captureRigPose,
+  applyRigPose,
+  blendRecoveryPose,
+} from '../../src/combat/guard-recovery-bridge.js';
+import { LONGSWORD_GUARD_AUTHORING_STATE } from '../../src/combat/longsword-guard-metadata.js';
+import { applyGuardQuaternionOffsetsWeighted } from '../../src/combat/longsword-guard-correction.js';
 
 const THREE = window.THREE;
-if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G4.2 requires Three.js + GLTFLoader');
+if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G4.2.1 requires Three.js + GLTFLoader');
 
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -66,11 +81,15 @@ let ready = false;
 let selectedDirection = 'top';
 let responseMode = 'hold';
 let contactTriggered = false;
+let contactMarkerPending = false;
 let contactPulse = 0;
 let repeatCooldownMs = 0;
 let lastTimestamp = performance.now();
 let attackerIdleDuration = 1;
+let attackerIdleClockSeconds = 0;
+let attackerRecovery = null;
 let lastGuardReport = null;
+let lastParryPreview = null;
 
 const contactMarker = new THREE.Mesh(
   new THREE.SphereGeometry(0.055, 12, 8),
@@ -99,47 +118,64 @@ function setView(view) {
 }
 
 function resetDefenderToHold() {
-  guardMachine.send(GUARD_EVENTS.RESET, { stage: 'G4.2', reason: 'new-scripted-attack' });
+  guardMachine.send(GUARD_EVENTS.RESET, { stage: LONGSWORD_CONTACT_RECOVERY_STAGE, reason: 'new-scripted-attack' });
   guardRuntime.sync(camera);
-  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: 'G4.2' });
+  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: LONGSWORD_CONTACT_RECOVERY_STAGE });
   guardRuntime.sync(camera);
   lastGuardReport = guardRuntime.update(180, camera);
   if (lastGuardReport.snapshot.state !== GUARD_STATES.HOLD) {
-    throw new Error(`G4.2 failed to enter Guard Hold: ${lastGuardReport.snapshot.state}`);
+    throw new Error(`G4.2.1 failed to enter Guard Hold: ${lastGuardReport.snapshot.state}`);
   }
 }
 
-function triggerContactReaction() {
-  if (contactTriggered) return;
-  contactTriggered = true;
-  contactPulse = 0.22;
+function parryResponseSelected() {
+  return responseMode === 'parry' || responseMode === 'perfect';
+}
+
+function placeScheduledContactMarker() {
+  if (!contactMarkerPending) return;
+  contactMarkerPending = false;
   attackerSword.trailTip.getWorldPosition(markerA);
   defenderSword?.trailTip?.getWorldPosition(markerB);
   if (defenderSword) contactMarker.position.copy(markerA).lerp(markerB, 0.5);
   else contactMarker.position.copy(markerA);
   contactMarker.visible = true;
   contactMarker.material.opacity = 1;
+}
+
+function triggerContactReaction() {
+  if (contactTriggered) return;
+  contactTriggered = true;
+  contactMarkerPending = true;
+  contactPulse = 0.22;
+  const polish = getLongswordContactRecoveryProfile(selectedDirection);
 
   if (responseMode === 'block') {
-    guardMachine.send(GUARD_EVENTS.BLOCK_CONFIRMED, { stage: 'G4.2', scriptedContact: true });
-  } else if (responseMode === 'parry' || responseMode === 'perfect') {
+    guardMachine.send(GUARD_EVENTS.BLOCK_CONFIRMED, {
+      stage: LONGSWORD_CONTACT_RECOVERY_STAGE,
+      scriptedContact: true,
+    });
+  } else if (parryResponseSelected()) {
     guardMachine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
-      stage: 'G4.2',
+      stage: LONGSWORD_CONTACT_RECOVERY_STAGE,
       scriptedContact: true,
       perfect: responseMode === 'perfect',
+      presentationOffsetSeconds: polish.parryPresentationOffsetSeconds,
     });
   }
-  guardRuntime.sync(camera);
-  hudContact.textContent = `Contact: ${selectedDirection.toUpperCase()} @ ${LONGSWORD_DIRECTIONAL_ATTACK_DEFINITIONS[selectedDirection].runtime.contactSeconds.toFixed(2)}s · ${responseMode}`;
+
+  hudContact.textContent = `Contact: ${selectedDirection.toUpperCase()} @ ${polish.contactSeconds.toFixed(2)}s · ${responseMode} · Parry lead ${(polish.parryVisualLeadSeconds * 1000).toFixed(0)}ms`;
 }
 
 function startAttack(direction = selectedDirection) {
-  if (!ready || attackRuntime.active) return false;
+  if (!ready || attackRuntime.active || attackerRecovery) return false;
   selectedDirection = direction;
   resetDefenderToHold();
   contactTriggered = false;
+  contactMarkerPending = false;
   contactPulse = 0;
   contactMarker.visible = false;
+  lastParryPreview = null;
   const result = attackRuntime.start(direction);
   if (!result.accepted) return false;
   repeatCooldownMs = 0;
@@ -158,7 +194,30 @@ function updateContactMarker(deltaSeconds) {
   contactMarker.material.opacity = t * t;
 }
 
-function sampleAttacker(snapshot, nowSeconds) {
+function beginAttackRecovery(direction) {
+  const profile = getLongswordContactRecoveryProfile(direction);
+  const sourcePose = captureRigPose(attacker.rig);
+
+  attacker.sampleAnimation(profile.attackRecoveryTargetClipId, profile.attackRecoveryTargetSourceTimeSeconds, {
+    loop: true,
+    inPlace: true,
+    rootRotationPolicy: 'lock',
+  });
+  attacker.update(0, camera);
+  const targetPose = captureRigPose(attacker.rig);
+  applyRigPose(attacker.rig, sourcePose);
+  attacker.update(0, camera);
+
+  attackerRecovery = {
+    direction,
+    elapsedMs: 0,
+    sourcePose,
+    targetPose,
+  };
+  attackerIdleClockSeconds = 0;
+}
+
+function sampleAttacker(snapshot, deltaMs) {
   if (snapshot.action) {
     const profile = snapshot.action.runtime;
     const sourceTime = Math.min(profile.durationSeconds, snapshot.elapsedSeconds);
@@ -167,18 +226,70 @@ function sampleAttacker(snapshot, nowSeconds) {
       inPlace: true,
       rootRotationPolicy: 'lock',
     });
-    if (!contactTriggered && snapshot.contactReached) triggerContactReaction();
+    attacker.update(0, camera);
+    if (snapshot.completed && !attackerRecovery) beginAttackRecovery(profile.direction);
     hudAttack.textContent = `Attack: ${profile.direction.toUpperCase()} · ${snapshot.phase} · ${sourceTime.toFixed(3)}s / ${profile.durationSeconds.toFixed(3)}s`;
-  } else {
-    const sourceTime = nowSeconds % Math.max(0.001, attackerIdleDuration);
-    attacker.sampleAnimation('UAL1/Sword_Idle', sourceTime, {
-      loop: true,
-      inPlace: true,
-      rootRotationPolicy: 'lock',
-    });
-    hudAttack.textContent = `Attack: IDLE · selected ${selectedDirection.toUpperCase()}`;
+    return;
   }
+
+  if (attackerRecovery) {
+    attackerRecovery.elapsedMs += deltaMs;
+    const recovery = sampleLongswordAttackRecovery(attackerRecovery.direction, attackerRecovery.elapsedMs);
+    const pose = blendRecoveryPose(
+      attackerRecovery.sourcePose,
+      attackerRecovery.sourcePose,
+      attackerRecovery.targetPose,
+      recovery.progress,
+      {
+        durationMs: recovery.profile.attackRecoveryDurationMs,
+        sampleDeltaMs: 0,
+        momentumScale: 0,
+      },
+    );
+    applyRigPose(attacker.rig, pose);
+    attacker.update(0, camera);
+    hudAttack.textContent = `Attack: ${attackerRecovery.direction.toUpperCase()} · recover→idle · ${(recovery.progress * 100).toFixed(0)}% / ${recovery.profile.attackRecoveryDurationMs}ms`;
+    if (recovery.complete) {
+      attackerRecovery = null;
+      attackerIdleClockSeconds = 0;
+    }
+    return;
+  }
+
+  attackerIdleClockSeconds += deltaMs / 1000;
+  const sourceTime = attackerIdleClockSeconds % Math.max(0.001, attackerIdleDuration);
+  attacker.sampleAnimation('UAL1/Sword_Idle', sourceTime, {
+    loop: true,
+    inPlace: true,
+    rootRotationPolicy: 'lock',
+  });
   attacker.update(0, camera);
+  hudAttack.textContent = `Attack: IDLE · selected ${selectedDirection.toUpperCase()}`;
+}
+
+function applyParryPreContactPreview(snapshot) {
+  lastParryPreview = null;
+  if (!snapshot.action || contactTriggered || !parryResponseSelected()) return null;
+  const preview = sampleLongswordParryPreContact(snapshot.direction, snapshot.elapsedSeconds);
+  if (!preview.active) return null;
+
+  const clipId = responseMode === 'perfect'
+    ? PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY
+    : PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY;
+  defender.sampleAnimation(clipId, preview.sourceTimeSeconds, {
+    loop: false,
+    inPlace: true,
+    rootRotationPolicy: 'lock',
+  });
+  applyGuardQuaternionOffsetsWeighted(
+    THREE,
+    defender.rig,
+    LONGSWORD_GUARD_AUTHORING_STATE.offsets,
+    1,
+  );
+  defender.update(0, camera);
+  lastParryPreview = preview;
+  return preview;
 }
 
 function verifyLab(ual1, ual2, skyrim) {
@@ -189,9 +300,11 @@ function verifyLab(ual1, ual2, skyrim) {
     durationSeconds: action.runtime.durationSeconds,
     contactSeconds: action.runtime.contactSeconds,
     activeWindowFrames: action.windows.active[0],
+    contactRecovery: getLongswordContactRecoveryProfile(direction),
   }]));
   const gates = {
     g41Stage: Object.values(LONGSWORD_DIRECTIONAL_ATTACK_DEFINITIONS).every((action) => action.runtime.stage === LONGSWORD_ATTACK_RUNTIME_STAGE),
+    g421Stage: Object.values(directional).every((entry) => entry.contactRecovery.stage === LONGSWORD_CONTACT_RECOVERY_STAGE),
     directions: JSON.stringify(Object.keys(directional).sort()) === JSON.stringify(['left', 'right', 'top']),
     attackerTop: attacker.hasAnimation('UAL1/Sword_Attack'),
     attackerIdle: attacker.hasAnimation('UAL1/Sword_Idle'),
@@ -200,31 +313,36 @@ function verifyLab(ual1, ual2, skyrim) {
     defenderHold: defender.hasAnimation('SKYRIM_GUARD/shd_blockidle'),
     defenderBlock: defender.hasAnimation('SKYRIM_GUARD/shd_blockhit'),
     defenderPowerParry: defender.hasAnimation('SKYRIM_GUARD/shd_blockbashpower'),
+    defenderParryVirtual: defender.hasAnimation(PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY),
+    defenderPerfectParryVirtual: defender.hasAnimation(PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY),
     sourceLibraries: ual1.clips.size === 2 && ual2.clips.size === 8 && skyrim.clips.size >= 4,
   };
   const failures = Object.entries(gates).filter(([, pass]) => !pass).map(([name]) => name);
   const report = {
-    stage: 'G4.1 + G4.2',
+    stage: 'G4.1 + G4.2 + G4.2.1',
     pass: failures.length === 0,
-    authority: 'presentation-only scripted contact; G4.3 owns spatial combat resolution',
+    authority: 'presentation-only scheduled contact; G4.3 owns spatial combat resolution',
     spacingMeters: 2.3,
+    parryVisualLeadSeconds: getLongswordContactRecoveryProfile('top').parryVisualLeadSeconds,
     directional,
     gates,
     failures,
   };
   document.documentElement.dataset.g41 = gates.g41Stage && gates.directions ? 'pass' : 'fail';
   document.documentElement.dataset.g42 = report.pass ? 'pass' : 'fail';
+  document.documentElement.dataset.g421 = gates.g421Stage ? 'pass' : 'fail';
   reportNode.textContent = JSON.stringify(report, null, 2);
   status.textContent = report.pass
-    ? 'G4.1 + G4.2 PASS · three directional attacks and production Guard family loaded'
-    : `G4.1 + G4.2 FAIL · ${failures.join(', ')}`;
+    ? 'G4.2.1 PASS · Parry visual lead + pose-matched attack recovery loaded'
+    : `G4.2.1 FAIL · ${failures.join(', ')}`;
   status.className = report.pass ? 'good' : 'bad';
   window.__G42_RESULT__ = report;
+  window.__G421_RESULT__ = report;
   return report;
 }
 
 async function main() {
-  status.textContent = 'Loading UAL1 / UAL2 attacker + Skyrim Guard defender…';
+  status.textContent = 'Loading G4.2.1 attacker recovery + pre-contact Parry presentation…';
   const attackerLoader = new THREE.GLTFLoader();
   const defenderLoader = new THREE.GLTFLoader();
   const [ual1, ual2, skyrim] = await Promise.all([
@@ -239,7 +357,7 @@ async function main() {
   attackerIdleDuration = attacker.getAnimationDuration('UAL1/Sword_Idle') || 1;
   const idle = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle');
   const bind = idle?.userData?.weaponBindCalibration;
-  if (!bind?.correctionQuaternion) throw new Error('G4.2 requires accepted Skyrim Guard weapon bind calibration');
+  if (!bind?.correctionQuaternion) throw new Error('G4.2.1 requires accepted Skyrim Guard weapon bind calibration');
   defenderSword = createDebugSword(THREE);
   mountDebugSword(defender, defenderSword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
 
@@ -266,15 +384,28 @@ function frame(timestamp) {
   const deltaSeconds = deltaMs / 1000;
   if (ready) {
     const attackSnapshot = attackRuntime.update(deltaMs);
-    sampleAttacker(attackSnapshot, timestamp / 1000);
+    sampleAttacker(attackSnapshot, deltaMs);
+
+    if (!contactTriggered && attackSnapshot.action && attackSnapshot.contactReached) {
+      triggerContactReaction();
+    }
+
     lastGuardReport = guardRuntime.update(deltaMs, camera);
-    defender.update(0, camera);
+    const preview = applyParryPreContactPreview(attackSnapshot);
+    if (!preview) defender.update(0, camera);
+
     attackerSword.update();
     defenderSword?.update();
+    placeScheduledContactMarker();
     updateContactMarker(deltaSeconds);
-    hudGuard.textContent = `Defender: ${lastGuardReport.snapshot.state} · ${lastGuardReport.report.clipId || '—'} · response ${responseMode}`;
 
-    if (!attackRuntime.active && !attackSnapshot.action && autoRepeat.checked) {
+    if (preview) {
+      hudGuard.textContent = `Defender: PARRY_PREP · ${preview.sourceTimeSeconds.toFixed(3)}s / ${preview.profile.parryVisualLeadSeconds.toFixed(3)}s · response ${responseMode}`;
+    } else {
+      hudGuard.textContent = `Defender: ${lastGuardReport.snapshot.state} · ${lastGuardReport.report.clipId || '—'} · response ${responseMode}`;
+    }
+
+    if (!attackRuntime.active && !attackSnapshot.action && !attackerRecovery && autoRepeat.checked) {
       repeatCooldownMs += deltaMs;
       if (repeatCooldownMs >= 700) startAttack(selectedDirection);
     }
@@ -287,10 +418,19 @@ requestAnimationFrame(frame);
 main().catch((error) => {
   document.documentElement.dataset.g41 = 'fail';
   document.documentElement.dataset.g42 = 'fail';
-  status.textContent = `G4.1 + G4.2 FAIL · ${error?.message || error}`;
+  document.documentElement.dataset.g421 = 'fail';
+  status.textContent = `G4.2.1 FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G42_RESULT__ = { stage: 'G4.1 + G4.2', pass: false, error: error?.stack || String(error) };
+  window.__G42_RESULT__ = { stage: 'G4.2.1', pass: false, error: error?.stack || String(error) };
+  window.__G421_RESULT__ = window.__G42_RESULT__;
 });
 
 window.__G42_LAB__ = { startAttack, attackRuntime, guardMachine };
+window.__G421_LAB__ = {
+  startAttack,
+  attackRuntime,
+  guardMachine,
+  get recovery() { return attackerRecovery; },
+  get parryPreview() { return lastParryPreview; },
+};

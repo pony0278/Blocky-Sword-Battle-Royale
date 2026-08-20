@@ -215,9 +215,21 @@ export function getGuardReactionProfile(state, payload = {}) {
 export function sampleGuardReactionProfile(state, elapsedMs = 0, payload = {}) {
   const profile = getGuardReactionProfile(state, payload);
   if (!profile) return null;
+
+  // G4.2.1 may visually pre-roll the Parry before authoritative contact. Keep
+  // gameplay reward windows contact-relative: only the presentation clock is
+  // offset, never the counter/follow-up timing clock.
   const elapsedSeconds = Math.max(0, Number(elapsedMs) || 0) / 1000;
+  const presentationOffsetSeconds = state === 'guard_parry'
+    ? clamp(Number(payload?.presentationOffsetSeconds) || 0, 0, profile.durationSeconds)
+    : 0;
+  const presentationElapsedSeconds = clamp(
+    elapsedSeconds + presentationOffsetSeconds,
+    0,
+    profile.durationSeconds,
+  );
   const progress = profile.durationSeconds > 0
-    ? clamp(elapsedSeconds / profile.durationSeconds, 0, 1)
+    ? clamp(presentationElapsedSeconds / profile.durationSeconds, 0, 1)
     : 1;
   const sourceTimeSeconds = profile.sourceWindow.startSeconds
     + profile.durationSeconds * progress;
@@ -226,6 +238,8 @@ export function sampleGuardReactionProfile(state, elapsedMs = 0, payload = {}) {
     profile,
     progress,
     sourceTimeSeconds,
+    presentationOffsetSeconds,
+    presentationElapsedSeconds,
     complete: progress >= 1,
     // G3.4 compatibility signal. Do not use for new production follow-up logic.
     counterWindowOpen: elapsedSeconds >= counterStart && elapsedSeconds <= counterEnd,
