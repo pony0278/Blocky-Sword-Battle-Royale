@@ -1,15 +1,18 @@
 name: TEMP Regenerate Action Studio T3.3 G3.5.2 Final
 
 on:
-  push:
-    branches:
-      - agent/t3-3-g3-5-2-guard-visual-stability
+  pull_request:
+    paths:
+      - '.github/workflows/temp-regenerate-action-studio-t3352-final.yml'
+      - 'src/**'
+      - 'tools/action-studio/**'
 
 permissions:
   contents: write
 
 jobs:
   regenerate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,5 +35,3 @@ jobs:
           fi
           git commit -m 'Regenerate Action Studio for T3.3 and G3.5.2 final'
           git push origin HEAD:agent/t3-3-g3-5-2-guard-visual-stability
-
-# Connector trigger commit: workflow existed before this push.
