@@ -14,6 +14,7 @@ import {
   sampleLivingGuardIdleCandidate,
 } from '../src/combat/living-guard-idle-probe.js';
 
+// G3.6.4 contract stays probe-only until the A/B/C visual review is accepted.
 test('G3.6.4 exposes Stable, full Skyrim reference, and Living Triangle without changing production', () => {
   assert.equal(LIVING_GUARD_IDLE_STAGE, 'G3.6.4');
   assert.deepEqual(LIVING_GUARD_IDLE_CANDIDATES.map((candidate) => candidate.id), [
