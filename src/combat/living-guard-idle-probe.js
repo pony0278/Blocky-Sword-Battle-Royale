@@ -1,6 +1,11 @@
 export const LIVING_GUARD_IDLE_STAGE = 'G3.6.4';
 export const LIVING_GUARD_IDLE_SOURCE_CLIP_ID = 'SKYRIM_GUARD/shd_blockidle';
 export const LIVING_GUARD_IDLE_CANONICAL_SAMPLE = 0.50;
+export const LIVING_GUARD_IDLE_GENTLE_WINDOW = Object.freeze({
+  startSeconds: 29.0,
+  endSeconds: 31.0,
+  source: 'G3.6.4 source scan: lowest-seam gentle non-static 2s window',
+});
 
 export const LIVING_GUARD_IDLE_CANDIDATE_IDS = Object.freeze({
   STABLE_G363: 'stable-g363',
@@ -27,6 +32,7 @@ export const LIVING_GUARD_IDLE_CANDIDATES = Object.freeze([
     label: 'Stable G3.6.3',
     strategy: 'canonical-static',
     sourceRate: 0,
+    sourceWindow: null,
     productionReference: true,
     probeOnly: true,
     note: 'Current production Hold: corrected Skyrim guard sampled at the canonical 50% pose and held perfectly still.',
@@ -34,12 +40,13 @@ export const LIVING_GUARD_IDLE_CANDIDATES = Object.freeze([
   Object.freeze({
     id: LIVING_GUARD_IDLE_CANDIDATE_IDS.SKYRIM_LIVE,
     slot: 'B',
-    label: 'Skyrim Live',
+    label: 'Skyrim Full Source',
     strategy: 'live-source',
     sourceRate: 1.0,
+    sourceWindow: null,
     productionReference: false,
     probeOnly: true,
-    note: 'Full corrected shd_blockidle loop. This exposes the source package motion without the G3.5.2 static Hold freeze.',
+    note: 'Full 40s Skyrim shd_blockidle reference. It intentionally includes larger authored fidgets and is not a production recommendation.',
   }),
   Object.freeze({
     id: LIVING_GUARD_IDLE_CANDIDATE_IDS.LIVING_TRIANGLE,
@@ -47,9 +54,10 @@ export const LIVING_GUARD_IDLE_CANDIDATES = Object.freeze([
     label: 'Living Triangle',
     strategy: 'canonical-plus-live-delta',
     sourceRate: 1.0,
+    sourceWindow: LIVING_GUARD_IDLE_GENTLE_WINDOW,
     productionReference: false,
     probeOnly: true,
-    note: 'Preserve the approved Triangle Guard silhouette while blending only a restrained upper-body delta from the same authored Skyrim idle timing.',
+    note: 'Preserve the approved corrected Triangle Guard silhouette while adding a restrained quaternion delta from the authored 29–31s gentle idle window.',
   }),
 ]);
 
@@ -71,15 +79,25 @@ export function livingGuardCanonicalSourceTime(durationSeconds) {
   return duration * LIVING_GUARD_IDLE_CANONICAL_SAMPLE;
 }
 
+function sampleWindow(window, elapsedSeconds, sourceRate, durationSeconds) {
+  const sourceStart = Math.max(0, Math.min(durationSeconds, Number(window?.startSeconds) || 0));
+  const sourceEnd = Math.max(sourceStart, Math.min(durationSeconds, Number(window?.endSeconds) || durationSeconds));
+  const windowDuration = Math.max(1e-6, sourceEnd - sourceStart);
+  return sourceStart + ((elapsedSeconds * sourceRate) % windowDuration);
+}
+
 export function sampleLivingGuardIdleCandidate(candidateInput, elapsedSeconds = 0, durationSeconds = 0) {
   const candidate = resolveLivingGuardIdleCandidate(candidateInput);
   const duration = Math.max(1e-6, Number(durationSeconds) || 0);
   const canonical = livingGuardCanonicalSourceTime(duration);
   const elapsed = Math.max(0, Number(elapsedSeconds) || 0);
   const sourceRate = Math.max(0, Number(candidate.sourceRate) || 0);
-  const sourceTimeSeconds = candidate.strategy === 'canonical-static'
-    ? canonical
-    : (canonical + elapsed * sourceRate) % duration;
+  let sourceTimeSeconds = canonical;
+  if (candidate.strategy !== 'canonical-static') {
+    sourceTimeSeconds = candidate.sourceWindow
+      ? sampleWindow(candidate.sourceWindow, elapsed, sourceRate, duration)
+      : (canonical + elapsed * sourceRate) % duration;
+  }
   return Object.freeze({
     stage: LIVING_GUARD_IDLE_STAGE,
     candidateId: candidate.id,
@@ -87,6 +105,7 @@ export function sampleLivingGuardIdleCandidate(candidateInput, elapsedSeconds = 
     sourceTimeSeconds,
     canonicalSourceTimeSeconds: canonical,
     sourceRate,
+    sourceWindow: candidate.sourceWindow,
     live: candidate.strategy !== 'canonical-static',
     probeOnly: candidate.probeOnly === true,
     productionReference: candidate.productionReference === true,
@@ -108,10 +127,11 @@ export function buildLivingGuardIdleProbeReport(durationSeconds) {
     sourceDurationSeconds: duration,
     canonicalSample: LIVING_GUARD_IDLE_CANONICAL_SAMPLE,
     canonicalSourceTimeSeconds: livingGuardCanonicalSourceTime(duration),
+    gentleSourceWindow: LIVING_GUARD_IDLE_GENTLE_WINDOW,
     productionUnchanged: true,
     productionStage: 'G3.6.3',
     candidates: LIVING_GUARD_IDLE_CANDIDATES,
     livingTriangleBoneWeights: LIVING_GUARD_IDLE_BONE_WEIGHTS,
-    decision: 'PROBE_ONLY — compare Stable, full Skyrim live motion, and restrained Living Triangle motion before changing production Hold.',
+    decision: 'PROBE_ONLY — C loops the source-scanned 29–31s authored micro-sway and applies only its restrained local quaternion delta on top of the current Triangle Guard.',
   });
 }
