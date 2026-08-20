@@ -47,13 +47,18 @@ jobs:
             --window-size=1280,900 --virtual-time-budget=30000 --dump-dom \
             "$URL" > artifacts/g3-5-2/stable-hold-dom.html
 
-          grep -q 'data-g352="pass"' artifacts/g3-5-2/stable-hold-dom.html
+          if ! grep -q 'data-g352="pass"' artifacts/g3-5-2/stable-hold-dom.html; then
+            echo 'G3.5.2 stable Hold report:' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-5-2/stable-hold-dom.html >&2 || true
+            exit 1
+          fi
           grep -q 'data-g352-entry="pass"' artifacts/g3-5-2/stable-hold-dom.html
           grep -q 'data-g352-hold-source="pass"' artifacts/g3-5-2/stable-hold-dom.html
           grep -q 'data-g352-hold-pose="pass"' artifacts/g3-5-2/stable-hold-dom.html
           grep -q 'data-g352-recover="pass"' artifacts/g3-5-2/stable-hold-dom.html
 
       - name: Upload G3.5.2 stable Hold evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: g3-5-2-stable-guard-hold
