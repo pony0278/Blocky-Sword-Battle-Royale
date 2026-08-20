@@ -12,10 +12,11 @@ import {
   createGuardStateMachine,
 } from '../../src/combat/guard-state-machine.js';
 import { createGuardPresentationRuntime } from '../../src/combat/guard-presentation-runtime.js';
+import { LIVING_GUARD_PRODUCTION_STAGE } from '../../src/combat/living-guard-idle-runtime.js';
 import { GUARD_WEAPON_MOUNT_PROFILE_IDS } from '../../src/combat/guard-counter-presentation.js';
 import { createGuardWeaponMountRuntime } from '../../src/combat/guard-weapon-mount-runtime.js';
 
-const GUARD_RUNTIME_STAGE = PRODUCTION_PARRY_DEFLECT_STAGE;
+const GUARD_RUNTIME_STAGE = LIVING_GUARD_PRODUCTION_STAGE;
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
   block: 'Guard Block',
@@ -52,6 +53,9 @@ function captureMountCalibration(object3d) {
 
 function relabelProductionSurface(panel) {
   panel.setAttribute('data-stage', GUARD_RUNTIME_STAGE);
+  panel.setAttribute('data-living-guard', 'skyrim-full-source');
+  panel.setAttribute('data-living-guard-stage', LIVING_GUARD_PRODUCTION_STAGE);
+  panel.setAttribute('data-parry-stage', PRODUCTION_PARRY_DEFLECT_STAGE);
   panel.setAttribute('data-parry-presentation', 'blockhit-powerbash-full-recovery');
   panel.setAttribute('data-parry-motion-family', 'g363-blockhit-powerbash-full-recovery');
   panel.setAttribute('data-followup-model', 'free-directional-attack');
@@ -60,9 +64,9 @@ function relabelProductionSurface(panel) {
   const intro = panel.querySelector('.blocking-intro');
   const compatibilityButton = panel.querySelector('[data-guard-runtime="counter"]');
   if (title) title.textContent = `Guard Runtime · ${GUARD_RUNTIME_STAGE}`;
-  if (subtitle) subtitle.textContent = 'Guard Block = Block Hit · Parry = Block Hit → D Power Bash → Full Recovery';
+  if (subtitle) subtitle.textContent = 'Guard Hold = Skyrim Full Source · Guard Block = Block Hit · Parry = D Power Bash → Full Recovery';
   if (intro) {
-    intro.textContent = 'G3.6.3：一般 Guard Block 仍只播放 Skyrim Block Hit；時機 Parry / Perfect Parry 現在正式使用已核准的 D：Block Hit 接觸 → shd_blockbashpower 0.08–0.55s 強力撥開 → 0.55–0.70s 原生 recovery 自然復位。Perfect 只在 timing、stagger、hitstop、FX、audio 與 camera 上更強，身體動畫完全相同。';
+    intro.textContent = 'G3.6.5：Guard Hold 正式採用社群選出的 Skyrim Full Source，從 canonical 50% pose 進場後以 1.00× 播放完整 40 秒 shd_blockidle，保留原生 gentle sway 與較大的 authored fidget；root 仍 in-place + rotation lock，Triangle Guard correction 與 G3.5.2 anti-drift / anti-snap 保留。一般 Guard Block 仍只播放 Block Hit；Parry / Perfect Parry 仍使用 G3.6.3 D：Block Hit → Power Bash → Full Recovery。';
   }
   if (compatibilityButton) {
     compatibilityButton.textContent = '▶ Parry Advantage';
@@ -154,6 +158,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     panel?.setAttribute('data-guard-clip', report.clipId || '');
     panel?.setAttribute('data-guard-mount', report.weaponMountProfileId || '');
     panel?.setAttribute('data-free-attack-followup', freeAttackFollowupOpen ? 'open' : 'closed');
+    panel?.setAttribute('data-living-guard-active', report.livingGuardStage === LIVING_GUARD_PRODUCTION_STAGE ? 'true' : 'false');
     if (report.recoveryProfileId) panel?.setAttribute('data-recovery-profile', report.recoveryProfileId);
     const clipLabel = String(report.clipId || snapshot.presentation?.clipId || '—').replace(/^SKYRIM_GUARD\//, '');
     const sourceSeconds = Number(report.sourceTimeSeconds) || 0;
@@ -165,10 +170,13 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
       const recovery = report.recoveryProfileId
         ? ` · recover ${Math.round((report.recoveryProgress || 0) * 100)}%/${report.recoveryDurationMs}ms${report.recoveryMomentumActive ? ' · inertia' : ''}`
         : '';
+      const living = report.livingGuardStage === LIVING_GUARD_PRODUCTION_STAGE
+        ? ` · living ${report.livingGuardSourceRate.toFixed(2)}× · loops ${report.livingGuardCompletedLoops}`
+        : '';
       const followup = isParryAdvantageMode()
         ? ` · free attack ${freeAttackFollowupOpen ? 'OPEN' : 'closed'} · Top / Left / Right`
         : '';
-      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${followup}${recovery}`;
+      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${living}${followup}${recovery}`;
     }
   }
 
@@ -179,7 +187,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus(`${GUARD_RUNTIME_STAGE} · loading Skyrim Guard + promoted D Power Parry…`);
+    setStatus(`${GUARD_RUNTIME_STAGE} · loading Skyrim Full Source Living Guard + D Power Parry…`);
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
       const skyrim = await loadSkyrimConvertedAnimationLibrary(loader, {
@@ -220,11 +228,12 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         },
       });
       loaded = true;
-      setStatus(`${GUARD_RUNTIME_STAGE} ready · Parry Advantage / Perfect = Block Hit → D Power Bash → Full Recovery`);
+      setStatus(`${GUARD_RUNTIME_STAGE} ready · Living Hold = Skyrim Full Source · Parry = D Power Bash → Full Recovery`);
       panel?.setAttribute('data-g351-ready', 'true');
       panel?.setAttribute('data-g351pt3-ready', 'true');
       panel?.setAttribute('data-g36-ready', 'true');
       panel?.setAttribute('data-g363-ready', 'true');
+      panel?.setAttribute('data-g365-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
       setStatus(`${GUARD_RUNTIME_STAGE} load failed · ${error.message}`, true);
@@ -232,6 +241,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
       panel?.setAttribute('data-g351pt3-ready', 'false');
       panel?.setAttribute('data-g36-ready', 'false');
       panel?.setAttribute('data-g363-ready', 'false');
+      panel?.setAttribute('data-g365-ready', 'false');
       throw error;
     });
     return loadPromise;
@@ -265,15 +275,15 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     if (mode === 'block') {
       machine.send(GUARD_EVENTS.BLOCK_CONFIRMED, {
         source: 'action-studio-preview-authority',
-        verification: 'action-studio-g363-guard-block-hit',
+        verification: 'action-studio-g365-guard-block-hit',
       });
     } else if (mode === 'parry' || mode === 'perfect' || mode === 'counter') {
       machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
         source: 'action-studio-preview-authority',
         perfect: mode === 'perfect',
         verification: mode === 'counter'
-          ? 'action-studio-g363-parry-advantage'
-          : `action-studio-g363-${mode}`,
+          ? 'action-studio-g365-parry-advantage'
+          : `action-studio-g365-${mode}`,
       });
     } else {
       throw new Error(`Unknown Guard Runtime preview mode: ${mode}`);
@@ -295,7 +305,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE}${mode === 'counter' ? ' · shared Power Parry motion; no dedicated Counter animation' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE}${mode === 'counter' ? ' · shared D Power Parry motion; no dedicated Counter animation' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -333,7 +343,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus(`${GUARD_RUNTIME_STAGE} ready · choose Guard Block / D Power Parry preview`);
+    if (!options.quiet) setStatus(`${GUARD_RUNTIME_STAGE} ready · choose Living Guard / Guard Block / D Power Parry preview`);
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {

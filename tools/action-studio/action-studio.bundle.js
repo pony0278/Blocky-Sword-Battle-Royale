@@ -11940,6 +11940,66 @@ function solveLocalQuaternionForWorld(parentWorld, desiredWorld) {
 return Object.freeze({ quaternionAngleDegrees, slerpShortestQuaternion, sampleWorldSwordRecoveryOrientation, solveLocalQuaternionForWorld });
 })();
 
+// src/combat/living-guard-idle-runtime.js
+const __actionStudioModule61 = (() => {
+const LIVING_GUARD_PRODUCTION_STAGE = 'G3.6.5';
+const LIVING_GUARD_PRODUCTION_CLIP_ID = 'SKYRIM_GUARD/shd_blockidle';
+const LIVING_GUARD_PRODUCTION_SOURCE_RATE = 1.0;
+const LIVING_GUARD_PRODUCTION_ENTRY_SAMPLE = 0.50;
+const LIVING_GUARD_PRODUCTION_LOOP_POLICY = 'full-source-authored-loop';
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function livingGuardEntrySourceTime(durationSeconds) {
+  const duration = Math.max(0, Number(durationSeconds) || 0);
+  return duration * clamp01(LIVING_GUARD_PRODUCTION_ENTRY_SAMPLE);
+}
+
+function sampleLivingGuardProductionHold(elapsedMs = 0, durationSeconds = 0) {
+  const duration = Math.max(1e-6, Number(durationSeconds) || 0);
+  const elapsedSeconds = Math.max(0, Number(elapsedMs) || 0) / 1000;
+  const entrySourceTimeSeconds = livingGuardEntrySourceTime(duration);
+  const unwrappedSourceTimeSeconds = entrySourceTimeSeconds
+    + elapsedSeconds * LIVING_GUARD_PRODUCTION_SOURCE_RATE;
+  const sourceTimeSeconds = unwrappedSourceTimeSeconds % duration;
+  const completedLoops = Math.floor(unwrappedSourceTimeSeconds / duration);
+
+  return Object.freeze({
+    stage: LIVING_GUARD_PRODUCTION_STAGE,
+    clipId: LIVING_GUARD_PRODUCTION_CLIP_ID,
+    sourceRate: LIVING_GUARD_PRODUCTION_SOURCE_RATE,
+    entrySample: LIVING_GUARD_PRODUCTION_ENTRY_SAMPLE,
+    entrySourceTimeSeconds,
+    sourceTimeSeconds,
+    unwrappedSourceTimeSeconds,
+    completedLoops,
+    loopPolicy: LIVING_GUARD_PRODUCTION_LOOP_POLICY,
+    inPlace: true,
+    rootRotationPolicy: 'lock',
+  });
+}
+
+function buildLivingGuardProductionReport(durationSeconds) {
+  const duration = Math.max(0, Number(durationSeconds) || 0);
+  return Object.freeze({
+    stage: LIVING_GUARD_PRODUCTION_STAGE,
+    clipId: LIVING_GUARD_PRODUCTION_CLIP_ID,
+    sourceDurationSeconds: duration,
+    sourceRate: LIVING_GUARD_PRODUCTION_SOURCE_RATE,
+    entrySample: LIVING_GUARD_PRODUCTION_ENTRY_SAMPLE,
+    entrySourceTimeSeconds: livingGuardEntrySourceTime(duration),
+    loopPolicy: LIVING_GUARD_PRODUCTION_LOOP_POLICY,
+    preservesTriangleCorrection: true,
+    preservesInPlaceRoot: true,
+    preservesRootRotationLock: true,
+    sourceScope: 'full-authored-skyrim-idle',
+  });
+}
+return Object.freeze({ LIVING_GUARD_PRODUCTION_STAGE, LIVING_GUARD_PRODUCTION_CLIP_ID, LIVING_GUARD_PRODUCTION_SOURCE_RATE, LIVING_GUARD_PRODUCTION_ENTRY_SAMPLE, LIVING_GUARD_PRODUCTION_LOOP_POLICY, livingGuardEntrySourceTime, sampleLivingGuardProductionHold, buildLivingGuardProductionReport });
+})();
+
 // src/combat/guard-presentation-runtime.js
 const __actionStudioModule57 = (() => {
 const { GUARD_EVENTS, GUARD_STATES } = __actionStudioModule50;
@@ -11950,9 +12010,11 @@ const { LONGSWORD_GUARD_AUTHORING_STATE } = __actionStudioModule51;
 const { applyGuardQuaternionOffsetsWeighted } = __actionStudioModule58;
 const { applyObjectTransform, applyRigPose, blendRecoveryTransform, captureObjectTransform, captureRigPose, resolveGuardRecoveryProfile, samplePoseMatchedRecovery } = __actionStudioModule59;
 const { sampleWorldSwordRecoveryOrientation } = __actionStudioModule60;
+const { LIVING_GUARD_PRODUCTION_STAGE, sampleLivingGuardProductionHold } = __actionStudioModule61;
 
 const GUARD_ROOT_ROTATION_POLICY = 'lock';
 const STABLE_GUARD_HOLD_STAGE = 'G3.5.2';
+const PRODUCTION_GUARD_HOLD_STAGE = LIVING_GUARD_PRODUCTION_STAGE;
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
@@ -12073,6 +12135,10 @@ function defaultReport(snapshot) {
     worldSwordOrientationStabilized: false,
     stableGuardStage: null,
     canonicalGuardSample: null,
+    livingGuardStage: null,
+    livingGuardLoopPolicy: null,
+    livingGuardSourceRate: 0,
+    livingGuardCompletedLoops: 0,
     complete: false,
     completionEvent: null,
   });
@@ -12142,20 +12208,31 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     restoreStableGuardBase();
     const weights = sampleGuardPresentationWeights(snapshot.state, snapshot.elapsedMs);
     const duration = positiveDuration(character, presentation.clipId, 1);
-    const sourceTimeSeconds = snapshot.state === GUARD_STATES.HOLD
-      ? canonicalGuardSourceTime(duration)
+    const livingHold = snapshot.state === GUARD_STATES.HOLD
+      ? sampleLivingGuardProductionHold(snapshot.elapsedMs, duration)
+      : null;
+    const sourceTimeSeconds = livingHold
+      ? livingHold.sourceTimeSeconds
       : wrappedTime(snapshot.elapsedMs, duration);
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
-      loop: snapshot.state === GUARD_STATES.HOLD ? false : presentation.loop !== false,
+      // G3.6.5 owns the full-source phase explicitly so recovery can always
+      // hand back to the canonical 50% entry pose without hidden mixer time.
+      loop: livingHold ? false : presentation.loop !== false,
       inPlace: presentation.inPlace !== false,
       rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     if (!stableGuardBasePose && snapshot.state === GUARD_STATES.HOLD) {
+      // HOLD starts at the canonical 50% source phase. Capture the raw pose
+      // before Triangle correction so it can cleanly reset unanimated bones
+      // before every subsequent authored full-source sample.
       stableGuardBasePose = captureRigPose(character.rig);
     }
     applyCorrection(weights.correctionWeight);
     character.update?.(0, camera);
-    if (snapshot.state === GUARD_STATES.HOLD && weaponObject3d) {
+    if (snapshot.state === GUARD_STATES.HOLD && weaponObject3d
+      && (!stableGuardWorldQuaternion || snapshot.elapsedMs <= 1e-6)) {
+      // Keep Counter recovery anchored to the canonical Guard entry instead
+      // of allowing later authored fidgets to rewrite the recovery target.
       stableGuardWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
     }
     return Object.freeze({
@@ -12170,6 +12247,10 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       stableGuardStage: snapshot.state === GUARD_STATES.HOLD ? STABLE_GUARD_HOLD_STAGE : null,
       canonicalGuardSample: snapshot.state === GUARD_STATES.HOLD ? LONGSWORD_GUARD_AUTHORING_STATE.baseSample : null,
+      livingGuardStage: livingHold?.stage || null,
+      livingGuardLoopPolicy: livingHold?.loopPolicy || null,
+      livingGuardSourceRate: livingHold?.sourceRate || 0,
+      livingGuardCompletedLoops: livingHold?.completedLoops || 0,
     });
   }
 
@@ -12457,11 +12538,11 @@ function createGuardPresentationRuntime(THREE, options = {}) {
     get counterWindowOpen() { return Boolean(lastReport.counterWindowOpen); },
   });
 }
-return Object.freeze({ STABLE_GUARD_HOLD_STAGE, canonicalGuardSourceTime, createGuardPresentationRuntime });
+return Object.freeze({ STABLE_GUARD_HOLD_STAGE, PRODUCTION_GUARD_HOLD_STAGE, canonicalGuardSourceTime, createGuardPresentationRuntime });
 })();
 
 // src/combat/guard-weapon-mount-runtime.js
-const __actionStudioModule61 = (() => {
+const __actionStudioModule62 = (() => {
 const { applyMountCalibration } = __actionStudioModule3;
 
 function createGuardWeaponMountRuntime(options = {}) {
@@ -12509,10 +12590,11 @@ const { PRODUCTION_PARRY_DEFLECT_CLIP_IDS, PRODUCTION_PARRY_DEFLECT_STAGE } = __
 const { composeSkyrimWeaponMountCalibration } = __actionStudioModule42;
 const { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } = __actionStudioModule50;
 const { createGuardPresentationRuntime } = __actionStudioModule57;
+const { LIVING_GUARD_PRODUCTION_STAGE } = __actionStudioModule61;
 const { GUARD_WEAPON_MOUNT_PROFILE_IDS } = __actionStudioModule56;
-const { createGuardWeaponMountRuntime } = __actionStudioModule61;
+const { createGuardWeaponMountRuntime } = __actionStudioModule62;
 
-const GUARD_RUNTIME_STAGE = PRODUCTION_PARRY_DEFLECT_STAGE;
+const GUARD_RUNTIME_STAGE = LIVING_GUARD_PRODUCTION_STAGE;
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
   block: 'Guard Block',
@@ -12549,6 +12631,9 @@ function captureMountCalibration(object3d) {
 
 function relabelProductionSurface(panel) {
   panel.setAttribute('data-stage', GUARD_RUNTIME_STAGE);
+  panel.setAttribute('data-living-guard', 'skyrim-full-source');
+  panel.setAttribute('data-living-guard-stage', LIVING_GUARD_PRODUCTION_STAGE);
+  panel.setAttribute('data-parry-stage', PRODUCTION_PARRY_DEFLECT_STAGE);
   panel.setAttribute('data-parry-presentation', 'blockhit-powerbash-full-recovery');
   panel.setAttribute('data-parry-motion-family', 'g363-blockhit-powerbash-full-recovery');
   panel.setAttribute('data-followup-model', 'free-directional-attack');
@@ -12557,9 +12642,9 @@ function relabelProductionSurface(panel) {
   const intro = panel.querySelector('.blocking-intro');
   const compatibilityButton = panel.querySelector('[data-guard-runtime="counter"]');
   if (title) title.textContent = `Guard Runtime · ${GUARD_RUNTIME_STAGE}`;
-  if (subtitle) subtitle.textContent = 'Guard Block = Block Hit · Parry = Block Hit → D Power Bash → Full Recovery';
+  if (subtitle) subtitle.textContent = 'Guard Hold = Skyrim Full Source · Guard Block = Block Hit · Parry = D Power Bash → Full Recovery';
   if (intro) {
-    intro.textContent = 'G3.6.3：一般 Guard Block 仍只播放 Skyrim Block Hit；時機 Parry / Perfect Parry 現在正式使用已核准的 D：Block Hit 接觸 → shd_blockbashpower 0.08–0.55s 強力撥開 → 0.55–0.70s 原生 recovery 自然復位。Perfect 只在 timing、stagger、hitstop、FX、audio 與 camera 上更強，身體動畫完全相同。';
+    intro.textContent = 'G3.6.5：Guard Hold 正式採用社群選出的 Skyrim Full Source，從 canonical 50% pose 進場後以 1.00× 播放完整 40 秒 shd_blockidle，保留原生 gentle sway 與較大的 authored fidget；root 仍 in-place + rotation lock，Triangle Guard correction 與 G3.5.2 anti-drift / anti-snap 保留。一般 Guard Block 仍只播放 Block Hit；Parry / Perfect Parry 仍使用 G3.6.3 D：Block Hit → Power Bash → Full Recovery。';
   }
   if (compatibilityButton) {
     compatibilityButton.textContent = '▶ Parry Advantage';
@@ -12651,6 +12736,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     panel?.setAttribute('data-guard-clip', report.clipId || '');
     panel?.setAttribute('data-guard-mount', report.weaponMountProfileId || '');
     panel?.setAttribute('data-free-attack-followup', freeAttackFollowupOpen ? 'open' : 'closed');
+    panel?.setAttribute('data-living-guard-active', report.livingGuardStage === LIVING_GUARD_PRODUCTION_STAGE ? 'true' : 'false');
     if (report.recoveryProfileId) panel?.setAttribute('data-recovery-profile', report.recoveryProfileId);
     const clipLabel = String(report.clipId || snapshot.presentation?.clipId || '—').replace(/^SKYRIM_GUARD\//, '');
     const sourceSeconds = Number(report.sourceTimeSeconds) || 0;
@@ -12662,10 +12748,13 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
       const recovery = report.recoveryProfileId
         ? ` · recover ${Math.round((report.recoveryProgress || 0) * 100)}%/${report.recoveryDurationMs}ms${report.recoveryMomentumActive ? ' · inertia' : ''}`
         : '';
+      const living = report.livingGuardStage === LIVING_GUARD_PRODUCTION_STAGE
+        ? ` · living ${report.livingGuardSourceRate.toFixed(2)}× · loops ${report.livingGuardCompletedLoops}`
+        : '';
       const followup = isParryAdvantageMode()
         ? ` · free attack ${freeAttackFollowupOpen ? 'OPEN' : 'closed'} · Top / Left / Right`
         : '';
-      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${followup}${recovery}`;
+      detail.textContent = `${snapshot.state} · ${clipLabel} · ${sourceSeconds.toFixed(3)}s · mount ${report.weaponMountProfileId || '—'}${living}${followup}${recovery}`;
     }
   }
 
@@ -12676,7 +12765,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus(`${GUARD_RUNTIME_STAGE} · loading Skyrim Guard + promoted D Power Parry…`);
+    setStatus(`${GUARD_RUNTIME_STAGE} · loading Skyrim Full Source Living Guard + D Power Parry…`);
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
       const skyrim = await loadSkyrimConvertedAnimationLibrary(loader, {
@@ -12717,11 +12806,12 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
         },
       });
       loaded = true;
-      setStatus(`${GUARD_RUNTIME_STAGE} ready · Parry Advantage / Perfect = Block Hit → D Power Bash → Full Recovery`);
+      setStatus(`${GUARD_RUNTIME_STAGE} ready · Living Hold = Skyrim Full Source · Parry = D Power Bash → Full Recovery`);
       panel?.setAttribute('data-g351-ready', 'true');
       panel?.setAttribute('data-g351pt3-ready', 'true');
       panel?.setAttribute('data-g36-ready', 'true');
       panel?.setAttribute('data-g363-ready', 'true');
+      panel?.setAttribute('data-g365-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
       setStatus(`${GUARD_RUNTIME_STAGE} load failed · ${error.message}`, true);
@@ -12729,6 +12819,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
       panel?.setAttribute('data-g351pt3-ready', 'false');
       panel?.setAttribute('data-g36-ready', 'false');
       panel?.setAttribute('data-g363-ready', 'false');
+      panel?.setAttribute('data-g365-ready', 'false');
       throw error;
     });
     return loadPromise;
@@ -12762,15 +12853,15 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     if (mode === 'block') {
       machine.send(GUARD_EVENTS.BLOCK_CONFIRMED, {
         source: 'action-studio-preview-authority',
-        verification: 'action-studio-g363-guard-block-hit',
+        verification: 'action-studio-g365-guard-block-hit',
       });
     } else if (mode === 'parry' || mode === 'perfect' || mode === 'counter') {
       machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
         source: 'action-studio-preview-authority',
         perfect: mode === 'perfect',
         verification: mode === 'counter'
-          ? 'action-studio-g363-parry-advantage'
-          : `action-studio-g363-${mode}`,
+          ? 'action-studio-g365-parry-advantage'
+          : `action-studio-g365-${mode}`,
       });
     } else {
       throw new Error(`Unknown Guard Runtime preview mode: ${mode}`);
@@ -12792,7 +12883,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE}${mode === 'counter' ? ' · shared Power Parry motion; no dedicated Counter animation' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE}${mode === 'counter' ? ' · shared D Power Parry motion; no dedicated Counter animation' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -12830,7 +12921,7 @@ function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus(`${GUARD_RUNTIME_STAGE} ready · choose Guard Block / D Power Parry preview`);
+    if (!options.quiet) setStatus(`${GUARD_RUNTIME_STAGE} ready · choose Living Guard / Guard Block / D Power Parry preview`);
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {

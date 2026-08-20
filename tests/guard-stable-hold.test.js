@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  PRODUCTION_GUARD_HOLD_STAGE,
   STABLE_GUARD_HOLD_STAGE,
   canonicalGuardSourceTime,
   createGuardPresentationRuntime,
@@ -65,13 +66,14 @@ function enterHold(machine, runtime) {
   return runtime.update(180);
 }
 
-test('G3.5.2 canonical Guard source time is the authored 50 percent pose', () => {
+test('G3.5.2 canonical Guard source time remains the authored 50 percent recovery anchor', () => {
   assert.equal(STABLE_GUARD_HOLD_STAGE, 'G3.5.2');
   assert.equal(canonicalGuardSourceTime(2), 1);
   assert.equal(canonicalGuardSourceTime(0.8), 0.4);
 });
 
-test('G3.5.2 Guard HOLD samples the same canonical pose instead of looping Skyrim blockidle', () => {
+test('G3.6.5 Guard HOLD starts at canonical pose then plays the full Skyrim source at 1.00x', () => {
+  assert.equal(PRODUCTION_GUARD_HOLD_STAGE, 'G3.6.5');
   const machine = createGuardStateMachine();
   const character = createCharacter();
   const runtime = createGuardPresentationRuntime(null, {
@@ -84,21 +86,29 @@ test('G3.5.2 Guard HOLD samples the same canonical pose instead of looping Skyri
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
   assert.equal(result.report.sourceTimeSeconds, 1);
   assert.equal(result.report.stableGuardStage, STABLE_GUARD_HOLD_STAGE);
+  assert.equal(result.report.livingGuardStage, PRODUCTION_GUARD_HOLD_STAGE);
+  assert.equal(result.report.livingGuardSourceRate, 1);
   assert.equal(result.report.canonicalGuardSample, 0.5);
 
   let holdSample = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockidle').at(-1);
   assert.equal(holdSample.timeSeconds, 1);
   assert.equal(holdSample.options.loop, false);
+  assert.equal(holdSample.options.inPlace, true);
+  assert.equal(holdSample.options.rootRotationPolicy, 'lock');
 
-  result = runtime.update(1375);
+  result = runtime.update(375);
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
-  assert.equal(result.report.sourceTimeSeconds, 1);
+  assert.equal(result.report.sourceTimeSeconds, 1.375);
   holdSample = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockidle').at(-1);
-  assert.equal(holdSample.timeSeconds, 1);
-  assert.equal(holdSample.options.loop, false);
+  assert.equal(holdSample.timeSeconds, 1.375);
+
+  result = runtime.update(1000);
+  assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
+  assert.equal(result.report.sourceTimeSeconds, 0.375);
+  assert.equal(result.report.livingGuardCompletedLoops, 1);
 });
 
-test('G3.6.3 Parry Recover targets the same canonical Guard pose after the complete D recovery tail', () => {
+test('G3.6.3 D Parry Recover still targets canonical Guard before G3.6.5 Living Hold resumes', () => {
   const machine = createGuardStateMachine();
   const character = createCharacter();
   const runtime = createGuardPresentationRuntime(null, {
@@ -108,12 +118,14 @@ test('G3.6.3 Parry Recover targets the same canonical Guard pose after the compl
   });
 
   enterHold(machine, runtime);
-  machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { attackId: 'stable-hold-parry' });
+  runtime.update(420);
+  machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { attackId: 'living-hold-parry' });
   let result = runtime.update(PARRY_DURATION * 1000);
   assert.equal(result.snapshot.state, GUARD_STATES.RECOVER);
   assert.equal(result.report.sourceTimeSeconds, 1);
   assert.equal(result.report.stableGuardStage, STABLE_GUARD_HOLD_STAGE);
   assert.equal(result.report.canonicalGuardSample, 0.5);
+  assert.equal(result.report.livingGuardStage, null);
 
   const recoverTarget = character.samples.filter((entry) => entry.name === 'SKYRIM_GUARD/shd_blockidle').at(-1);
   assert.equal(recoverTarget.timeSeconds, 1);
@@ -122,4 +134,6 @@ test('G3.6.3 Parry Recover targets the same canonical Guard pose after the compl
   result = runtime.update(result.report.recoveryDurationMs);
   assert.equal(result.snapshot.state, GUARD_STATES.HOLD);
   assert.equal(result.report.sourceTimeSeconds, 1);
+  assert.equal(result.report.livingGuardStage, PRODUCTION_GUARD_HOLD_STAGE);
+  assert.equal(result.report.livingGuardSourceRate, 1);
 });

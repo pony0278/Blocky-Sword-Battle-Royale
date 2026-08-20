@@ -20,9 +20,14 @@ import {
   samplePoseMatchedRecovery,
 } from './guard-recovery-bridge.js';
 import { sampleWorldSwordRecoveryOrientation } from './guard-world-sword-orientation.js';
+import {
+  LIVING_GUARD_PRODUCTION_STAGE,
+  sampleLivingGuardProductionHold,
+} from './living-guard-idle-runtime.js';
 
 const GUARD_ROOT_ROTATION_POLICY = 'lock';
 export const STABLE_GUARD_HOLD_STAGE = 'G3.5.2';
+export const PRODUCTION_GUARD_HOLD_STAGE = LIVING_GUARD_PRODUCTION_STAGE;
 
 function positiveDuration(character, clipId, fallback = 1) {
   const value = Number(character?.getAnimationDuration?.(clipId));
@@ -143,6 +148,10 @@ function defaultReport(snapshot) {
     worldSwordOrientationStabilized: false,
     stableGuardStage: null,
     canonicalGuardSample: null,
+    livingGuardStage: null,
+    livingGuardLoopPolicy: null,
+    livingGuardSourceRate: 0,
+    livingGuardCompletedLoops: 0,
     complete: false,
     completionEvent: null,
   });
@@ -212,20 +221,31 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
     restoreStableGuardBase();
     const weights = sampleGuardPresentationWeights(snapshot.state, snapshot.elapsedMs);
     const duration = positiveDuration(character, presentation.clipId, 1);
-    const sourceTimeSeconds = snapshot.state === GUARD_STATES.HOLD
-      ? canonicalGuardSourceTime(duration)
+    const livingHold = snapshot.state === GUARD_STATES.HOLD
+      ? sampleLivingGuardProductionHold(snapshot.elapsedMs, duration)
+      : null;
+    const sourceTimeSeconds = livingHold
+      ? livingHold.sourceTimeSeconds
       : wrappedTime(snapshot.elapsedMs, duration);
     character.sampleAnimation(presentation.clipId, sourceTimeSeconds, {
-      loop: snapshot.state === GUARD_STATES.HOLD ? false : presentation.loop !== false,
+      // G3.6.5 owns the full-source phase explicitly so recovery can always
+      // hand back to the canonical 50% entry pose without hidden mixer time.
+      loop: livingHold ? false : presentation.loop !== false,
       inPlace: presentation.inPlace !== false,
       rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
     if (!stableGuardBasePose && snapshot.state === GUARD_STATES.HOLD) {
+      // HOLD starts at the canonical 50% source phase. Capture the raw pose
+      // before Triangle correction so it can cleanly reset unanimated bones
+      // before every subsequent authored full-source sample.
       stableGuardBasePose = captureRigPose(character.rig);
     }
     applyCorrection(weights.correctionWeight);
     character.update?.(0, camera);
-    if (snapshot.state === GUARD_STATES.HOLD && weaponObject3d) {
+    if (snapshot.state === GUARD_STATES.HOLD && weaponObject3d
+      && (!stableGuardWorldQuaternion || snapshot.elapsedMs <= 1e-6)) {
+      // Keep Counter recovery anchored to the canonical Guard entry instead
+      // of allowing later authored fidgets to rewrite the recovery target.
       stableGuardWorldQuaternion = captureWorldQuaternion(THREE, weaponObject3d);
     }
     return Object.freeze({
@@ -240,6 +260,10 @@ export function createGuardPresentationRuntime(THREE, options = {}) {
       weaponMountProfileId: presentation.weaponMountProfileId || null,
       stableGuardStage: snapshot.state === GUARD_STATES.HOLD ? STABLE_GUARD_HOLD_STAGE : null,
       canonicalGuardSample: snapshot.state === GUARD_STATES.HOLD ? LONGSWORD_GUARD_AUTHORING_STATE.baseSample : null,
+      livingGuardStage: livingHold?.stage || null,
+      livingGuardLoopPolicy: livingHold?.loopPolicy || null,
+      livingGuardSourceRate: livingHold?.sourceRate || 0,
+      livingGuardCompletedLoops: livingHold?.completedLoops || 0,
     });
   }
 
