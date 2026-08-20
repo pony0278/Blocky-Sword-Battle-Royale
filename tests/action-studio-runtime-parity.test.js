@@ -21,14 +21,17 @@ test('G2.5.2 generated standalone Skyrim module cannot contain the stale scale r
   assert.doesNotMatch(skyrimModule, /Math\.max\(0\.5,\s*Math\.min\(1\.5,\s*targetHeight\s*\/\s*sourceHeight\)\)/);
 });
 
-test('G2.5.2/T3.1 generated index identifies file, Pages bundle, and parity module runtime paths', async () => {
+test('G2.5.2/T3.1 generated index identifies file, Pages bundle, parity module and G3.6.3 recovery gate runtime paths', async () => {
   const html = await read('tools/action-studio/index.html');
   assert.match(html, /__ACTION_STUDIO_RUNTIME_STAGE\s*=\s*['"]G2\.5\.2['"]/);
   assert.match(html, /__ACTION_STUDIO_ENTRY_MODE\s*=\s*['"]bundle-file['"]/);
   assert.match(html, /__ACTION_STUDIO_ENTRY_MODE\s*=\s*['"]bundle-http['"]/);
   assert.match(html, /__ACTION_STUDIO_ENTRY_MODE\s*=\s*['"]module['"]/);
   assert.match(html, /action-studio\.bundle\.js\?v=[0-9a-f]{12}/);
-  assert.match(html, /runtime\.sampleAt\(['"]parry['"],\s*360\)/);
+  assert.match(html, /runtime\.sampleAt\(['"]parry['"],\s*820\)/);
+  assert.match(html, /SKYRIM_GUARD\/power_parry_g363/);
+  assert.match(html, /sourceMs\s*>=\s*810/);
+  assert.match(html, /sourceMs\s*<=\s*830/);
   assert.match(html, /action-studio-runtime-parity\.js/);
 });
 

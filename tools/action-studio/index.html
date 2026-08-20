@@ -60,7 +60,7 @@
         <div id="guardRuntimeStatus" class="status-line">G3.4 · assets load on first preview</div>
         <div id="guardRuntimeDetail" class="status-line">Counter = Melee_Block_Attack · presentation never self-confirms combat authority</div>
         <div class="status-line" data-g361-readability-entry="true">
-  <a id="powerBashReadabilityLink" href="./power-bash-readability-lab.html" target="_blank" rel="noopener">G3.6.1 · Open Power Bash A/B/C Readability →</a>
+  <a id="powerBashReadabilityLink" href="./power-bash-readability-lab.html" target="_blank" rel="noopener">G3.6.3 · D Production + A/B/C History →</a>
 </div>
       </section>
 
@@ -257,7 +257,7 @@
 
   <script>
     window.__ACTION_STUDIO_RUNTIME_STAGE = 'G2.5.2';
-    window.__ACTION_STUDIO_BUNDLE_VERSION = 'f8cc74e6ee5e';
+    window.__ACTION_STUDIO_BUNDLE_VERSION = '4587eb6d10db';
     const actionStudioParams = new URLSearchParams(location.search);
     if (location.protocol === 'file:') {
       window.__ACTION_STUDIO_ENTRY_MODE = 'bundle-file';
@@ -275,7 +275,7 @@
       window.__ACTION_STUDIO_ENTRY_MODE = 'bundle-http';
       document.documentElement.dataset.actionStudioEntry = 'bundle-http';
       const script = document.createElement('script');
-      script.src = './action-studio.bundle.js?v=f8cc74e6ee5e';
+      script.src = './action-studio.bundle.js?v=4587eb6d10db';
       script.dataset.actionStudioVersion = window.__ACTION_STUDIO_BUNDLE_VERSION;
       script.onload = async () => {
         document.documentElement.dataset.actionStudioBoot = 'pass';
@@ -284,16 +284,16 @@
         try {
           const runtime = window.__ACTION_STUDIO_GUARD_RUNTIME__;
           if (!runtime?.sampleAt) throw new Error('Guard Runtime deterministic sampler unavailable after bundle boot');
-          const result = await runtime.sampleAt('parry', 360);
+          const result = await runtime.sampleAt('parry', 820);
           const report = result?.report || runtime.report || {};
           const state = String(result?.snapshot?.state || runtime.snapshot?.state || '');
           const clipId = String(report.clipId || '');
           const sourceMs = Math.round((Number(report.sourceTimeSeconds) || 0) * 1000);
           const pass = state === 'guard_parry'
             && runtime.mode === 'parry'
-            && clipId === 'SKYRIM_GUARD/power_parry_g36'
-            && sourceMs >= 350
-            && sourceMs <= 370;
+            && clipId === 'SKYRIM_GUARD/power_parry_g363'
+            && sourceMs >= 810
+            && sourceMs <= 830;
           root.dataset.pagesGuardGate = pass ? 'pass' : 'fail';
           root.dataset.pagesGuardState = state;
           root.dataset.pagesGuardClip = clipId;

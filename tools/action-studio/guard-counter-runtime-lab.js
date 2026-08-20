@@ -3,6 +3,7 @@ import { createDebugSword, mountDebugSword } from '../../src/character/debug-swo
 import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
 import { loadKayKitAnimationLibrary } from '../../src/animation/kaykit-animation-library.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
+import { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } from '../../src/animation/parry-contact-deflect-runtime-clip.js';
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
 import { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } from '../../src/combat/guard-state-machine.js';
 import { createGuardPresentationRuntime } from '../../src/combat/guard-presentation-runtime.js';
@@ -27,13 +28,13 @@ let runtime,sword,mountRuntime,activeVariant='normal',counterDurationMs=750;
 let canonicalHoldPose=null,canonicalHoldWorld=null,canonicalHoldMount=null;
 const mountHistory=[];
 const RIGHT_CHAIN=['upperarm.r','lowerarm.r','wrist.r','hand.r','handslot.r'];
-const G36_SKYRIM_LIBRARY_CLIPS=[
+const PRODUCTION_SKYRIM_LIBRARY_CLIPS=[
   'SKYRIM_GUARD/shd_blockidle',
   'SKYRIM_GUARD/shd_blockhit',
   'SKYRIM_GUARD/shd_blockbash',
   'SKYRIM_GUARD/shd_blockbashpower',
-  'SKYRIM_GUARD/power_parry_g36',
-  'SKYRIM_GUARD/perfect_power_parry_g36',
+  PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
+  PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
 ];
 const status=document.getElementById('status'), reportNode=document.getElementById('report');
 const hudState=document.getElementById('hudState'), hudDetail=document.getElementById('hudDetail');
@@ -138,7 +139,7 @@ function runVerification(kaykit,skyrim){
   const clip=kaykit.clips.get('Melee_Block_Attack'); counterDurationMs=Math.max(.001,Number(clip?.duration)||0)*1000;
   const diagnostics=character.animation.getPreparedClipDiagnostics('Melee_Block_Attack',true);
   const normal=verifyScenario('normal'),perfect=verifyScenario('perfect');
-  const gates={skyrimGuardFamilyLoaded:G36_SKYRIM_LIBRARY_CLIPS.every(id=>skyrim.clips.has(id))&&skyrim.clips.size>=6,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
+  const gates={skyrimGuardFamilyLoaded:PRODUCTION_SKYRIM_LIBRARY_CLIPS.every(id=>skyrim.clips.has(id))&&skyrim.clips.size>=6,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
     inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
     poseMatchedMountRecovery:normal.mountActuallyBlends&&perfect.mountActuallyBlends,
     worldSwordStartContinuous:normal.startWorldContinuous&&perfect.startWorldContinuous,

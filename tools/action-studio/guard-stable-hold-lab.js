@@ -1,6 +1,10 @@
 import { createDefaultCharacter } from '../../src/character/default-character.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
 import {
+  PRODUCTION_PARRY_DEFLECT_VARIANTS,
+  getProductionParryDeflectProfile,
+} from '../../src/animation/parry-contact-deflect-runtime-clip.js';
+import {
   GUARD_EVENTS,
   GUARD_STATES,
   createGuardStateMachine,
@@ -102,9 +106,11 @@ function verifyRecoverTarget(canonicalSeconds) {
   const sent = machine.send(GUARD_EVENTS.PARRY_CONFIRMED, { verification: 'g352-parry-recover' });
   if (!sent.accepted) throw new Error(`${STABLE_GUARD_HOLD_STAGE} Parry event rejected`);
   runtime.sync();
-  let result = runtime.update(600);
+  const production = getProductionParryDeflectProfile(PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY);
+  const reactionDurationMs = production.reactionDurationSeconds * 1000;
+  let result = runtime.update(reactionDurationMs);
   if (result.snapshot.state !== GUARD_STATES.RECOVER) {
-    throw new Error(`${STABLE_GUARD_HOLD_STAGE} expected RECOVER after Parry, got ${result.snapshot.state}`);
+    throw new Error(`${STABLE_GUARD_HOLD_STAGE} expected RECOVER after ${reactionDurationMs}ms Parry, got ${result.snapshot.state}`);
   }
   const recoveryCanonical = Math.abs(result.report.sourceTimeSeconds - canonicalSeconds) <= 1e-6
     && result.report.stableGuardStage === STABLE_GUARD_HOLD_STAGE
@@ -116,6 +122,7 @@ function verifyRecoverTarget(canonicalSeconds) {
     && Math.abs(result.report.sourceTimeSeconds - canonicalSeconds) <= 1e-6
     && result.report.stableGuardStage === STABLE_GUARD_HOLD_STAGE;
   return {
+    reactionDurationMs,
     recoveryCanonical,
     recoveryDurationMs,
     returnedToHold,
@@ -165,7 +172,7 @@ async function main() {
   document.documentElement.dataset.g352HoldPose = hold.poseStable ? 'pass' : 'fail';
   document.documentElement.dataset.g352Recover = recover.pass ? 'pass' : 'fail';
   reportNode.textContent = JSON.stringify(report, null, 2);
-  status.textContent = `${STABLE_GUARD_HOLD_STAGE} ${pass ? 'PASS' : 'FAIL'} · 2s HOLD @60fps + canonical Recover target`;
+  status.textContent = `${STABLE_GUARD_HOLD_STAGE} ${pass ? 'PASS' : 'FAIL'} · 2s HOLD @60fps + duration-aware production Recover target`;
   status.className = pass ? 'good' : 'bad';
   window.__G352_RESULT__ = report;
 }

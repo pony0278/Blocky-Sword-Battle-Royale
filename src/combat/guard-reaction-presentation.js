@@ -7,7 +7,11 @@ import {
   createParryAdvantageContract,
   isFreeAttackFollowupOpen,
 } from './parry-advantage.js';
-import { PRODUCTION_PARRY_DEFLECT_CLIP_IDS } from '../animation/parry-contact-deflect-runtime-clip.js';
+import {
+  PRODUCTION_PARRY_DEFLECT_CLIP_IDS,
+  PRODUCTION_PARRY_DEFLECT_STAGE,
+  getProductionParryDeflectProfile,
+} from '../animation/parry-contact-deflect-runtime-clip.js';
 
 export const GUARD_REACTION_VARIANTS = Object.freeze({
   BLOCK_HIT: 'block-hit',
@@ -17,8 +21,8 @@ export const GUARD_REACTION_VARIANTS = Object.freeze({
 
 export const GUARD_REACTION_PROFILE_IDS = Object.freeze({
   BLOCK_HIT: 'longsword_guard_block_hit_v1',
-  PARRY: 'longsword_guard_parry_advantage_g36',
-  PERFECT_PARRY: 'longsword_guard_perfect_parry_g36',
+  PARRY: 'longsword_guard_parry_advantage_g363',
+  PERFECT_PARRY: 'longsword_guard_perfect_parry_g363',
 });
 
 const REACTION_COMPLETE_EVENT = 'reaction_complete';
@@ -79,7 +83,7 @@ function reactionProfile({
     rootRotationSafetyStage: GUARD_ROOT_ROTATION_SAFETY_STAGE,
     loop: false,
     authored: true,
-    authoredStage: 'G3.6',
+    authoredStage: productionPresentationStage || 'G3.6',
     productionPresentationStage,
     productionSourceChain,
     sharedMotionFamily,
@@ -98,32 +102,34 @@ const SHARED_BLOCK_CONTACT = Object.freeze({
   sourceEndSeconds: 0.6,
 });
 
-const G36_SHARED_POWER_MOTION_FAMILY = 'g36-blockhit-powerbash';
-const G36_SHARED_POWER_SOURCE_CHAIN = Object.freeze([
+const PRODUCTION_PARRY_PROFILE = getProductionParryDeflectProfile('parry');
+const PRODUCTION_PERFECT_PROFILE = getProductionParryDeflectProfile('perfect-parry');
+const G363_SHARED_POWER_MOTION_FAMILY = PRODUCTION_PARRY_PROFILE.sharedMotionFamily;
+const G363_SHARED_POWER_SOURCE_CHAIN = Object.freeze([
   'SKYRIM_GUARD/shd_blockhit',
   'SKYRIM_GUARD/shd_blockbashpower',
 ]);
 
 const PRODUCTION_PARRY_CONTACT_POWER_DEFLECT = Object.freeze({
-  sourceId: 'power_parry_g36',
-  file: 'virtual:shd_blockhit+shd_blockbashpower',
+  sourceId: 'power_parry_g363',
+  file: 'virtual:shd_blockhit+shd_blockbashpower-full-recovery',
   clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
-  sourceDurationSeconds: 0.6,
-  sourceEndSeconds: 0.6,
-  productionPresentationStage: 'G3.6',
-  productionSourceChain: G36_SHARED_POWER_SOURCE_CHAIN,
-  sharedMotionFamily: G36_SHARED_POWER_MOTION_FAMILY,
+  sourceDurationSeconds: PRODUCTION_PARRY_PROFILE.reactionDurationSeconds,
+  sourceEndSeconds: PRODUCTION_PARRY_PROFILE.reactionDurationSeconds,
+  productionPresentationStage: PRODUCTION_PARRY_DEFLECT_STAGE,
+  productionSourceChain: G363_SHARED_POWER_SOURCE_CHAIN,
+  sharedMotionFamily: G363_SHARED_POWER_MOTION_FAMILY,
 });
 
 const PRODUCTION_PERFECT_PARRY_CONTACT_POWER_DEFLECT = Object.freeze({
-  sourceId: 'perfect_power_parry_g36',
-  file: 'virtual:shd_blockhit+shd_blockbashpower',
+  sourceId: 'perfect_power_parry_g363',
+  file: 'virtual:shd_blockhit+shd_blockbashpower-full-recovery',
   clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
-  sourceDurationSeconds: 0.6,
-  sourceEndSeconds: 0.6,
-  productionPresentationStage: 'G3.6',
-  productionSourceChain: G36_SHARED_POWER_SOURCE_CHAIN,
-  sharedMotionFamily: G36_SHARED_POWER_MOTION_FAMILY,
+  sourceDurationSeconds: PRODUCTION_PERFECT_PROFILE.reactionDurationSeconds,
+  sourceEndSeconds: PRODUCTION_PERFECT_PROFILE.reactionDurationSeconds,
+  productionPresentationStage: PRODUCTION_PARRY_DEFLECT_STAGE,
+  productionSourceChain: G363_SHARED_POWER_SOURCE_CHAIN,
+  sharedMotionFamily: G363_SHARED_POWER_MOTION_FAMILY,
 });
 
 const PARRY_FOLLOWUP_WINDOW = Object.freeze([0.08, 1 / 3]);
@@ -155,12 +161,12 @@ export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
       grade: 'parry',
       followupWindowSeconds: PARRY_FOLLOWUP_WINDOW,
     }),
-    visualDecision: 'G3.6 POWER PARRY — timed Parry plays short Block Hit contact, then the former T2 Power T1 shd_blockbashpower 0.120–0.280s @1.10x segment. The stronger push is now intentional because Parry Advantage means the attacker is knocked off-line.',
+    visualDecision: 'G3.6.3 POWER PARRY — promote approved D: Block Hit contact → shd_blockbashpower 0.080–0.550s @0.95x power phase → authored 0.550–0.700s @1.00x recovery tail. The full recovery prevents the weapon from freezing outboard.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_SUCCESS,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Timed defense reads as two beats: weapon contact, then a forceful Power Bash deflection that creates attacker disadvantage.',
+      note: 'Timed defense reads as contact, forceful Power Bash displacement, then a natural authored recovery back toward Guard.',
     }),
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
@@ -174,12 +180,12 @@ export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
       grade: 'perfect-parry',
       followupWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
     }),
-    visualDecision: 'G3.6 POWER PARRY — Perfect Parry uses the exact same Block Hit → Power Bash motion contract as Parry Advantage. Perfect is differentiated by tighter timing and stronger authoritative stagger/hitstop/FX/audio/camera, not a different animation.',
+    visualDecision: 'G3.6.3 POWER PARRY — Perfect Parry uses the exact same approved D full-recovery body motion as Parry Advantage. Perfect remains differentiated by tighter timing and stronger authoritative stagger/hitstop/FX/audio/camera, not a different animation.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_SUCCESS,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Perfect Parry intentionally shares the same readable two-beat Power Parry motion; only gameplay reward and presentation intensity differ.',
+      note: 'Perfect Parry intentionally shares the same readable three-beat contact → power → recovery motion; only gameplay reward and presentation intensity differ.',
     }),
   }),
 });
