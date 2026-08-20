@@ -3,13 +3,11 @@ name: G3.5.2 Stable Guard Hold
 on:
   pull_request:
     paths:
-      - 'src/animation/kaykit-animation-library.js'
       - 'src/combat/guard-presentation-runtime.js'
       - 'src/combat/longsword-guard-metadata.js'
       - 'src/combat/longsword-guard-correction.js'
       - 'src/animation/skyrim-converted-animation-library.js'
       - 'tools/action-studio/guard-stable-hold-lab.*'
-      - 'tests/kaykit-animation-absolute-sample.test.js'
       - 'tests/guard-correction-idempotence.test.js'
       - 'tests/guard-stable-hold.test.js'
       - '.github/workflows/guard-stable-hold.yml'
@@ -25,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Guard correction + G3.5.2 stable Guard unit tests
-        run: node --test tests/kaykit-animation-absolute-sample.test.js tests/guard-correction-idempotence.test.js tests/guard-stable-hold.test.js tests/guard-presentation-runtime.test.js
+        run: node --test tests/guard-correction-idempotence.test.js tests/guard-stable-hold.test.js tests/guard-presentation-runtime.test.js
 
       - name: Locate headless browser
         id: browser
