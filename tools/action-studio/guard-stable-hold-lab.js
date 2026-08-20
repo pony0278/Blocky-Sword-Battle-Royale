@@ -199,8 +199,6 @@ async function main() {
     },
   };
 
-  // Keep legacy G3.5.2 attributes for workflow/history compatibility while
-  // G3.6.5 adds explicit Living Hold gates.
   document.documentElement.dataset.g352 = pass ? 'pass' : 'fail';
   document.documentElement.dataset.g352Entry = entryCanonical ? 'pass' : 'fail';
   document.documentElement.dataset.g352HoldSource = hold.sourceAdvanced ? 'pass' : 'fail';
@@ -217,15 +215,6 @@ async function main() {
   window.__G365_LIVING_GUARD_RESULT__ = report;
   window.__G352_RESULT__ = report;
 }
-
-main().catch((error) => {
-  document.documentElement.dataset.g352 = 'fail';
-  document.documentElement.dataset.g365 = 'fail';
-  status.textContent = `${PRODUCTION_GUARD_HOLD_STAGE} FAIL · ${error?.message || error}`;
-  status.className = 'bad';
-  reportNode.textContent = error?.stack || String(error);
-  window.__G365_LIVING_GUARD_RESULT__ = { stage: PRODUCTION_GUARD_HOLD_STAGE, pass: false, error: error?.stack || String(error) };
-});
 
 main().catch((error) => {
   document.documentElement.dataset.g352 = 'fail';
