@@ -5,6 +5,7 @@ import {
   createProductionParryDeflectClips,
 } from './parry-contact-deflect-runtime-clip.js';
 import { stabilizeProductionParryDeflectClips } from './parry-rotation-continuity.js';
+import { stabilizeProductionParryUpperBodyClips } from './parry-upper-body-continuity.js';
 
 export const SKYRIM_GUARD_HOLD_CONVERTED_FILE = Object.freeze({
   id: 'shd_blockidle',
@@ -151,10 +152,14 @@ export const loadSkyrimConvertedAnimationLibrary = async (loader, options = {}) 
 
   const sourceClipMap = new Map(clips.map((clip) => [clip.name, clip]));
   const virtualClips = canCreateProductionParryDeflectClips(THREE, sourceClipMap)
-    ? stabilizeProductionParryDeflectClips(
-      createProductionParryDeflectClips(THREE, sourceClipMap, {
-        fps: Math.max(60, Number(options.productionParryFps) || 60),
-      }),
+    ? stabilizeProductionParryUpperBodyClips(
+      THREE,
+      stabilizeProductionParryDeflectClips(
+        createProductionParryDeflectClips(THREE, sourceClipMap, {
+          fps: Math.max(60, Number(options.productionParryFps) || 60),
+        }),
+        sourceClipMap,
+      ),
       sourceClipMap,
     )
     : [];
