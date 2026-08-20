@@ -99,7 +99,7 @@ test('G1 KayKit Guard Source Review exposes the four source clips and hold compa
   assert.doesNotMatch(`${html}\n${app}`, /attackDirection|incomingDirection|guardDirection/);
 });
 
-test('G3.5.1 keeps the static Guard surface but production preview relabels Counter as Parry Advantage', async () => {
+test('G3.6 keeps the static Guard surface while production preview exposes shared Power Parry semantics', async () => {
   const template = await readFile(new URL('../tools/action-studio/index.template.html', import.meta.url), 'utf8');
   const html = await readFile(new URL('../tools/action-studio/index.html', import.meta.url), 'utf8');
   const externalController = await readFile(new URL('../tools/action-studio/studio-external-animation-controller.js', import.meta.url), 'utf8');
@@ -121,7 +121,10 @@ test('G3.5.1 keeps the static Guard surface but production preview relabels Coun
   assert.match(guardController, /resolveGuardPanel/);
   assert.match(guardController, /data-controller-bound/);
   assert.match(guardController, /data-guard-runtime-button-count/);
-  assert.match(guardController, /G3\.5\.1/);
+  assert.match(guardController, /G3\.6/);
+  assert.match(guardController, /blockhit-powerbash/);
+  assert.match(guardController, /g36-blockhit-powerbash/);
+  assert.match(guardController, /Power Bash/);
   assert.match(guardController, /Parry Advantage/);
   assert.match(guardController, /data-guard-runtime-semantic/);
   assert.match(guardController, /freeAttackFollowupOpen/);
