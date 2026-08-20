@@ -11273,6 +11273,8 @@ const { LONGSWORD_GUARD_CORRECTION_SCOPE, getLongswordGuardCorrectionBones } = _
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 const EPSILON = 1e-12;
+const CORRECTION_MATCH_EPSILON = 1e-10;
+const CORRECTION_RUNTIME_STATE = new WeakMap();
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -11385,6 +11387,47 @@ function assertValidGuardOffsets(offsets) {
   return validation;
 }
 
+function quaternionDot(a, b) {
+  return finite(a?.x) * finite(b?.x)
+    + finite(a?.y) * finite(b?.y)
+    + finite(a?.z) * finite(b?.z)
+    + finite(a?.w, 1) * finite(b?.w, 1);
+}
+
+function equivalentQuaternion(a, b) {
+  if (!a || !b) return false;
+  return 1 - Math.min(1, Math.abs(quaternionDot(a, b))) <= CORRECTION_MATCH_EPSILON;
+}
+
+function correctionBaseQuaternion(bone) {
+  const current = bone.quaternion.clone().normalize();
+  const previous = CORRECTION_RUNTIME_STATE.get(bone);
+  if (previous?.corrected && previous?.base && equivalentQuaternion(current, previous.corrected)) {
+    return previous.base.clone().normalize();
+  }
+  return current;
+}
+
+function rememberCorrectionState(bone, base, corrected) {
+  CORRECTION_RUNTIME_STATE.set(bone, Object.freeze({
+    base: base.clone().normalize(),
+    corrected: corrected.clone().normalize(),
+  }));
+}
+
+function resetGuardQuaternionOffsetRuntime(rig, offsets = null) {
+  if (!rig?.bones) return 0;
+  const boneIds = offsets
+    ? Object.keys(offsets)
+    : getLongswordGuardCorrectionBones();
+  let cleared = 0;
+  for (const boneId of boneIds) {
+    const bone = rig.bones[boneId];
+    if (bone && CORRECTION_RUNTIME_STATE.delete(bone)) cleared += 1;
+  }
+  return cleared;
+}
+
 function applyGuardQuaternionOffsetsWeighted(THREE, rig, offsets = {}, weight = 1) {
   if (!THREE?.Quaternion) throw new Error('Guard correction requires THREE.Quaternion');
   if (!rig?.bones) throw new Error('Guard correction requires a rig with bones');
@@ -11395,9 +11438,18 @@ function applyGuardQuaternionOffsetsWeighted(THREE, rig, offsets = {}, weight = 
     const bone = rig.bones[entry.bone];
     if (!bone) throw new Error(`Target rig is missing Guard correction bone: ${entry.bone}`);
     const weighted = scaleQuaternionOffset(entry.quaternion, blendWeight);
-    bone.quaternion.multiply(new THREE.Quaternion().fromArray(weighted)).normalize();
+    const base = correctionBaseQuaternion(bone);
+    const corrected = base.clone()
+      .multiply(new THREE.Quaternion().fromArray(weighted))
+      .normalize();
+    bone.quaternion.copy(corrected);
+    rememberCorrectionState(bone, base, corrected);
   }
-  return Object.freeze({ ...validation, weight: blendWeight });
+  return Object.freeze({
+    ...validation,
+    weight: blendWeight,
+    runtimePolicy: 'idempotent-raw-pose-relative',
+  });
 }
 
 function applyGuardQuaternionOffsets(THREE, rig, offsets = {}) {
@@ -11420,7 +11472,7 @@ function createGuardAuthoringExport(eulerByBone = {}, diagnostics = {}) {
     diagnostics: Object.freeze({ ...diagnostics }),
   });
 }
-return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quaternionFromEulerDegrees, scaleQuaternionOffset, buildGuardQuaternionOffsets, validateGuardQuaternionOffsets, applyGuardQuaternionOffsetsWeighted, applyGuardQuaternionOffsets, createGuardAuthoringExport });
+return Object.freeze({ normalizeQuaternionArray, quaternionAngleDegrees, quaternionFromEulerDegrees, scaleQuaternionOffset, buildGuardQuaternionOffsets, validateGuardQuaternionOffsets, resetGuardQuaternionOffsetRuntime, applyGuardQuaternionOffsetsWeighted, applyGuardQuaternionOffsets, createGuardAuthoringExport });
 })();
 
 // src/combat/guard-recovery-bridge.js
@@ -12061,9 +12113,6 @@ function createGuardPresentationRuntime(THREE, options = {}) {
       inPlace: true,
       rootRotationPolicy: GUARD_ROOT_ROTATION_POLICY,
     });
-    if (!stableGuardBasePose && snapshot.state === GUARD_STATES.ENTER && snapshot.elapsedMs === 0) {
-      stableGuardBasePose = captureRigPose(character.rig);
-    }
     applyCorrection(transition.weights.correctionWeight);
     character.update?.(0, camera);
     return Object.freeze({
