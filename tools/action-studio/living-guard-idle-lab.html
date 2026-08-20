@@ -16,15 +16,15 @@
     <div class="head">
       <div>
         <p class="eyebrow">G3.6.4 · LIVING GUARD IDLE</p>
-        <h1>Stable vs Skyrim Live vs Living Triangle</h1>
-        <p class="note">比較現在 G3.6.3 的完全穩定 Guard、原始 Skyrim <b>shd_blockidle</b> 活性，以及保留 Triangle Guard 輪廓但只混入少量上半身 source sway 的 Hybrid。此頁只做 Probe，production Guard Hold 尚未改動。</p>
+        <h1>Stable vs Skyrim Full Source vs Living Triangle</h1>
+        <p class="note">A 是現在 G3.6.3 完全穩定的 Guard。B 保留完整 40 秒 Skyrim <b>shd_blockidle</b> 作為 source reference，因此會包含較大的 authored fidget。C 不直接循環整段，而是使用掃描出的 <b>29→31s gentle window</b>，只把其小幅局部旋轉差值疊回現在的 Triangle Guard 輪廓。此頁只做 Probe，production 尚未改動。</p>
       </div>
       <div id="status">Loading…</div>
     </div>
 
     <section class="stage">
       <canvas id="canvas"></canvas>
-      <div class="legend">A · Stable G3.6.3<br>B · Skyrim Live<br>C · Living Triangle<br><br>CAMERA · Left drag orbit · Wheel zoom · Right drag pan</div>
+      <div class="legend">A · Stable G3.6.3<br>B · Skyrim Full 40s Reference<br>C · Living Triangle · 29→31s gentle loop<br><br>CAMERA · Left drag orbit · Wheel zoom · Right drag pan</div>
     </section>
 
     <div class="controls">
@@ -46,14 +46,14 @@
         <div class="row"><strong>Sword</strong> · <span data-role="sword">—</span></div>
       </article>
       <article class="card" data-candidate="skyrim-live">
-        <b>B — Skyrim Live</b><small>full corrected shd_blockidle · 1.00×</small>
+        <b>B — Skyrim Full Source</b><small>full 40s corrected reference · contains larger authored fidgets</small>
         <div class="row"><strong>Source</strong> · <span data-role="source">—</span></div>
         <div class="row"><strong>Chest</strong> · <span data-role="chest">—</span></div>
         <div class="row"><strong>Weapon arm</strong> · <span data-role="arm">—</span></div>
         <div class="row"><strong>Sword</strong> · <span data-role="sword">—</span></div>
       </article>
       <article class="card recommended" data-candidate="living-triangle">
-        <b>C — Living Triangle</b><small>current silhouette + restrained Skyrim upper-body delta · 1.00× source</small>
+        <b>C — Living Triangle</b><small>current silhouette + restrained raw Skyrim delta · gentle 29→31s loop</small>
         <div class="row"><strong>Source</strong> · <span data-role="source">—</span></div>
         <div class="row"><strong>Chest</strong> · <span data-role="chest">—</span></div>
         <div class="row"><strong>Weapon arm</strong> · <span data-role="arm">—</span></div>
@@ -63,7 +63,7 @@
 
     <section class="why">
       <b>G3.6.4 acceptance target</b>
-      <div>C 應該保留 A 的防守輪廓與 root / hips 穩定性，但胸腔、肩膀、持劍手與劍尖必須持續有可讀的小幅 motion；其活性應明顯低於 B，避免回到過度漂移或 Guard snap。</div>
+      <div>C 要保留 A 的 root / hips 與防守輪廓，但胸腔、肩膀、持劍手與劍尖持續有小幅 source-authored motion；連續跑至少三個 29→31s loop 時不能出現明顯接縫或 snap。B 只作為完整 Skyrim reference，不是 production candidate。</div>
     </section>
 
     <details class="report">
