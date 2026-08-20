@@ -36,11 +36,18 @@ grep -q 'id="guardRuntimePanel"' "$DOM_FILE" || fail 'static #guardRuntimePanel 
 grep -q 'data-guard-runtime-static="true"' "$DOM_FILE" || fail 'panel is not authored as static HTML'
 grep -q 'data-controller-bound="true"' "$DOM_FILE" || fail 'Guard Runtime controller did not bind after browser boot'
 grep -q 'data-guard-runtime-button-count="5"' "$DOM_FILE" || fail 'controller did not validate all five Guard actions'
-grep -q 'data-stage="G3.6.3"' "$DOM_FILE" || fail 'main Guard Runtime surface is not labeled G3.6.3'
+
+grep -q 'data-stage="G3.6.5"' "$DOM_FILE" || fail 'main Guard Runtime surface is not labeled G3.6.5'
+grep -q 'data-g365-ready="true"' "$DOM_FILE" || fail 'G3.6.5 Skyrim Full Source Living Guard did not load'
+grep -q 'data-living-guard="skyrim-full-source"' "$DOM_FILE" || fail 'Guard Runtime does not declare Skyrim Full Source Living Hold'
+grep -q 'data-living-guard-stage="G3.6.5"' "$DOM_FILE" || fail 'Living Guard stage is not G3.6.5'
+
 grep -q 'data-g363-ready="true"' "$DOM_FILE" || fail 'G3.6.3 promoted D production clips did not load'
+grep -q 'data-parry-stage="G3.6.3"' "$DOM_FILE" || fail 'Parry production stage is not preserved as G3.6.3'
 grep -q 'data-parry-presentation="blockhit-powerbash-full-recovery"' "$DOM_FILE" || fail 'Guard Runtime does not declare full-recovery D presentation'
 grep -q 'data-parry-motion-family="g363-blockhit-powerbash-full-recovery"' "$DOM_FILE" || fail 'Guard Runtime does not expose G3.6.3 D motion family'
-grep -q 'Guard Block = Block Hit · Parry = Block Hit → D Power Bash → Full Recovery' "$DOM_FILE" || fail 'Guard Runtime does not describe G3.6.3 D semantics'
+grep -q 'Guard Hold = Skyrim Full Source · Guard Block = Block Hit · Parry = D Power Bash → Full Recovery' "$DOM_FILE" || fail 'Guard Runtime does not describe G3.6.5 Hold + G3.6.3 D semantics'
+
 grep -q 'data-action-studio-entry="bundle-http"' "$DOM_FILE" || fail 'HTTP Action Studio is not exercising the versioned standalone bundle path'
 grep -q 'data-action-studio-boot="pass"' "$DOM_FILE" || fail 'HTTP Action Studio bundle did not boot successfully'
 grep -q 'data-pages-guard-gate="pass"' "$DOM_FILE" || fail 'normal Action Studio did not remain in promoted D production Parry at 820ms'
@@ -60,4 +67,4 @@ if grep -Eq 'data-template="(guard|parry|counter)"' "$DOM_FILE"; then
   fail 'legacy Phase A Guard/Parry/Counter template buttons are still rendered'
 fi
 
-echo "Action Studio Guard Runtime browser gate passed · bundle-http · G3.6.3 promoted D recovery ${SOURCE_MS}ms · 5 static buttons · controller bound."
+echo "Action Studio Guard Runtime browser gate passed · bundle-http · G3.6.5 Skyrim Full Source Hold + G3.6.3 D recovery ${SOURCE_MS}ms · 5 static buttons · controller bound."
