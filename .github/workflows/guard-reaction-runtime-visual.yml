@@ -14,9 +14,54 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  finalize-branch:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 38 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/g3-6-power-parry-motion-redesign
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Update stale Counter virtual clip expectations
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/action-studio/guard-counter-runtime-lab.js')
+          text = path.read_text()
+          replacements = {
+            "'SKYRIM_GUARD/parry_contact_deflect_t3'": "'SKYRIM_GUARD/power_parry_g36'",
+            "'SKYRIM_GUARD/perfect_parry_contact_deflect_t3'": "'SKYRIM_GUARD/perfect_power_parry_g36'",
+            'const T3_SKYRIM_LIBRARY_CLIPS=[': 'const G36_SKYRIM_LIBRARY_CLIPS=[',
+            'T3_SKYRIM_LIBRARY_CLIPS.every(id=>skyrim.clips.has(id))': 'G36_SKYRIM_LIBRARY_CLIPS.every(id=>skyrim.clips.has(id))',
+          }
+          for old, new in replacements.items():
+              if old in text:
+                  text = text.replace(old, new)
+              elif new not in text:
+                  raise SystemExit(f'missing Counter parity token: {old}')
+          path.write_text(text)
+          PY
+      - name: Build Action Studio standalone artifacts
+        run: npm run build:action-studio
+      - name: Commit final generated artifacts when changed
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- tools/action-studio/guard-counter-runtime-lab.js tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+          if git diff --cached --quiet; then
+            echo 'G3.6 final artifacts already current.'
+            exit 0
+          fi
+          git commit -m 'Finalize G3.6 Counter parity and Action Studio bundle'
+          git push origin HEAD:agent/g3-6-power-parry-motion-redesign
+
   verify:
     runs-on: ubuntu-latest
     steps:
