@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3A.2 Directional Guard Bracing Probe</title>
+  <title>G4.3A.3 Articulated Impact Bracing</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 440px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block;touch-action:none}
@@ -24,18 +24,19 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3A.2 · Directional Guard Bracing Probe</b>
+      <b>G4.3A.3 · Articulated Impact Bracing</b>
       <div id="hudAttack">Attack: loading…</div>
       <div id="hudStrategy">Strategy: —</div>
       <div id="hudBody">Body: —</div>
+      <div id="hudImpact">Impact: —</div>
       <div id="hudFine">Fine: —</div>
       <div id="hudContact">Contact: —</div>
     </div>
     <div class="legend">Threat = green · post-brace Buckler = blue · real G4.3A contact = red</div>
   </main>
   <aside>
-    <h1>Directional Guard Bracing</h1>
-    <div class="note">先用整體身體去迎接攻擊，再允許最後少量手部微調。TOP 主要上頂整條手臂；低位 LEFT 主要下沉髖部並微屈雙腿；Buckler mount 與 HAND_L socket 都不變。這仍是 presentation/probe，不會送出 PARRY_CONFIRMED。</div>
+    <h1>Articulated Impact Bracing</h1>
+    <div class="note">不再用整個 pelvis 大幅往下移來假裝承重。G4.3A.3 讓 hips、spine、chest、左右腿、肩肘共同吸收攻擊；真正接觸後再進入 compression → rebound → settle。Skyrim Guard、HAND_L 與 G4.2.3 Buckler mount 都保持不變。</div>
 
     <h2>Attack direction</h2>
     <div class="row"><button data-attack="top">TOP</button><button data-attack="right">RIGHT</button><button data-attack="left" class="active">LEFT</button></div>
@@ -44,8 +45,9 @@
     <h2>Bracing mode</h2>
     <div class="row"><button data-mode="off">OFF</button><button data-mode="brace">BODY BRACE</button><button data-mode="brace-fine" class="active">BODY + FINE</button></div>
     <div class="metric">
-      <span>Low crouch max</span><b>0.08 m</b>
-      <span>TOP shoulder lift max</span><b>0.055 m</b>
+      <span>Pelvis base drop max</span><b>0.022 m</b>
+      <span>Joint chain</span><b>hips → spine → chest → arm</b>
+      <span>Leg loading</span><b>LEFT / RIGHT asymmetric</b>
       <span>Fine hand tracking max</span><b>0.07 m</b>
       <span>Wrist tracking</span><b>OFF</b>
     </div>
@@ -57,16 +59,17 @@
 
     <h2>Body rules</h2>
     <div class="metric">
-      <span>TOP / downward</span><b>shoulder + arm brace</b>
-      <span>LEFT low</span><b>hips + knees crouch</b>
-      <span>RIGHT / lateral</span><b>chest yaw brace</b>
-      <span>Contact authority</span><b>G4.3A geometry</b>
+      <span>TOP / downward</span><b>bilateral knees + spine compression</b>
+      <span>LEFT / RIGHT</span><b>loaded leg + support leg split</b>
+      <span>Contact</span><b>45ms compression peak</b>
+      <span>Rebound / settle</span><b>105ms / 190ms</b>
+      <span>Contact authority</span><b>G4.3A swept geometry</b>
     </div>
 
     <h2>Verification</h2>
-    <div id="status" class="warn">Loading G4.3A.2…</div>
+    <div id="status" class="warn">Loading G4.3A.3…</div>
     <pre id="report">Not run.</pre>
   </aside>
-  <script type="module" src="./directional-guard-bracing-lab.js"></script>
+  <script type="module" src="./directional-guard-articulated-lab.js"></script>
 </body>
 </html>
