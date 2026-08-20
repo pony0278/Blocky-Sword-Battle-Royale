@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>G4.2.2 Offhand Buckler Lab</title>
+  <style>
+    html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}body{display:grid;grid-template-columns:minmax(0,1fr) 390px;overflow:hidden}main{position:relative;min-width:0}canvas{width:100%;height:100%;display:block}.hud{position:absolute;left:16px;top:16px;min-width:320px;background:#07101acc;border:1px solid #26354d;border-radius:10px;padding:10px 12px;font:12px/1.5 ui-monospace,monospace}.legend{position:absolute;left:16px;bottom:16px;background:#07101acc;border:1px solid #26354d;border-radius:10px;padding:8px 10px;font-size:12px}.good{color:#7ef0ad}.bad{color:#ff8c8c}.warn{color:#ffd27a}aside{overflow:auto;border-left:1px solid #26354d;padding:18px;background:#0e1521}h1{font-size:19px;margin:0 0 6px}h2{font-size:13px;margin:20px 0 8px;color:#94b8e8;text-transform:uppercase;letter-spacing:.08em}button{background:#182338;color:#dce9fb;border:1px solid #334969;border-radius:7px;padding:9px 11px;margin:3px;cursor:pointer}button:hover{background:#22314c}button.active{border-color:#75e6c2;background:#18352f}.row{display:flex;flex-wrap:wrap}.note{color:#9eb0c8;font-size:12px}.metric{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:8px 0;padding:10px;border:1px solid #243147;border-radius:8px;background:#080d14}.metric b{color:#ddecff}.toggle{display:flex;align-items:center;gap:8px;margin:12px 0}pre{white-space:pre-wrap;background:#080d14;border:1px solid #243147;border-radius:8px;padding:10px;font-size:11px;max-height:300px;overflow:auto}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+  <main>
+    <canvas id="canvas"></canvas>
+    <div class="hud">
+      <b>G4.2.2 · Offhand Buckler Equipment</b>
+      <div id="hudGuard">Guard: loading…</div>
+      <div id="hudBuckler">Buckler: loading…</div>
+      <div id="hudSurface">Parry surface: loading…</div>
+    </div>
+    <div class="legend">Longsword → HAND_R &nbsp;·&nbsp; Buckler → HAND_L</div>
+  </main>
+  <aside>
+    <h1>Offhand Buckler Lab</h1>
+    <div class="note">先只驗證左手小圓盾的掛載、比例、朝向與 Parry Surface。G4.3A 才會把攻擊劍 swept blade 真正拿來撞這個 surface。</div>
+
+    <h2>Views</h2>
+    <div class="row">
+      <button data-view="three">3/4</button>
+      <button data-view="front">Front</button>
+      <button data-view="side">Side</button>
+      <button data-view="back">Back</button>
+    </div>
+
+    <h2>Buckler</h2>
+    <div class="metric">
+      <span>Visual radius</span><b>0.24 m</b>
+      <span>Parry radius</span><b>0.26 m</b>
+      <span>Socket</span><b>HAND_L</b>
+      <span>Surface type</span><b>oriented-disc</b>
+    </div>
+    <label class="toggle"><input id="showSurface" type="checkbox"> Show G4.3A parry surface preview</label>
+
+    <h2>Verification</h2>
+    <div id="status" class="warn">Loading production Guard + Buckler…</div>
+    <pre id="report">Not run.</pre>
+  </aside>
+  <script type="module" src="./offhand-buckler-lab.js"></script>
+</body>
+</html>
