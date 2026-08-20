@@ -1,6 +1,10 @@
 name: TEMP T3.3 Chest Authority Probe
 
 on:
+  pull_request:
+    paths:
+      - 'tools/action-studio/parry-chest-authority-probe.*'
+      - '.github/workflows/temp-parry-chest-authority-probe.yml'
   push:
     branches:
       - agent/t3-3-g3-5-2-guard-visual-stability
