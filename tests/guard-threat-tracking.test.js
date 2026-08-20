@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   GUARD_THREAT_TRACKING_STAGE,
   getGuardThreatTrackingProfile,
@@ -84,4 +85,11 @@ test('G4.3A.1 leaves already covered threats alone in Guard mode', () => {
   close(plan.requiredDistance, 0);
   close(plan.appliedDistance, 0);
   assert.equal(plan.reason, 'already-covered');
+});
+
+test('G4.3A.1 keeps Three r128 slerpQuaternions result out of chaining assignments', async () => {
+  const source = await readFile(new URL('../src/combat/guard-threat-tracking.js', import.meta.url), 'utf8');
+  assert.match(source, /const limitedWorldDelta = new THREE\.Quaternion\(\);/);
+  assert.match(source, /limitedWorldDelta\.slerpQuaternions\(/);
+  assert.doesNotMatch(source, /const\s+limitedWorldDelta\s*=\s*new THREE\.Quaternion\(\)\.slerpQuaternions\(/);
 });
