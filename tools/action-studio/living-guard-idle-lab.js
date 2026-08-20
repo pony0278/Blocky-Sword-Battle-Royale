@@ -3,7 +3,10 @@ import { createDebugSword, mountDebugSword } from '../../src/character/debug-swo
 import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
-import { applyGuardQuaternionOffsetsWeighted } from '../../src/combat/longsword-guard-correction.js';
+import {
+  applyGuardQuaternionOffsetsWeighted,
+  resetGuardQuaternionOffsetRuntime,
+} from '../../src/combat/longsword-guard-correction.js';
 import { LONGSWORD_GUARD_AUTHORING_STATE } from '../../src/combat/longsword-guard-metadata.js';
 import { applyRigPose, captureRigPose } from '../../src/combat/guard-recovery-bridge.js';
 import {
@@ -126,6 +129,7 @@ function sampleCorrectedSource(slot, sourceTimeSeconds) {
     rootRotationPolicy: 'lock',
   });
   slot.character.object3d.position.x = slot.x;
+  resetGuardQuaternionOffsetRuntime(slot.character.rig, LONGSWORD_GUARD_AUTHORING_STATE.offsets);
   applyGuardQuaternionOffsetsWeighted(
     THREE,
     slot.character.rig,
@@ -281,9 +285,10 @@ function buildReport() {
       && living.swordTipPathMeters > stable.swordTipPathMeters + 0.002,
     livingTriangleIsRestrained: living.maxChestExcursionDegrees < skyrim.maxChestExcursionDegrees
       && living.maxShoulderExcursionDegrees < skyrim.maxShoulderExcursionDegrees
+      && living.maxWristExcursionDegrees < skyrim.maxWristExcursionDegrees
       && living.swordTipPathMeters < skyrim.swordTipPathMeters,
     livingTriangleLocksFoundation: living.maxRootExcursionDegrees <= 0.1 && living.maxHipsExcursionDegrees <= 0.1,
-    livingTriangleFrameContinuous: living.maxChestStepDegrees <= 3.0,
+    livingTriangleFrameContinuous: living.maxChestStepDegrees <= 0.5,
   });
   const failures = Object.entries(gates).filter(([, pass]) => !pass).map(([name]) => name);
   const report = Object.freeze({
