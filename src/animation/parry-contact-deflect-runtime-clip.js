@@ -1,4 +1,4 @@
-export const PRODUCTION_PARRY_DEFLECT_STAGE = 'G3.6';
+export const PRODUCTION_PARRY_DEFLECT_STAGE = 'G3.6.3';
 
 export const PRODUCTION_PARRY_DEFLECT_VARIANTS = Object.freeze({
   PARRY: 'parry',
@@ -10,27 +10,29 @@ export const PRODUCTION_PARRY_DEFLECT_PHASES = Object.freeze({
   CONTACT_HOLD: 'contact-hold',
   BLEND: 'blend',
   DEFLECT: 'deflect',
+  RECOVERY: 'recovery',
   SETTLE: 'settle',
 });
 
 export const PRODUCTION_PARRY_DEFLECT_CLIP_IDS = Object.freeze({
-  PARRY: 'SKYRIM_GUARD/power_parry_g36',
-  PERFECT_PARRY: 'SKYRIM_GUARD/perfect_power_parry_g36',
+  PARRY: 'SKYRIM_GUARD/power_parry_g363',
+  PERFECT_PARRY: 'SKYRIM_GUARD/perfect_power_parry_g363',
 });
 
 const CONTACT_CLIP_ID = 'SKYRIM_GUARD/shd_blockhit';
 const DEFLECT_CLIP_ID = 'SKYRIM_GUARD/shd_blockbashpower';
-const REACTION_DURATION_SECONDS = 0.6;
+const REACTION_DURATION_SECONDS = 0.96;
 const CONTACT_END_SECONDS = 0.16;
 
-// G3.6 intentionally promotes the former T2 Power T1 candidate. It was
-// previously rejected because its push-like displacement was too bash-like
-// for a compact redirect. That same forceful displacement is now the desired
-// semantic: catch the weapon, then power it off-line and create advantage.
-const DEFLECT_START_SECONDS = 0.12;
-const DEFLECT_END_SECONDS = 0.28;
-const DEFLECT_BLEND_LEAD_SECONDS = 0.035;
-const DEFLECT_RATE = 1.10;
+// G3.6.3 promotes the human-approved G3.6.2 D candidate into production.
+// Preserve the exact C/D power phase, then retain the authored Skyrim tail so
+// the weapon and upper body recover naturally instead of freezing outboard.
+const DEFLECT_START_SECONDS = 0.08;
+const DEFLECT_POWER_END_SECONDS = 0.55;
+const DEFLECT_END_SECONDS = 0.70;
+const DEFLECT_BLEND_LEAD_SECONDS = 0;
+const DEFLECT_RATE = 0.95;
+const DEFLECT_RECOVERY_RATE = 1.0;
 const SHARED_CONTACT_HOLD_SECONDS = 0.05;
 const SHARED_BLEND_SECONDS = 0.055;
 
@@ -41,14 +43,14 @@ export const G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES = Object.freeze({
 
 const PROFILES = Object.freeze({
   [PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY]: Object.freeze({
-    id: 'g36_parry_contact_power_deflect',
+    id: 'g363_parry_contact_power_full_recovery',
     variant: PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY,
     clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
     contactHoldSeconds: SHARED_CONTACT_HOLD_SECONDS,
     blendSeconds: SHARED_BLEND_SECONDS,
   }),
   [PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY]: Object.freeze({
-    id: 'g36_perfect_parry_contact_power_deflect',
+    id: 'g363_perfect_parry_contact_power_full_recovery',
     variant: PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY,
     clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
     contactHoldSeconds: SHARED_CONTACT_HOLD_SECONDS,
@@ -66,15 +68,20 @@ function resolveVariant(value) {
     : PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY;
 }
 
-function deflectPlaybackSeconds() {
-  return (DEFLECT_END_SECONDS - DEFLECT_START_SECONDS - DEFLECT_BLEND_LEAD_SECONDS) / DEFLECT_RATE;
+function deflectPowerPlaybackSeconds() {
+  return (DEFLECT_POWER_END_SECONDS - DEFLECT_START_SECONDS - DEFLECT_BLEND_LEAD_SECONDS) / DEFLECT_RATE;
+}
+
+function deflectRecoveryPlaybackSeconds() {
+  return (DEFLECT_END_SECONDS - DEFLECT_POWER_END_SECONDS) / DEFLECT_RECOVERY_RATE;
 }
 
 export function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFLECT_VARIANTS.PARRY) {
   const base = PROFILES[resolveVariant(variant)];
   const holdEndSeconds = CONTACT_END_SECONDS + base.contactHoldSeconds;
   const blendEndSeconds = holdEndSeconds + base.blendSeconds;
-  const deflectEndAtSeconds = blendEndSeconds + deflectPlaybackSeconds();
+  const deflectPowerEndAtSeconds = blendEndSeconds + deflectPowerPlaybackSeconds();
+  const deflectRecoveryEndAtSeconds = deflectPowerEndAtSeconds + deflectRecoveryPlaybackSeconds();
   return Object.freeze({
     ...base,
     stage: PRODUCTION_PARRY_DEFLECT_STAGE,
@@ -88,19 +95,26 @@ export function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFL
     blendSeconds: base.blendSeconds,
     blendEndSeconds,
     deflectStartSeconds: DEFLECT_START_SECONDS,
+    deflectPowerEndSeconds: DEFLECT_POWER_END_SECONDS,
+    deflectRecoveryStartSeconds: DEFLECT_POWER_END_SECONDS,
     deflectEndSeconds: DEFLECT_END_SECONDS,
     deflectBlendLeadSeconds: DEFLECT_BLEND_LEAD_SECONDS,
     deflectRate: DEFLECT_RATE,
-    deflectEndAtSeconds,
+    deflectRecoveryRate: DEFLECT_RECOVERY_RATE,
+    deflectPowerEndAtSeconds,
+    deflectRecoveryEndAtSeconds,
+    // Compatibility field: the complete Power Bash visual chain now ends only
+    // after D's authored recovery tail, not at the end of the power phase.
+    deflectEndAtSeconds: deflectRecoveryEndAtSeconds,
     reactionDurationSeconds: REACTION_DURATION_SECONDS,
-    sharedMotionFamily: 'g36-blockhit-powerbash',
+    sharedMotionFamily: 'g363-blockhit-powerbash-full-recovery',
     sharedMotionContract: true,
     upperBodySafetyLimitsDegrees: G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES,
-    semanticIntent: 'weapon contact is read first, then a short Power Bash displacement forcefully knocks the incoming weapon off-line and creates Parry Advantage',
-    sourceDecision: 'G3_6_PROMOTE_T2_POWER_T1',
+    semanticIntent: 'weapon contact is read first, then the approved D Power Bash forcefully knocks the weapon off-line and preserves the authored recovery tail before returning to Guard',
+    sourceDecision: 'G3_6_3_PROMOTE_D_FULL_RECOVERY',
     perfectDifferentiation: base.variant === PRODUCTION_PARRY_DEFLECT_VARIANTS.PERFECT_PARRY
       ? 'same-motion-as-parry-advantage; stronger timing reward/stagger/hitstop/FX/audio/camera remain external'
-      : 'shared-power-parry-motion; normal advantage reward remains external',
+      : 'shared-power-parry-full-recovery-motion; normal advantage reward remains external',
   });
 }
 
@@ -142,14 +156,29 @@ export function sampleProductionParryDeflectTimeline(variant, elapsedSeconds = 0
     });
   }
 
-  if (elapsed < profile.deflectEndAtSeconds) {
+  if (elapsed < profile.deflectPowerEndAtSeconds) {
     const afterBlend = Math.max(0, elapsed - profile.blendEndSeconds);
     const sourceTimeSeconds = Math.min(
-      profile.deflectEndSeconds,
+      profile.deflectPowerEndSeconds,
       profile.deflectStartSeconds + profile.deflectBlendLeadSeconds + afterBlend * profile.deflectRate,
     );
     return Object.freeze({
       phase: PRODUCTION_PARRY_DEFLECT_PHASES.DEFLECT,
+      elapsedSeconds: elapsed,
+      clipId: profile.deflectClipId,
+      sourceTimeSeconds,
+      completeVisualChain: false,
+    });
+  }
+
+  if (elapsed < profile.deflectRecoveryEndAtSeconds) {
+    const afterPower = Math.max(0, elapsed - profile.deflectPowerEndAtSeconds);
+    const sourceTimeSeconds = Math.min(
+      profile.deflectEndSeconds,
+      profile.deflectRecoveryStartSeconds + afterPower * profile.deflectRecoveryRate,
+    );
+    return Object.freeze({
+      phase: PRODUCTION_PARRY_DEFLECT_PHASES.RECOVERY,
       elapsedSeconds: elapsed,
       clipId: profile.deflectClipId,
       sourceTimeSeconds,
@@ -223,7 +252,8 @@ function outputTimes(profile, fps) {
     profile.contactEndSeconds,
     profile.holdEndSeconds,
     profile.blendEndSeconds,
-    profile.deflectEndAtSeconds,
+    profile.deflectPowerEndAtSeconds,
+    profile.deflectRecoveryEndAtSeconds,
     profile.reactionDurationSeconds,
   ];
   const frames = Math.ceil(profile.reactionDurationSeconds * fps);
@@ -258,7 +288,7 @@ export function canCreateProductionParryDeflectClips(THREE, clipMap) {
 
 export function createProductionParryDeflectClip(THREE, clipMap, variant, options = {}) {
   if (!canCreateProductionParryDeflectClips(THREE, clipMap)) {
-    throw new Error('G3.6 Power Parry synthesis requires retargeted Block Hit + Block Bash Power tracks and Three.js AnimationClip support');
+    throw new Error('G3.6.3 Power Parry synthesis requires retargeted Block Hit + Block Bash Power tracks and Three.js AnimationClip support');
   }
   const profile = getProductionParryDeflectProfile(variant);
   const contactClip = clipMap.get(profile.contactClipId);
@@ -287,7 +317,7 @@ export function createProductionParryDeflectClip(THREE, clipMap, variant, option
         contactClip.duration,
         deflectClip.duration,
       );
-      if (!value?.length) throw new Error(`G3.6 could not sample track ${name}`);
+      if (!value?.length) throw new Error(`G3.6.3 could not sample track ${name}`);
       values.push(...value);
     }
     tracks.push(new template.constructor(
@@ -315,7 +345,12 @@ export function createProductionParryDeflectClip(THREE, clipMap, variant, option
       contactHoldSeconds: profile.contactHoldSeconds,
       blendSeconds: profile.blendSeconds,
       deflectWindow: Object.freeze([profile.deflectStartSeconds, profile.deflectEndSeconds]),
+      powerWindow: Object.freeze([profile.deflectStartSeconds, profile.deflectPowerEndSeconds]),
+      recoveryWindow: Object.freeze([profile.deflectRecoveryStartSeconds, profile.deflectEndSeconds]),
       deflectRate: profile.deflectRate,
+      recoveryRate: profile.deflectRecoveryRate,
+      powerEndAtSeconds: profile.deflectPowerEndAtSeconds,
+      recoveryEndAtSeconds: profile.deflectRecoveryEndAtSeconds,
       visualChainEndSeconds: profile.deflectEndAtSeconds,
       reactionDurationSeconds: profile.reactionDurationSeconds,
       upperBodySafetyLimitsDegrees: profile.upperBodySafetyLimitsDegrees,
