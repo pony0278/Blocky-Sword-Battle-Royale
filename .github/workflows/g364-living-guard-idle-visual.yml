@@ -8,6 +8,7 @@ on:
       - 'src/combat/guard-recovery-bridge.js'
       - 'tests/living-guard-idle-probe.test.js'
       - 'tools/action-studio/living-guard-idle-lab.*'
+      - 'tools/action-studio/living-guard-idle-source-scan.*'
       - '.github/workflows/g364-living-guard-idle-visual.yml'
   workflow_dispatch:
 
@@ -31,6 +32,23 @@ jobs:
           test -n "$BROWSER"
           echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
           "$BROWSER" --version
+
+      - name: Scan 40s Skyrim Guard idle for gentle loop windows
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-6-4-living-guard-idle
+          python3 -m http.server 4172 > /tmp/g364-scan-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          URL='http://127.0.0.1:4172/tools/action-studio/living-guard-idle-source-scan.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --virtual-time-budget=30000 --dump-dom "$URL" \
+            > artifacts/g3-6-4-living-guard-idle/g364-source-scan.html
+          sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-6-4-living-guard-idle/g364-source-scan.html
+          grep -q 'data-g364-source-scan="pass"' artifacts/g3-6-4-living-guard-idle/g364-source-scan.html
 
       - name: Verify Living Guard Idle A/B/C in browser
         shell: bash
