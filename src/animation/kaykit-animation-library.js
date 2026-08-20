@@ -153,27 +153,6 @@ export function createKayKitAnimationController(THREE, object3d) {
     }
   }
 
-  function sampleMixerAtAbsoluteTime(action, timeSeconds) {
-    const targetTime = Math.max(0, Number(timeSeconds) || 0);
-    action.enabled = true;
-    action.paused = false;
-    action.setEffectiveWeight(1);
-    action.setEffectiveTimeScale(1);
-    if (typeof mixer.setTime === 'function') {
-      // External-clock sampling is an absolute operation. Using setTime forces
-      // PropertyMixers to write the requested pose even when the same action
-      // and same timestamp are sampled on consecutive frames. The previous
-      // action.time + mixer.update(0) path could leave post-animation Guard
-      // corrections resident on the rig and then multiply them a second time.
-      mixer.setTime(targetTime);
-    } else {
-      action.time = targetTime;
-      mixer.update(0);
-    }
-    action.paused = true;
-    return targetTime;
-  }
-
   return {
     mixer,
     clips,
@@ -242,10 +221,14 @@ export function createKayKitAnimationController(THREE, object3d) {
         action.play();
       }
       configureLoop(action, options.loop === true);
-      const sampledTime = sampleMixerAtAbsoluteTime(action, timeSeconds);
+      action.enabled = true;
+      action.paused = false;
+      action.time = Math.max(0, Number(timeSeconds) || 0);
+      mixer.update(0);
+      action.paused = true;
       currentAction = action;
       currentClipName = name;
-      return sampledTime;
+      return action.time;
     },
     stop(fadeSeconds = 0) {
       if (currentAction && fadeSeconds > 0) currentAction.fadeOut(fadeSeconds);
