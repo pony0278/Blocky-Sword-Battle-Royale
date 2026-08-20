@@ -5,6 +5,7 @@ import {
 } from './longsword-directional-metadata.js';
 
 export const LONGSWORD_ATTACK_RUNTIME_STAGE = 'G4.1';
+export const LONGSWORD_ATTACK_INTERRUPTION_STAGE = 'G4.3B.1';
 export const LONGSWORD_ATTACK_FPS = 30;
 
 export const LONGSWORD_ATTACK_PHASES = Object.freeze({
@@ -12,6 +13,7 @@ export const LONGSWORD_ATTACK_PHASES = Object.freeze({
   WINDUP: 'attack_windup',
   ACTIVE: 'attack_active',
   RECOVERY: 'attack_recovery',
+  INTERRUPTED: 'attack_interrupted',
 });
 
 const NATURAL_DURATIONS = Object.freeze({
@@ -27,6 +29,31 @@ const TRAIL_TAIL_SECONDS = Object.freeze({ top: 0.12, right: 0.09, left: 0.10 })
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function finite(value, fallback = null) {
+  if (value == null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function vec(input = {}) {
+  return Object.freeze({
+    x: finite(input?.x, 0),
+    y: finite(input?.y, 0),
+    z: finite(input?.z, 0),
+  });
+}
+
+function normalizeDirectionVector(input = {}) {
+  const value = vec(input);
+  const magnitude = Math.hypot(value.x, value.y, value.z);
+  if (magnitude <= 1e-9) return Object.freeze({ x: 0, y: 0, z: 0 });
+  return Object.freeze({
+    x: value.x / magnitude,
+    y: value.y / magnitude,
+    z: value.z / magnitude,
+  });
 }
 
 function directionEntry(direction) {
@@ -138,46 +165,147 @@ export function getLongswordAttackPhase(profile, elapsedSeconds) {
   return LONGSWORD_ATTACK_PHASES.IDLE;
 }
 
+function freezeInterruptionRequest(input = {}) {
+  const resolution = input.resolution || null;
+  const contact = resolution?.contact || input.contact || {};
+  const incomingVelocity = vec(contact.incomingVelocity || input.incomingVelocity);
+  const incomingDirection = normalizeDirectionVector(
+    contact.incomingDirection || input.incomingDirection || incomingVelocity,
+  );
+  return Object.freeze({
+    reason: String(input.reason || resolution?.outcome || 'combat-interrupt'),
+    outcome: resolution?.outcome || input.outcome || null,
+    responseClass: resolution?.attacker?.responseClass || input.responseClass || null,
+    resolutionStage: resolution?.stage || input.resolutionStage || null,
+    attackSequence: finite(resolution?.attackSequence ?? input.attackSequence, null),
+    contactPoint: vec(contact.point || input.contactPoint),
+    incomingVelocity,
+    incomingDirection,
+  });
+}
+
 export function createLongswordDirectionalAttackRuntime(options = {}) {
   let active = null;
   let elapsedMs = 0;
   let sequence = 0;
   let lastCompleted = null;
+  let interruption = null;
+  let lastInterrupted = null;
 
   function snapshot(extra = {}) {
     const profile = active?.runtime || null;
     const elapsedSeconds = elapsedMs / 1000;
     return Object.freeze({
       stage: LONGSWORD_ATTACK_RUNTIME_STAGE,
+      interruptionStage: LONGSWORD_ATTACK_INTERRUPTION_STAGE,
       sequence,
-      phase: getLongswordAttackPhase(profile, elapsedSeconds),
+      phase: interruption
+        ? LONGSWORD_ATTACK_PHASES.INTERRUPTED
+        : getLongswordAttackPhase(profile, elapsedSeconds),
+      phaseBeforeInterruption: interruption?.phaseAtInterrupt || null,
       elapsedMs,
       elapsedSeconds,
-      direction: profile?.direction || null,
-      clipId: profile?.clipId || null,
+      sourceTimeSeconds: interruption?.sourceTimeSeconds ?? (profile ? elapsedSeconds : null),
+      direction: profile?.direction || interruption?.direction || null,
+      clipId: profile?.clipId || interruption?.clipId || null,
       contactSeconds: profile?.contactSeconds ?? null,
       contactReached: Boolean(profile && elapsedSeconds >= profile.contactSeconds),
       action: active,
+      interrupted: Boolean(interruption),
+      interruption,
+      lastInterrupted,
       lastCompleted,
       ...extra,
     });
   }
 
   function start(direction, startOptions = {}) {
+    if (interruption) {
+      return Object.freeze({
+        accepted: false,
+        reason: 'attack-interruption-pending-handoff',
+        snapshot: snapshot(),
+      });
+    }
     if (active) return Object.freeze({ accepted: false, reason: 'attack-already-active', snapshot: snapshot() });
     active = createLongswordDirectionalAttackDefinition(direction, { ...options, ...startOptions });
     elapsedMs = 0;
+    interruption = null;
     sequence += 1;
     return Object.freeze({ accepted: true, snapshot: snapshot() });
+  }
+
+  function interrupt(input = {}) {
+    if (!active) {
+      return Object.freeze({ accepted: false, reason: 'no-active-attack', snapshot: snapshot() });
+    }
+    if (interruption) {
+      return Object.freeze({ accepted: false, reason: 'attack-already-interrupted', snapshot: snapshot() });
+    }
+
+    const request = freezeInterruptionRequest(input);
+    const resolution = input.resolution || null;
+    if (resolution && (resolution.resolved !== true || resolution.attacker?.interruptAttack !== true)) {
+      return Object.freeze({ accepted: false, reason: 'resolution-does-not-interrupt', snapshot: snapshot() });
+    }
+    if (request.attackSequence != null && request.attackSequence !== sequence) {
+      return Object.freeze({ accepted: false, reason: 'attack-sequence-mismatch', snapshot: snapshot() });
+    }
+
+    const profile = active.runtime;
+    const sourceTimeSeconds = clamp(elapsedMs / 1000, 0, profile.durationSeconds);
+    const phaseAtInterrupt = getLongswordAttackPhase(profile, sourceTimeSeconds);
+    if (phaseAtInterrupt !== LONGSWORD_ATTACK_PHASES.ACTIVE && input.allowOutsideActive !== true) {
+      return Object.freeze({ accepted: false, reason: 'attack-not-active', snapshot: snapshot() });
+    }
+
+    interruption = Object.freeze({
+      stage: LONGSWORD_ATTACK_INTERRUPTION_STAGE,
+      sequence,
+      direction: profile.direction,
+      clipId: profile.clipId,
+      sourceTimeSeconds,
+      elapsedMs,
+      phaseAtInterrupt,
+      reason: request.reason,
+      outcome: request.outcome,
+      responseClass: request.responseClass,
+      resolutionStage: request.resolutionStage,
+      contactPoint: request.contactPoint,
+      incomingVelocity: request.incomingVelocity,
+      incomingDirection: request.incomingDirection,
+      rootRotationPolicy: profile.rootRotationPolicy,
+      inPlace: profile.inPlace,
+      poseAuthority: 'freeze-source-animation-at-contact-until-recoil-handoff',
+    });
+    lastInterrupted = interruption;
+    return Object.freeze({ accepted: true, snapshot: snapshot({ justInterrupted: true }) });
+  }
+
+  function releaseInterruption() {
+    if (!interruption) {
+      return Object.freeze({ accepted: false, reason: 'no-pending-interruption', snapshot: snapshot() });
+    }
+    const released = interruption;
+    active = null;
+    elapsedMs = 0;
+    interruption = null;
+    return Object.freeze({
+      accepted: true,
+      released,
+      snapshot: snapshot({ interruptionReleased: true }),
+    });
   }
 
   function reset() {
     active = null;
     elapsedMs = 0;
+    interruption = null;
     return snapshot();
   }
 
   function update(deltaMs) {
+    if (interruption) return snapshot({ frozenByInterruption: true });
     if (!active) return snapshot();
     const definition = active;
     const profile = definition.runtime;
@@ -199,8 +327,11 @@ export function createLongswordDirectionalAttackRuntime(options = {}) {
 
   return Object.freeze({
     get snapshot() { return snapshot(); },
-    get active() { return Boolean(active); },
+    get active() { return Boolean(active) && !interruption; },
+    get interrupted() { return Boolean(interruption); },
     start,
+    interrupt,
+    releaseInterruption,
     update,
     reset,
   });
