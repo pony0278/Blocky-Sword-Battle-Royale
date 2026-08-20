@@ -9,8 +9,10 @@ on:
       - 'src/animation/skyrim-converted-animation-library.js'
       - 'src/animation/parry-contact-deflect-runtime-clip.js'
       - 'src/combat/guard-*.js'
+      - 'src/combat/longsword-guard-correction.js'
       - 'tools/action-studio/parry-rotation-continuity-lab.*'
       - 'tests/kaykit-animation-absolute-sample.test.js'
+      - 'tests/guard-correction-idempotence.test.js'
       - 'tests/parry-rotation-continuity.test.js'
       - 'tests/parry-upper-body-continuity.test.js'
       - '.github/workflows/parry-rotation-continuity.yml'
@@ -25,8 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run absolute sampling + T3.2 + T3.3 continuity unit tests
-        run: node --test tests/kaykit-animation-absolute-sample.test.js tests/parry-rotation-continuity.test.js tests/parry-upper-body-continuity.test.js tests/parry-contact-deflect-runtime-clip.test.js
+      - name: Run Guard correction + T3.2 + T3.3 continuity unit tests
+        run: node --test tests/kaykit-animation-absolute-sample.test.js tests/guard-correction-idempotence.test.js tests/parry-rotation-continuity.test.js tests/parry-upper-body-continuity.test.js tests/parry-contact-deflect-runtime-clip.test.js
 
       - name: Locate headless browser
         id: browser
