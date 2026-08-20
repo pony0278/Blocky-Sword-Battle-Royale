@@ -10,6 +10,62 @@ permissions:
   contents: read
 
 jobs:
+  finalize-g364-action-studio:
+    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Add G3.6.4 Living Guard Idle entry
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/action-studio/index.template.html')
+          text = path.read_text()
+          if 'id="livingGuardIdleLink"' not in text:
+              anchor = '''<div class="status-line" data-g361-readability-entry="true">
+  <a id="powerBashReadabilityLink" href="./power-bash-readability-lab.html" target="_blank" rel="noopener">G3.6.3 · D Production + A/B/C History →</a>
+</div>'''
+              addition = anchor + '''
+<div class="status-line" data-g364-living-entry="true">
+  <a id="livingGuardIdleLink" href="./living-guard-idle-lab.html" target="_blank" rel="noopener">G3.6.4 · Open Living Guard Idle A/B/C →</a>
+</div>'''
+              if anchor not in text:
+                  raise SystemExit('Could not find Power Bash readability entry anchor')
+              path.write_text(text.replace(anchor, addition, 1))
+          PY
+
+      - name: Build Action Studio
+        run: npm run build:action-studio
+
+      - name: Commit G3.6.4 Action Studio entry
+        shell: bash
+        run: |
+          if git diff --quiet -- tools/action-studio/index.template.html tools/action-studio/index.html; then
+            echo 'G3.6.4 Action Studio entry already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- tools/action-studio/index.template.html tools/action-studio/index.html
+          git commit -m 'Link G3.6.4 Living Guard Idle from Action Studio'
+          git push origin HEAD:${{ github.head_ref }}
+
   test:
     runs-on: ubuntu-latest
     steps:
