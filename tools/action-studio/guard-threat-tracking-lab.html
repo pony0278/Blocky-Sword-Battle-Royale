@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>G4.3A.1 Guard Threat Tracking Probe</title>
+  <style>
+    html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
+    body{display:grid;grid-template-columns:minmax(0,1fr) 440px;overflow:hidden}main{position:relative;min-width:0}canvas{width:100%;height:100%;display:block}
+    .hud{position:absolute;left:16px;top:16px;min-width:390px;background:#07101acc;border:1px solid #26354d;border-radius:10px;padding:10px 12px;font:12px/1.55 ui-monospace,monospace}
+    .legend{position:absolute;left:16px;bottom:16px;background:#07101acc;border:1px solid #26354d;border-radius:10px;padding:8px 10px;font-size:12px}.good{color:#7ef0ad}.bad{color:#ff8c8c}.warn{color:#ffd27a}
+    aside{overflow:auto;border-left:1px solid #26354d;padding:18px;background:#0e1521}h1{font-size:19px;margin:0 0 6px}h2{font-size:13px;margin:20px 0 8px;color:#94b8e8;text-transform:uppercase;letter-spacing:.08em}
+    button{background:#182338;color:#dce9fb;border:1px solid #334969;border-radius:7px;padding:9px 11px;margin:3px;cursor:pointer}button:hover{background:#22314c}button.active{border-color:#75e6c2;background:#18352f}.row{display:flex;flex-wrap:wrap}.note{color:#9eb0c8;font-size:12px}
+    .metric{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:8px 0;padding:10px;border:1px solid #243147;border-radius:8px;background:#080d14}.metric b{color:#ddecff}.toggle{display:flex;align-items:center;gap:8px;margin:10px 0}
+    pre{white-space:pre-wrap;background:#080d14;border:1px solid #243147;border-radius:8px;padding:10px;font-size:11px;max-height:300px;overflow:auto}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+  <main>
+    <canvas id="canvas"></canvas>
+    <div class="hud">
+      <b>G4.3A.1 · Guard Threat Tracking Probe</b>
+      <div id="hudAttack">Attack: loading…</div>
+      <div id="hudThreat">Threat: —</div>
+      <div id="hudTracking">Tracking: —</div>
+      <div id="hudContact">Contact: —</div>
+    </div>
+    <div class="legend">Threat = green · requested target = blue · correction = green line · real contact = red</div>
+  </main>
+  <aside>
+    <h1>Guard Threat Tracking</h1>
+    <div class="note">HAND_L socket 與 Buckler mount 都保持鎖定。這裡只在每幀 authored Skyrim Guard 之後，對左上臂/前臂做有限度追蹤。PARRY_CONFIRMED 仍必須等真正 Sword × Buckler contact。</div>
+
+    <h2>Attack direction</h2>
+    <div class="row"><button data-attack="top">TOP</button><button data-attack="right">RIGHT</button><button data-attack="left">LEFT</button></div>
+    <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat selected direction</label>
+
+    <h2>Tracking mode</h2>
+    <div class="row"><button data-tracking="off">OFF</button><button class="active" data-tracking="guard">GUARD TRACK</button><button data-tracking="parry">PARRY TRACK</button></div>
+    <div class="metric">
+      <span>Guard horizon / max</span><b>110ms / 0.12m</b>
+      <span>Parry horizon / max</span><b>140ms / 0.18m</b>
+      <span>Guard arm budget</span><b>8° / 10°</b>
+      <span>Parry arm budget</span><b>14° / 18°</b>
+    </div>
+    <label class="toggle"><input id="showTracking" type="checkbox" checked> Show predicted threat + correction</label>
+    <label class="toggle"><input id="showSurface" type="checkbox" checked> Show Buckler surface + normal</label>
+
+    <h2>Views</h2>
+    <div class="row"><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="defender">Defender</button><button data-view="contact">Contact Close</button></div>
+
+    <h2>Rule</h2>
+    <div class="metric">
+      <span>Socket</span><b>HAND_L LOCKED</b>
+      <span>Buckler mount Y</span><b>90° LOCKED</b>
+      <span>Contact authority</span><b>G4.3A geometry</b>
+      <span>Tracking authority</span><b>presentation only</b>
+    </div>
+
+    <h2>Verification</h2>
+    <div id="status" class="warn">Loading G4.3A.1…</div>
+    <pre id="report">Not run.</pre>
+  </aside>
+  <script type="module" src="./guard-threat-tracking-lab.js"></script>
+</body>
+</html>
