@@ -1,14 +1,16 @@
-name: G3.5.1P-T3.2 Parry Rotation Continuity
+name: G3.5.1P-T3.3 Parry Rotation Continuity
 
 on:
   pull_request:
     paths:
       - 'src/animation/parry-rotation-continuity.js'
+      - 'src/animation/parry-upper-body-continuity.js'
       - 'src/animation/skyrim-converted-animation-library.js'
       - 'src/animation/parry-contact-deflect-runtime-clip.js'
       - 'src/combat/guard-*.js'
       - 'tools/action-studio/parry-rotation-continuity-lab.*'
       - 'tests/parry-rotation-continuity.test.js'
+      - 'tests/parry-upper-body-continuity.test.js'
       - '.github/workflows/parry-rotation-continuity.yml'
   workflow_dispatch:
 
@@ -21,8 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run T3.2 rotation policy unit tests
-        run: node --test tests/parry-rotation-continuity.test.js tests/parry-contact-deflect-runtime-clip.test.js
+      - name: Run T3.2 + T3.3 continuity unit tests
+        run: node --test tests/parry-rotation-continuity.test.js tests/parry-upper-body-continuity.test.js tests/parry-contact-deflect-runtime-clip.test.js
 
       - name: Locate headless browser
         id: browser
@@ -33,30 +35,31 @@ jobs:
           echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
           "$BROWSER" --version
 
-      - name: Verify 0-599ms production Parry rotation continuity
+      - name: Verify 0-599ms production Parry whole-body rotation continuity
         shell: bash
         env:
           BROWSER: ${{ steps.browser.outputs.browser }}
         run: |
-          mkdir -p artifacts/g3-5-1p-t3-2
-          python3 -m http.server 4173 > /tmp/g351pt32-http.log 2>&1 &
+          mkdir -p artifacts/g3-5-1p-t3-3
+          python3 -m http.server 4173 > /tmp/g351pt33-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
           URL='http://127.0.0.1:4173/tools/action-studio/parry-rotation-continuity-lab.html'
           "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
             --window-size=1280,900 --virtual-time-budget=30000 --dump-dom \
-            "$URL" > artifacts/g3-5-1p-t3-2/continuity-dom.html
+            "$URL" > artifacts/g3-5-1p-t3-3/continuity-dom.html
 
-          grep -q 'data-g351pt32="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
-          grep -q 'data-g351pt32-policy="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
-          grep -q 'data-g351pt32-parry="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
-          grep -q 'data-g351pt32-perfect="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
-          grep -q 'data-g351pt32-root="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
-          grep -q 'data-g351pt32-hips="pass"' artifacts/g3-5-1p-t3-2/continuity-dom.html
+          grep -q 'data-g351pt32="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
+          grep -q 'data-g351pt32-root="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
+          grep -q 'data-g351pt32-hips="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
+          grep -q 'data-g351pt33="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
+          grep -q 'data-g351pt33-policy="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
+          grep -q 'data-g351pt33-spine="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
+          grep -q 'data-g351pt33-chest="pass"' artifacts/g3-5-1p-t3-3/continuity-dom.html
 
-      - name: Upload T3.2 continuity evidence
+      - name: Upload T3.3 continuity evidence
         uses: actions/upload-artifact@v4
         with:
-          name: g3-5-1p-t3-2-parry-rotation-continuity
-          path: artifacts/g3-5-1p-t3-2
+          name: g3-5-1p-t3-3-parry-rotation-continuity
+          path: artifacts/g3-5-1p-t3-3
