@@ -48,7 +48,7 @@ test('Skyrim Live loops the corrected source at full strength from the canonical
 
 test('Living Triangle keeps root and hips frozen while blending restrained upper-body motion', () => {
   const sample = sampleLivingGuardIdleCandidate(LIVING_GUARD_IDLE_CANDIDATE_IDS.LIVING_TRIANGLE, 1, 0.8);
-  assert.equal(sample.sourceRate, 0.85);
+  assert.equal(sample.sourceRate, 1);
   assert.equal(getLivingGuardIdleBoneWeight(LIVING_GUARD_IDLE_CANDIDATE_IDS.LIVING_TRIANGLE, 'root'), 0);
   assert.equal(getLivingGuardIdleBoneWeight(LIVING_GUARD_IDLE_CANDIDATE_IDS.LIVING_TRIANGLE, 'hips'), 0);
   assert.equal(getLivingGuardIdleBoneWeight(LIVING_GUARD_IDLE_CANDIDATE_IDS.LIVING_TRIANGLE, 'chest'), LIVING_GUARD_IDLE_BONE_WEIGHTS.chest);
