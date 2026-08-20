@@ -1,0 +1,93 @@
+name: G3.6.4 Living Guard Idle Visual
+
+on:
+  pull_request:
+    paths:
+      - 'src/combat/living-guard-idle-probe.js'
+      - 'src/combat/longsword-guard-*.js'
+      - 'src/combat/guard-recovery-bridge.js'
+      - 'tests/living-guard-idle-probe.test.js'
+      - 'tools/action-studio/living-guard-idle-lab.*'
+      - 'tools/action-studio/living-guard-idle-source-scan.*'
+      - '.github/workflows/g364-living-guard-idle-visual.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run G3.6.4 probe contract tests
+        run: node --test tests/living-guard-idle-probe.test.js
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Scan 40s Skyrim Guard idle for gentle loop windows
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-6-4-living-guard-idle
+          python3 -m http.server 4172 > /tmp/g364-scan-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          URL='http://127.0.0.1:4172/tools/action-studio/living-guard-idle-source-scan.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --virtual-time-budget=30000 --dump-dom "$URL" \
+            > artifacts/g3-6-4-living-guard-idle/g364-source-scan.html
+          sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-6-4-living-guard-idle/g364-source-scan.html
+          grep -q 'data-g364-source-scan="pass"' artifacts/g3-6-4-living-guard-idle/g364-source-scan.html
+
+      - name: Verify Living Guard Idle A/B/C in browser
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-6-4-living-guard-idle
+          python3 -m http.server 4173 > /tmp/g364-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          BASE='http://127.0.0.1:4173/tools/action-studio/living-guard-idle-lab.html'
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1560,1050 --virtual-time-budget=30000 --dump-dom \
+            "${BASE}?view=three" > artifacts/g3-6-4-living-guard-idle/g364-dom.html
+
+          if ! grep -q 'data-g364="pass"' artifacts/g3-6-4-living-guard-idle/g364-dom.html; then
+            echo 'G3.6.4 Living Guard Idle browser gate failed.' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-6-4-living-guard-idle/g364-dom.html || true
+            exit 1
+          fi
+          grep -q 'data-g364-production-unchanged="pass"' artifacts/g3-6-4-living-guard-idle/g364-dom.html
+          grep -q 'data-g364-stable="pass"' artifacts/g3-6-4-living-guard-idle/g364-dom.html
+          grep -q 'data-g364-skyrim-live="pass"' artifacts/g3-6-4-living-guard-idle/g364-dom.html
+          grep -q 'data-g364-living="pass"' artifacts/g3-6-4-living-guard-idle/g364-dom.html
+          grep -q 'data-g364-foundation="pass"' artifacts/g3-6-4-living-guard-idle/g364-dom.html
+          grep -q 'data-g364-loop="pass"' artifacts/g3-6-4-living-guard-idle/g364-dom.html
+
+          for view in three front side back; do
+            "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+              --window-size=1560,1050 --virtual-time-budget=26000 \
+              --screenshot="artifacts/g3-6-4-living-guard-idle/g364-${view}.png" \
+              "${BASE}?view=${view}"
+          done
+
+      - name: Upload G3.6.4 Living Guard Idle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-6-4-living-guard-idle
+          path: artifacts/g3-6-4-living-guard-idle
