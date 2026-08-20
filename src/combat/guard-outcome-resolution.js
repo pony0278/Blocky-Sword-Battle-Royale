@@ -29,6 +29,7 @@ const RESOLVABLE_GUARD_STATES = new Set([
 ]);
 
 function finite(value, fallback = null) {
+  if (value == null || value === '') return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
