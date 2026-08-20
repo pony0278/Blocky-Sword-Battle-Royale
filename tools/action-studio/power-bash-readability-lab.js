@@ -15,8 +15,8 @@ import {
 } from '../../src/animation/power-bash-readability-probe.js';
 
 const THREE = window.THREE;
-if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader || !THREE?.Quaternion) {
-  throw new Error(`${POWER_BASH_READABILITY_STAGE} requires Three.js + GLTFLoader`);
+if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader || !THREE?.Quaternion || !THREE?.OrbitControls) {
+  throw new Error(`${POWER_BASH_READABILITY_STAGE} requires Three.js + GLTFLoader + OrbitControls`);
 }
 
 const canvas = document.getElementById('canvas');
@@ -26,6 +26,28 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x09101a);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
+const CAMERA_TARGET = new THREE.Vector3(0, 1.0, 0);
+const CAMERA_PRESETS = Object.freeze({
+  three: Object.freeze([5.9, 2.25, 8.3]),
+  front: Object.freeze([0, 1.55, 9.2]),
+  side: Object.freeze([9.2, 1.55, 0]),
+  back: Object.freeze([0, 1.55, -9.2]),
+});
+const orbitControls = new THREE.OrbitControls(camera, canvas);
+orbitControls.target.copy(CAMERA_TARGET);
+orbitControls.enableDamping = false;
+orbitControls.enablePan = true;
+orbitControls.enableZoom = true;
+orbitControls.minDistance = 3.2;
+orbitControls.maxDistance = 18;
+orbitControls.minPolarAngle = 0.12;
+orbitControls.maxPolarAngle = Math.PI - 0.12;
+orbitControls.screenSpacePanning = true;
+orbitControls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+orbitControls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+orbitControls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
 scene.add(new THREE.HemisphereLight(0xffffff, 0x26344b, 1.35));
 const key = new THREE.DirectionalLight(0xffffff, 1.0);
 key.position.set(3, 6, 5);
@@ -38,6 +60,7 @@ const progressInput = document.getElementById('progress');
 const progressLabel = document.getElementById('progressLabel');
 const playButton = document.getElementById('play');
 const resetButton = document.getElementById('reset');
+const resetCameraButton = document.getElementById('resetCamera');
 const cards = new Map();
 
 const slots = POWER_BASH_READABILITY_CANDIDATES.map((candidate, index) => ({
@@ -60,11 +83,14 @@ let staticProgress = 0.5;
 let playbackStartedAt = performance.now();
 const PAUSE_SECONDS = 0.55;
 
-function setView(view) {
-  if (view === 'front') camera.position.set(0, 1.55, 9.2);
-  else camera.position.set(5.9, 2.25, 8.3);
-  camera.lookAt(0, 1.0, 0);
+function setView(view = 'three') {
+  const resolvedView = Object.hasOwn(CAMERA_PRESETS, view) ? view : 'three';
+  camera.position.fromArray(CAMERA_PRESETS[resolvedView]);
+  orbitControls.target.copy(CAMERA_TARGET);
+  orbitControls.update();
   camera.updateMatrixWorld(true);
+  document.documentElement.dataset.g3611CameraView = resolvedView;
+  return resolvedView;
 }
 
 function resize() {
@@ -311,6 +337,7 @@ resetButton.addEventListener('click', () => {
   playButton.textContent = '▶ Play real-time';
   applyStaticProgress(0);
 });
+resetCameraButton.addEventListener('click', () => setView('three'));
 progressInput.addEventListener('input', () => {
   autoplay = false;
   playButton.textContent = '▶ Play real-time';
@@ -319,12 +346,26 @@ progressInput.addEventListener('input', () => {
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
 
 setView(new URLSearchParams(location.search).get('view') || 'three');
+document.documentElement.dataset.g3611Orbit = 'pass';
+window.__G3611_ORBIT_CAMERA__ = Object.freeze({
+  stage: 'G3.6.1.1',
+  controls: orbitControls,
+  setView,
+  reset: () => setView('three'),
+  getState: () => Object.freeze({
+    position: camera.position.toArray(),
+    target: orbitControls.target.toArray(),
+    minDistance: orbitControls.minDistance,
+    maxDistance: orbitControls.maxDistance,
+  }),
+});
 resize();
 addEventListener('resize', resize);
 
 (function frame(now) {
   if (autoplay && sourceClip) applyAutoplay(now);
   slots.forEach((slot) => slot.sword?.update());
+  orbitControls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 })(performance.now());
