@@ -22,7 +22,7 @@ import {
 } from '../../src/combat/guard-reaction-presentation.js';
 
 const THREE = window.THREE;
-if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G3.6 requires Three.js + GLTFLoader');
+if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error(`${PRODUCTION_PARRY_DEFLECT_STAGE} requires Three.js + GLTFLoader`);
 
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
@@ -56,17 +56,17 @@ const timeLabel = document.getElementById('timeLabel');
 const REACTION_CONFIG = Object.freeze({
   block: Object.freeze({
     event: GUARD_EVENTS.BLOCK_CONFIRMED,
-    payload: Object.freeze({ verification: 'g36-block' }),
+    payload: Object.freeze({ verification: 'g363-block' }),
     variant: GUARD_REACTION_VARIANTS.BLOCK_HIT,
   }),
   parry: Object.freeze({
     event: GUARD_EVENTS.PARRY_CONFIRMED,
-    payload: Object.freeze({ verification: 'g36-parry' }),
+    payload: Object.freeze({ verification: 'g363-parry' }),
     variant: GUARD_REACTION_VARIANTS.PARRY,
   }),
   perfect: Object.freeze({
     event: GUARD_EVENTS.PARRY_CONFIRMED,
-    payload: Object.freeze({ verification: 'g36-perfect', perfect: true }),
+    payload: Object.freeze({ verification: 'g363-perfect', perfect: true }),
     variant: GUARD_REACTION_VARIANTS.PERFECT_PARRY,
   }),
 });
@@ -89,23 +89,23 @@ function resize() {
 }
 
 function resetToHold() {
-  machine.send(GUARD_EVENTS.RESET, { verification: 'g36-reset' });
+  machine.send(GUARD_EVENTS.RESET, { verification: 'g363-reset' });
   runtime.sync(camera);
-  machine.send(GUARD_EVENTS.GUARD_PRESS, { verification: 'g36-guard-press' });
+  machine.send(GUARD_EVENTS.GUARD_PRESS, { verification: 'g363-guard-press' });
   runtime.sync(camera);
   const enter = runtime.update(180, camera);
   if (enter.snapshot.state !== GUARD_STATES.HOLD) {
-    throw new Error(`G3.6 failed to auto-complete Guard Enter: ${enter.snapshot.state}`);
+    throw new Error(`${PRODUCTION_PARRY_DEFLECT_STAGE} failed to auto-complete Guard Enter: ${enter.snapshot.state}`);
   }
   return enter;
 }
 
 function beginReaction(kind) {
   const config = REACTION_CONFIG[kind];
-  if (!config) throw new Error(`Unknown G3.6 reaction: ${kind}`);
+  if (!config) throw new Error(`Unknown ${PRODUCTION_PARRY_DEFLECT_STAGE} reaction: ${kind}`);
   resetToHold();
   const result = machine.send(config.event, config.payload);
-  if (!result.accepted) throw new Error(`G3.6 ${kind} event was rejected by the Guard FSM`);
+  if (!result.accepted) throw new Error(`${PRODUCTION_PARRY_DEFLECT_STAGE} ${kind} event was rejected by the Guard FSM`);
   runtime.sync(camera);
   return config;
 }
@@ -192,7 +192,7 @@ function verifyScenario(kind) {
 
 function sameMotionMetadata(a, b) {
   if (!a || !b) return false;
-  return a.sharedMotionFamily === 'g36-blockhit-powerbash'
+  return a.sharedMotionFamily === 'g363-blockhit-powerbash-full-recovery'
     && b.sharedMotionFamily === a.sharedMotionFamily
     && a.sharedMotionContract === true
     && b.sharedMotionContract === true
@@ -202,8 +202,29 @@ function sameMotionMetadata(a, b) {
     && a.contactHoldSeconds === b.contactHoldSeconds
     && a.blendSeconds === b.blendSeconds
     && JSON.stringify(a.deflectWindow) === JSON.stringify(b.deflectWindow)
+    && JSON.stringify(a.powerWindow) === JSON.stringify(b.powerWindow)
+    && JSON.stringify(a.recoveryWindow) === JSON.stringify(b.recoveryWindow)
     && a.deflectRate === b.deflectRate
-    && a.visualChainEndSeconds === b.visualChainEndSeconds;
+    && a.recoveryRate === b.recoveryRate
+    && a.powerEndAtSeconds === b.powerEndAtSeconds
+    && a.recoveryEndAtSeconds === b.recoveryEndAtSeconds
+    && a.visualChainEndSeconds === b.visualChainEndSeconds
+    && a.reactionDurationSeconds === b.reactionDurationSeconds;
+}
+
+function productionMetadataPass(entry) {
+  const metadata = entry?.productionParryDeflect;
+  return metadata?.stage === PRODUCTION_PARRY_DEFLECT_STAGE
+    && metadata?.productionEnabled === true
+    && metadata?.probeOnly === false
+    && metadata?.sourceDecision === 'G3_6_3_PROMOTE_D_FULL_RECOVERY'
+    && metadata?.deflectClipId === 'SKYRIM_GUARD/shd_blockbashpower'
+    && metadata?.sharedMotionFamily === 'g363-blockhit-powerbash-full-recovery'
+    && JSON.stringify(metadata?.powerWindow) === JSON.stringify([0.08, 0.55])
+    && JSON.stringify(metadata?.recoveryWindow) === JSON.stringify([0.55, 0.7])
+    && metadata?.deflectRate === 0.95
+    && metadata?.recoveryRate === 1
+    && Math.abs((metadata?.reactionDurationSeconds || 0) - 0.96) < 1e-9;
 }
 
 function runVerification() {
@@ -235,16 +256,15 @@ function runVerification() {
     sourceTranslationSafe:sourceReactionClips.every((entry) => entry.translationSafe),
     sourceArmChainSafe:sourceReactionClips.every((entry) => entry.armMaxErrorDegrees <= 0.1),
     sourceScaleSafe:sourceReactionClips.every((entry) => entry.translationScale > 0 && entry.translationScale < 0.1),
-    productionVirtualMetadata:productionClips.every((entry) => entry.productionParryDeflect?.stage === 'G3.6'
-      && entry.productionParryDeflect?.productionEnabled === true
-      && entry.productionParryDeflect?.sourceDecision === 'G3_6_PROMOTE_T2_POWER_T1'
-      && entry.productionParryDeflect?.deflectClipId === 'SKYRIM_GUARD/shd_blockbashpower'),
+    productionVirtualMetadata:productionClips.every(productionMetadataPass),
     powerBashIsProduction:productionClips.every((entry) => entry.productionParryDeflect?.deflectClipId === 'SKYRIM_GUARD/shd_blockbashpower'),
+    fullRecoveryIsProduction:productionClips.every((entry) => JSON.stringify(entry.productionParryDeflect?.recoveryWindow) === JSON.stringify([0.55, 0.7])),
     sharedParryPerfectMotion:sameMotionMetadata(parryMetadata, perfectMetadata),
     blockRemainsBlockHit:LONGSWORD_GUARD_REACTION_PROFILES[GUARD_REACTION_VARIANTS.BLOCK_HIT].clipId === 'SKYRIM_GUARD/shd_blockhit',
     blockRuntime:scenarios.block.pass,
     parryRuntime:scenarios.parry.pass,
     perfectRuntime:scenarios.perfect.pass,
+    promotedDNotTruncated:scenarios.parry.durationMs === 960 && scenarios.perfect.durationMs === 960,
     poseMatchedRecovery:[scenarios.block, scenarios.parry, scenarios.perfect].every((scenario) => Boolean(scenario.recoveryProfileId)),
     rejectedIntroAbsent:!library.clips.has('SKYRIM_GUARD/shd_blockbashintro'),
   };
@@ -264,36 +284,43 @@ function runVerification() {
   document.documentElement.dataset.g332Block = scenarios.block.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g332Parry = scenarios.parry.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g332Perfect = scenarios.perfect.pass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363 = report.pass ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Virtual = gates.productionVirtualMetadata ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Power = gates.powerBashIsProduction ? 'pass' : 'fail';
+  document.documentElement.dataset.g363Recovery = gates.fullRecoveryIsProduction && gates.promotedDNotTruncated ? 'pass' : 'fail';
+  document.documentElement.dataset.g363SharedMotion = gates.sharedParryPerfectMotion ? 'pass' : 'fail';
+  document.documentElement.dataset.g363BlockSemantic = gates.blockRemainsBlockHit ? 'pass' : 'fail';
+  // Compatibility signals retained for older Guard regression consumers.
   document.documentElement.dataset.g36 = report.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g36Virtual = gates.productionVirtualMetadata ? 'pass' : 'fail';
   document.documentElement.dataset.g36Power = gates.powerBashIsProduction ? 'pass' : 'fail';
   document.documentElement.dataset.g36SharedMotion = gates.sharedParryPerfectMotion ? 'pass' : 'fail';
   document.documentElement.dataset.g36BlockSemantic = gates.blockRemainsBlockHit ? 'pass' : 'fail';
-  // Compatibility signals retained for older Guard regression consumers.
   document.documentElement.dataset.g351pt3 = report.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g351pt3Virtual = gates.productionVirtualMetadata ? 'pass' : 'fail';
   document.documentElement.dataset.g351pt3Power = gates.powerBashIsProduction ? 'pass' : 'fail';
   document.documentElement.dataset.g341Recovery = gates.poseMatchedRecovery ? 'pass' : 'fail';
   reportNode.textContent = JSON.stringify(report, null, 2);
   window.__G332_RESULT__ = report;
+  window.__G363_POWER_PARRY_RESULT__ = report;
   window.__G36_POWER_PARRY_RESULT__ = report;
-  status.textContent = `${PRODUCTION_PARRY_DEFLECT_STAGE} ${report.pass ? 'PASS' : 'FAIL'} · Guard Block + shared Block Hit → Power Bash Parry motion`;
+  status.textContent = `${PRODUCTION_PARRY_DEFLECT_STAGE} ${report.pass ? 'PASS' : 'FAIL'} · Guard Block + approved D Power Bash → Full Recovery production motion`;
   status.className = report.pass ? 'good' : 'bad';
   return report;
 }
 
 async function main() {
-  status.textContent = 'Loading Skyrim Guard sources + G3.6 Power Parry clips…';
+  status.textContent = `Loading Skyrim Guard sources + ${PRODUCTION_PARRY_DEFLECT_STAGE} promoted D production clips…`;
   library = await loadSkyrimConvertedAnimationLibrary(new THREE.GLTFLoader(), {
     THREE,
     rig:character.rig,
     fps:30,
   });
-  if (library.clips.size !== 6) throw new Error(`Expected 6 Skyrim Guard clips including G3.6 Power Parry virtual clips, got ${library.clips.size}`);
+  if (library.clips.size !== 6) throw new Error(`Expected 6 Skyrim Guard clips including ${PRODUCTION_PARRY_DEFLECT_STAGE} Power Parry virtual clips, got ${library.clips.size}`);
   character.registerAnimations(library);
   const idle = library.clips.get('SKYRIM_GUARD/shd_blockidle');
   const bind = idle?.userData?.weaponBindCalibration;
-  if (!bind?.correctionQuaternion) throw new Error('G3.6 requires accepted G2.4.5 weapon bind calibration');
+  if (!bind?.correctionQuaternion) throw new Error(`${PRODUCTION_PARRY_DEFLECT_STAGE} requires accepted G2.4.5 weapon bind calibration`);
   sword = createDebugSword(THREE);
   mountDebugSword(character, sword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
 
@@ -319,12 +346,14 @@ addEventListener('resize', resize);
 
 main().catch((error) => {
   document.documentElement.dataset.g332 = 'fail';
+  document.documentElement.dataset.g363 = 'fail';
   document.documentElement.dataset.g36 = 'fail';
   document.documentElement.dataset.g351pt3 = 'fail';
   status.textContent = `${PRODUCTION_PARRY_DEFLECT_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
   window.__G332_RESULT__ = { stage:PRODUCTION_PARRY_DEFLECT_STAGE, pass:false, error:error?.stack || String(error) };
+  window.__G363_POWER_PARRY_RESULT__ = window.__G332_RESULT__;
   window.__G36_POWER_PARRY_RESULT__ = window.__G332_RESULT__;
 });
 
