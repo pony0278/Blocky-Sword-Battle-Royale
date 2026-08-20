@@ -132,7 +132,7 @@ const protocolAwareEntry = [
   '          const sourceMs = Math.round((Number(report.sourceTimeSeconds) || 0) * 1000);',
   "          const pass = state === 'guard_parry'",
   "            && runtime.mode === 'parry'",
-  "            && clipId === 'SKYRIM_GUARD/parry_contact_deflect_t3'",
+  "            && clipId === 'SKYRIM_GUARD/power_parry_g36'",
   '            && sourceMs >= 350',
   '            && sourceMs <= 370;',
   "          root.dataset.pagesGuardGate = pass ? 'pass' : 'fail';",

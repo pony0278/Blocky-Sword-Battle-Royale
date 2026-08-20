@@ -17,8 +17,8 @@ export const GUARD_REACTION_VARIANTS = Object.freeze({
 
 export const GUARD_REACTION_PROFILE_IDS = Object.freeze({
   BLOCK_HIT: 'longsword_guard_block_hit_v1',
-  PARRY: 'longsword_guard_parry_deflect_v1',
-  PERFECT_PARRY: 'longsword_guard_perfect_parry_v1',
+  PARRY: 'longsword_guard_parry_advantage_g36',
+  PERFECT_PARRY: 'longsword_guard_perfect_parry_g36',
 });
 
 const REACTION_COMPLETE_EVENT = 'reaction_complete';
@@ -49,6 +49,7 @@ function reactionProfile({
   semanticAssessment,
   productionPresentationStage = null,
   productionSourceChain = null,
+  sharedMotionFamily = null,
 }) {
   const start = Math.max(0, Number(sourceStartSeconds) || 0);
   const sourceDuration = Math.max(start, Number(sourceDurationSeconds) || start);
@@ -67,7 +68,7 @@ function reactionProfile({
     sourceWindow: Object.freeze({ startSeconds: start, endSeconds: end }),
     durationSeconds,
     durationMs: durationSeconds * 1000,
-    // G3.4 compatibility only. Production G3.5.1 consumers use followupWindowSeconds.
+    // G3.4 compatibility only. Production consumers use followupWindowSeconds.
     counterWindowSeconds: legacyCounterWindow,
     followupWindowSeconds: followupWindow,
     parryAdvantage,
@@ -78,14 +79,17 @@ function reactionProfile({
     rootRotationSafetyStage: GUARD_ROOT_ROTATION_SAFETY_STAGE,
     loop: false,
     authored: true,
-    authoredStage: 'G3.4.0',
+    authoredStage: 'G3.6',
     productionPresentationStage,
     productionSourceChain,
+    sharedMotionFamily,
     visualDecision,
     ...semanticAssessment,
   });
 }
 
+// Ordinary Guard contact: already guarding, attack is stopped, attacker does
+// not receive Parry Advantage. This intentionally remains pure Block Hit.
 const SHARED_BLOCK_CONTACT = Object.freeze({
   sourceId: 'shd_blockhit',
   file: 'shd_blockhit.source.glb',
@@ -94,24 +98,32 @@ const SHARED_BLOCK_CONTACT = Object.freeze({
   sourceEndSeconds: 0.6,
 });
 
-const PRODUCTION_PARRY_CONTACT_DEFLECT = Object.freeze({
-  sourceId: 'parry_contact_deflect_t3',
-  file: 'virtual:shd_blockhit+shd_blockbash',
+const G36_SHARED_POWER_MOTION_FAMILY = 'g36-blockhit-powerbash';
+const G36_SHARED_POWER_SOURCE_CHAIN = Object.freeze([
+  'SKYRIM_GUARD/shd_blockhit',
+  'SKYRIM_GUARD/shd_blockbashpower',
+]);
+
+const PRODUCTION_PARRY_CONTACT_POWER_DEFLECT = Object.freeze({
+  sourceId: 'power_parry_g36',
+  file: 'virtual:shd_blockhit+shd_blockbashpower',
   clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
   sourceDurationSeconds: 0.6,
   sourceEndSeconds: 0.6,
-  productionPresentationStage: 'G3.5.1P-T3',
-  productionSourceChain: Object.freeze(['SKYRIM_GUARD/shd_blockhit', 'SKYRIM_GUARD/shd_blockbash']),
+  productionPresentationStage: 'G3.6',
+  productionSourceChain: G36_SHARED_POWER_SOURCE_CHAIN,
+  sharedMotionFamily: G36_SHARED_POWER_MOTION_FAMILY,
 });
 
-const PRODUCTION_PERFECT_PARRY_CONTACT_DEFLECT = Object.freeze({
-  sourceId: 'perfect_parry_contact_deflect_t3',
-  file: 'virtual:shd_blockhit+shd_blockbash',
+const PRODUCTION_PERFECT_PARRY_CONTACT_POWER_DEFLECT = Object.freeze({
+  sourceId: 'perfect_power_parry_g36',
+  file: 'virtual:shd_blockhit+shd_blockbashpower',
   clipId: PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
   sourceDurationSeconds: 0.6,
   sourceEndSeconds: 0.6,
-  productionPresentationStage: 'G3.5.1P-T3',
-  productionSourceChain: Object.freeze(['SKYRIM_GUARD/shd_blockhit', 'SKYRIM_GUARD/shd_blockbash']),
+  productionPresentationStage: 'G3.6',
+  productionSourceChain: G36_SHARED_POWER_SOURCE_CHAIN,
+  sharedMotionFamily: G36_SHARED_POWER_MOTION_FAMILY,
 });
 
 const PARRY_FOLLOWUP_WINDOW = Object.freeze([0.08, 1 / 3]);
@@ -124,50 +136,50 @@ export const LONGSWORD_GUARD_REACTION_PROFILES = Object.freeze({
     state: 'guard_block_hit',
     ...SHARED_BLOCK_CONTACT,
     counterWindowSeconds: [0.24, 0.6],
-    visualDecision: 'G3.4.2R SAFETY ROLLBACK — preserve the validated 0.00–0.60s recoil window; ordinary Block does not grant the G3.5.1 free-attack advantage.',
+    visualDecision: 'G3.6 — ordinary Guard Block stays shd_blockhit only. It communicates successful defense without attacker unbalance or free-attack advantage.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.BLOCK_REACTION,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Block Hit reads as a defensive contact/recoil reaction and remains approved for production use.',
+      note: 'Already guarding: receive the strike with Block Hit, then recover to Guard. No Parry Advantage is implied.',
     }),
   }),
   [GUARD_REACTION_VARIANTS.PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PARRY,
     variant: GUARD_REACTION_VARIANTS.PARRY,
     state: 'guard_parry',
-    ...PRODUCTION_PARRY_CONTACT_DEFLECT,
+    ...PRODUCTION_PARRY_CONTACT_POWER_DEFLECT,
     counterWindowSeconds: PARRY_FOLLOWUP_WINDOW,
     followupWindowSeconds: PARRY_FOLLOWUP_WINDOW,
     parryAdvantage: createParryAdvantageContract({
       grade: 'parry',
       followupWindowSeconds: PARRY_FOLLOWUP_WINDOW,
     }),
-    visualDecision: 'G3.5.1P-T3 PRODUCTION — promote the T2 Shared Normal T1 winner into the production Parry clip: Block Hit contact → 85ms read → 70ms crossfade → compact shd_blockbash 0.09–0.22s deflect → settle through the existing 0.60s reaction boundary.',
+    visualDecision: 'G3.6 POWER PARRY — timed Parry plays short Block Hit contact, then the former T2 Power T1 shd_blockbashpower 0.120–0.280s @1.10x segment. The stronger push is now intentional because Parry Advantage means the attacker is knocked off-line.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_SUCCESS,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Production Parry now visibly receives the attack before redirecting it upward/laterally; follow-up remains the existing directional attack system.',
+      note: 'Timed defense reads as two beats: weapon contact, then a forceful Power Bash deflection that creates attacker disadvantage.',
     }),
   }),
   [GUARD_REACTION_VARIANTS.PERFECT_PARRY]: reactionProfile({
     id: GUARD_REACTION_PROFILE_IDS.PERFECT_PARRY,
     variant: GUARD_REACTION_VARIANTS.PERFECT_PARRY,
     state: 'guard_parry',
-    ...PRODUCTION_PERFECT_PARRY_CONTACT_DEFLECT,
+    ...PRODUCTION_PERFECT_PARRY_CONTACT_POWER_DEFLECT,
     counterWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
     followupWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
     parryAdvantage: createParryAdvantageContract({
       grade: 'perfect-parry',
       followupWindowSeconds: PERFECT_PARRY_FOLLOWUP_WINDOW,
     }),
-    visualDecision: 'G3.5.1P-T3 PRODUCTION — Perfect Parry reuses the accepted Shared Normal T1 shd_blockbash deflect, with a 95ms contact read and 75ms crossfade. shd_blockbashpower stays probe-only; Perfect strength comes from stagger/hitstop/FX/audio/camera.',
+    visualDecision: 'G3.6 POWER PARRY — Perfect Parry uses the exact same Block Hit → Power Bash motion contract as Parry Advantage. Perfect is differentiated by tighter timing and stronger authoritative stagger/hitstop/FX/audio/camera, not a different animation.',
     semanticAssessment: guardActionSemanticAssessment({
       intendedRole: GUARD_ACTION_SEMANTIC_ROLES.PARRY_ADVANTAGE,
       sourceRole: GUARD_ACTION_SEMANTIC_ROLES.PERFECT_PARRY_SUCCESS,
       fit: GUARD_ACTION_SEMANTIC_FIT.MATCH,
-      note: 'Perfect Parry shares the cleaner compact redirect motion and differentiates through stronger combat/presentation feedback rather than a bash-like power animation.',
+      note: 'Perfect Parry intentionally shares the same readable two-beat Power Parry motion; only gameplay reward and presentation intensity differ.',
     }),
   }),
 });

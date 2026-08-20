@@ -84,24 +84,24 @@ function quaternionAngleDegrees(values) {
   return 2 * Math.acos(Math.min(1, Math.abs(q.w))) * 180 / Math.PI;
 }
 
-test('G3.5.1P-T3.3 targets torso quaternion tracks only', () => {
-  assert.equal(PARRY_UPPER_BODY_CONTINUITY_STAGE, 'G3.5.1P-T3.3');
-  assert.equal(parryUpperBodyContinuityLimitDegrees('spine.quaternion'), 18);
-  assert.equal(parryUpperBodyContinuityLimitDegrees('chest.quaternion'), 24);
+test('G3.6 keeps torso safety contact-relative but widens the motion envelope', () => {
+  assert.equal(PARRY_UPPER_BODY_CONTINUITY_STAGE, 'G3.6');
+  assert.equal(parryUpperBodyContinuityLimitDegrees('spine.quaternion'), 42);
+  assert.equal(parryUpperBodyContinuityLimitDegrees('chest.quaternion'), 60);
   assert.equal(parryUpperBodyContinuityLimitDegrees('hips.quaternion'), null);
   assert.equal(parryUpperBodyContinuityLimitDegrees('upperarmr.quaternion'), null);
   assert.equal(parryUpperBodyContinuityLimitDegrees('chest.position'), null);
 });
 
-test('G3.5.1P-T3.3 rebases extreme blockbash chest turn onto contact pose and clamps excursion', () => {
+test('G3.6 rebases extreme Power Bash torso turn without flattening it to T3.3 limits', () => {
   const contactChest = new FakeTrack('chest.quaternion', [0, 0.16, 0.8], [
     yawQuaternion(0), yawQuaternion(0), yawQuaternion(0),
   ]);
-  const deflectChest = new FakeTrack('chest.quaternion', [0, 0.09, 0.22, 0.33], [
-    yawQuaternion(70), yawQuaternion(70), yawQuaternion(160), yawQuaternion(160),
+  const deflectChest = new FakeTrack('chest.quaternion', [0, 0.12, 0.28, 0.7], [
+    yawQuaternion(70), yawQuaternion(70), yawQuaternion(150), yawQuaternion(150),
   ]);
-  const virtualChest = new FakeTrack('chest.quaternion', [0, 0.16, 0.245, 0.315, 0.42, 0.6], [
-    yawQuaternion(0), yawQuaternion(0), yawQuaternion(0), yawQuaternion(100), yawQuaternion(150), yawQuaternion(160),
+  const virtualChest = new FakeTrack('chest.quaternion', [0, 0.16, 0.21, 0.265, 0.38, 0.6], [
+    yawQuaternion(0), yawQuaternion(0), yawQuaternion(0), yawQuaternion(80), yawQuaternion(140), yawQuaternion(150),
   ]);
   const clip = {
     duration: 0.6,
@@ -111,22 +111,28 @@ test('G3.5.1P-T3.3 rebases extreme blockbash chest turn onto contact pose and cl
         productionEnabled: true,
         variant: 'parry',
         contactClipId: 'SKYRIM_GUARD/shd_blockhit',
-        deflectClipId: 'SKYRIM_GUARD/shd_blockbash',
+        deflectClipId: 'SKYRIM_GUARD/shd_blockbashpower',
         contactEndSeconds: 0.16,
-        deflectWindow: [0.09, 0.22],
+        deflectWindow: [0.12, 0.28],
+        upperBodySafetyLimitsDegrees: { spine: 42, chest: 60 },
       },
     },
   };
   const sources = new Map([
     ['SKYRIM_GUARD/shd_blockhit', { duration: 0.8, tracks: [contactChest] }],
-    ['SKYRIM_GUARD/shd_blockbash', { duration: 0.33, tracks: [deflectChest] }],
+    ['SKYRIM_GUARD/shd_blockbashpower', { duration: 0.7, tracks: [deflectChest] }],
   ]);
 
   stabilizeProductionParryUpperBodyClip(THREE, clip, sources);
 
   const final = Array.from(virtualChest.values.slice(-4));
-  assert.ok(quaternionAngleDegrees(final) <= PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES.chest + 0.25);
-  assert.equal(clip.userData.productionParryDeflect.upperBodyContinuity.stage, PARRY_UPPER_BODY_CONTINUITY_STAGE);
-  assert.equal(clip.userData.productionParryDeflect.upperBodyContinuity.policy, 'contact-relative-clamped-torso-deflect');
+  const finalDegrees = quaternionAngleDegrees(final);
+  // FakeQuaternion intentionally uses normalized linear interpolation instead of
+  // Three.js' exact slerp, so allow a small numerical envelope around the real
+  // 60° production cap. The browser continuity gate measures the real runtime.
+  assert.ok(finalDegrees <= PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES.chest + 2.0);
+  assert.ok(finalDegrees > 24, 'G3.6 must preserve more torso action than the old T3.3 24° chest cap');
+  assert.equal(clip.userData.productionParryDeflect.upperBodyContinuity.stage, 'G3.6');
+  assert.equal(clip.userData.productionParryDeflect.upperBodyContinuity.policy, 'contact-relative-wide-torso-safety-cap');
   assert.deepEqual(clip.userData.productionParryDeflect.upperBodyContinuity.stabilizedTracks, ['chest.quaternion']);
 });

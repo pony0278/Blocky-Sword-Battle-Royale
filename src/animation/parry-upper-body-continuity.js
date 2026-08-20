@@ -1,15 +1,16 @@
 import { sanitizeAnimationTargetName } from './animation-target-name.js';
 import {
+  G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES,
   PRODUCTION_PARRY_DEFLECT_PHASES,
   sampleProductionParryDeflectTimeline,
 } from './parry-contact-deflect-runtime-clip.js';
 
-export const PARRY_UPPER_BODY_CONTINUITY_STAGE = 'G3.5.1P-T3.3';
+export const PARRY_UPPER_BODY_CONTINUITY_STAGE = 'G3.6';
 
-export const PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES = Object.freeze({
-  spine: 18,
-  chest: 24,
-});
+// G3.6 preserves the T3.3 contact-relative rebase, but deliberately widens
+// the torso envelope so Power Bash keeps its authored shoulder/chest action.
+// This is a safety cap against basis jumps, not an animation-style clamp.
+export const PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES = G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES;
 
 function canSampleTrack(track) {
   return Boolean(
@@ -33,10 +34,16 @@ function trackPropertyName(trackName) {
   return propertyIndex < 0 ? '' : value.slice(propertyIndex + 1);
 }
 
-export function parryUpperBodyContinuityLimitDegrees(trackName) {
+function resolveLimits(input) {
+  return input && typeof input === 'object'
+    ? input
+    : PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES;
+}
+
+export function parryUpperBodyContinuityLimitDegrees(trackName, limits = PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES) {
   if (trackPropertyName(trackName) !== 'quaternion') return null;
   const target = trackTargetName(trackName);
-  const limit = PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES[target];
+  const limit = resolveLimits(limits)[target];
   return Number.isFinite(limit) ? limit : null;
 }
 
@@ -123,15 +130,16 @@ export function stabilizeProductionParryUpperBodyClip(THREE, clip, sourceClipMap
   const contactClip = sourceClipMap?.get?.(metadata.contactClipId) || null;
   const deflectClip = sourceClipMap?.get?.(metadata.deflectClipId) || null;
   if (!contactClip || !deflectClip) {
-    throw new Error(`${PARRY_UPPER_BODY_CONTINUITY_STAGE} requires contact + deflect source clips`);
+    throw new Error(`${PARRY_UPPER_BODY_CONTINUITY_STAGE} requires contact + Power Bash source clips`);
   }
 
+  const limitsDegrees = resolveLimits(metadata.upperBodySafetyLimitsDegrees);
   const contactTracks = new Map((contactClip.tracks || []).map((track) => [track.name, track]));
   const deflectTracks = new Map((deflectClip.tracks || []).map((track) => [track.name, track]));
   const stabilizedTracks = [];
 
   for (const track of clip.tracks) {
-    const maxDegrees = parryUpperBodyContinuityLimitDegrees(track.name);
+    const maxDegrees = parryUpperBodyContinuityLimitDegrees(track.name, limitsDegrees);
     if (!Number.isFinite(maxDegrees) || !canSampleTrack(track)) continue;
     const contactTrack = contactTracks.get(track.name) || null;
     const deflectTrack = deflectTracks.get(track.name) || null;
@@ -164,8 +172,9 @@ export function stabilizeProductionParryUpperBodyClip(THREE, clip, sourceClipMap
       ...metadata,
       upperBodyContinuity: Object.freeze({
         stage: PARRY_UPPER_BODY_CONTINUITY_STAGE,
-        policy: 'contact-relative-clamped-torso-deflect',
-        limitsDegrees: PARRY_UPPER_BODY_CONTINUITY_LIMITS_DEGREES,
+        policy: 'contact-relative-wide-torso-safety-cap',
+        limitsDegrees: Object.freeze({ ...limitsDegrees }),
+        purpose: 'prevent-basis-snaps-without-flattening-power-bash-motion',
         stabilizedTrackCount: stabilizedTracks.length,
         stabilizedTracks: Object.freeze([...stabilizedTracks]),
       }),

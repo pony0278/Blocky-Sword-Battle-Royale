@@ -27,13 +27,13 @@ let runtime,sword,mountRuntime,activeVariant='normal',counterDurationMs=750;
 let canonicalHoldPose=null,canonicalHoldWorld=null,canonicalHoldMount=null;
 const mountHistory=[];
 const RIGHT_CHAIN=['upperarm.r','lowerarm.r','wrist.r','hand.r','handslot.r'];
-const T3_SKYRIM_LIBRARY_CLIPS=[
+const G36_SKYRIM_LIBRARY_CLIPS=[
   'SKYRIM_GUARD/shd_blockidle',
   'SKYRIM_GUARD/shd_blockhit',
   'SKYRIM_GUARD/shd_blockbash',
   'SKYRIM_GUARD/shd_blockbashpower',
-  'SKYRIM_GUARD/parry_contact_deflect_t3',
-  'SKYRIM_GUARD/perfect_parry_contact_deflect_t3',
+  'SKYRIM_GUARD/power_parry_g36',
+  'SKYRIM_GUARD/perfect_power_parry_g36',
 ];
 const status=document.getElementById('status'), reportNode=document.getElementById('report');
 const hudState=document.getElementById('hudState'), hudDetail=document.getElementById('hudDetail');
@@ -138,7 +138,7 @@ function runVerification(kaykit,skyrim){
   const clip=kaykit.clips.get('Melee_Block_Attack'); counterDurationMs=Math.max(.001,Number(clip?.duration)||0)*1000;
   const diagnostics=character.animation.getPreparedClipDiagnostics('Melee_Block_Attack',true);
   const normal=verifyScenario('normal'),perfect=verifyScenario('perfect');
-  const gates={skyrimGuardFamilyLoaded:T3_SKYRIM_LIBRARY_CLIPS.every(id=>skyrim.clips.has(id))&&skyrim.clips.size>=6,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
+  const gates={skyrimGuardFamilyLoaded:G36_SKYRIM_LIBRARY_CLIPS.every(id=>skyrim.clips.has(id))&&skyrim.clips.size>=6,kaykitCounterPresent:Boolean(clip),counterDurationPositive:counterDurationMs>1,
     inPlaceRootPositionRemoved:diagnostics.preparedRootPositionTracks===0,normalCounterRuntime:normal.pass,perfectCounterRuntime:perfect.pass,
     poseMatchedMountRecovery:normal.mountActuallyBlends&&perfect.mountActuallyBlends,
     worldSwordStartContinuous:normal.startWorldContinuous&&perfect.startWorldContinuous,

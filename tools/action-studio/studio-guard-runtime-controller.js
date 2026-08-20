@@ -12,18 +12,18 @@ import { createGuardPresentationRuntime } from '../../src/combat/guard-presentat
 import { GUARD_WEAPON_MOUNT_PROFILE_IDS } from '../../src/combat/guard-counter-presentation.js';
 import { createGuardWeaponMountRuntime } from '../../src/combat/guard-weapon-mount-runtime.js';
 
-const GUARD_RUNTIME_STAGE = 'G3.5.1P-T3';
+const GUARD_RUNTIME_STAGE = 'G3.6';
 const MODE_LABELS = Object.freeze({
   hold: 'Guard Hold',
-  block: 'Block Hit',
-  parry: 'Parry',
+  block: 'Guard Block',
+  parry: 'Parry Advantage',
   perfect: 'Perfect Parry',
   // Compatibility DOM key. Production semantics are Parry Advantage, not a dedicated Counter action.
   counter: 'Parry Advantage',
 });
 
 const REQUIRED_GUARD_RUNTIME_MODES = Object.freeze(['hold', 'block', 'parry', 'perfect', 'counter']);
-const REQUIRED_T3_PARRY_CLIPS = Object.freeze([
+const REQUIRED_G36_PARRY_CLIPS = Object.freeze([
   PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PARRY,
   PRODUCTION_PARRY_DEFLECT_CLIP_IDS.PERFECT_PARRY,
 ]);
@@ -48,18 +48,19 @@ function captureMountCalibration(object3d) {
   };
 }
 
-function relabelT3Surface(panel) {
+function relabelG36Surface(panel) {
   panel.setAttribute('data-stage', GUARD_RUNTIME_STAGE);
-  panel.setAttribute('data-parry-presentation', 'contact-deflect');
+  panel.setAttribute('data-parry-presentation', 'blockhit-powerbash');
+  panel.setAttribute('data-parry-motion-family', 'g36-blockhit-powerbash');
   panel.setAttribute('data-followup-model', 'free-directional-attack');
   const title = panel.querySelector('.panel-title span');
   const subtitle = panel.querySelector('.panel-title small');
   const intro = panel.querySelector('.blocking-intro');
   const compatibilityButton = panel.querySelector('[data-guard-runtime="counter"]');
   if (title) title.textContent = `Guard Runtime · ${GUARD_RUNTIME_STAGE}`;
-  if (subtitle) subtitle.textContent = 'Contact → Deflect → Parry Advantage';
+  if (subtitle) subtitle.textContent = 'Guard Block = Block Hit · Parry = Block Hit → Power Bash';
   if (intro) {
-    intro.textContent = 'Block 保留 Skyrim Block Hit；Parry / Perfect Parry 先接住攻擊，再以 T2 Shared blockbash compact segment 往上／側向撥開。成功後仍由 authoritative combat 讓對手失衡，玩家直接使用既有 Top / Left / Right 攻擊。';
+    intro.textContent = 'G3.6：已在 Guard 中被打中只播放 Skyrim Block Hit，不讓對手失衡；時機 Parry / Perfect Parry 共用同一套兩段動作：短 Block Hit 接觸 → 短 shd_blockbashpower 強力撥開。Perfect 的差異只放在 timing、stagger、hitstop、FX、audio 與 camera。';
   }
   if (compatibilityButton) {
     compatibilityButton.textContent = '▶ Parry Advantage';
@@ -81,7 +82,7 @@ function resolveGuardPanel() {
   panel.setAttribute('data-guard-runtime-static', 'true');
   panel.setAttribute('data-controller-bound', 'true');
   panel.setAttribute('data-guard-runtime-button-count', String(buttons.length));
-  relabelT3Surface(panel);
+  relabelG36Surface(panel);
   return panel;
 }
 
@@ -176,7 +177,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     if (location.protocol === 'file:') throw new Error('Guard Runtime assets require Action Studio over HTTP / GitHub Pages');
     if (!weaponObject3d) throw new Error('Guard Runtime could not resolve the HAND_R weapon object');
 
-    setStatus(`${GUARD_RUNTIME_STAGE} · loading Skyrim Guard + production contact → deflect…`);
+    setStatus(`${GUARD_RUNTIME_STAGE} · loading Skyrim Guard + Block Hit → Power Bash…`);
     loadPromise = (async () => {
       const loader = new THREE.GLTFLoader();
       const skyrim = await loadSkyrimConvertedAnimationLibrary(loader, {
@@ -185,9 +186,9 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         baseUrl: '../../assets/skyrim/guard/converted/',
         fps: 30,
       });
-      const missingT3Clips = REQUIRED_T3_PARRY_CLIPS.filter((clipId) => !skyrim.clips.has(clipId));
-      if (missingT3Clips.length) {
-        throw new Error(`${GUARD_RUNTIME_STAGE} missing production Parry clips: ${missingT3Clips.join(', ')}`);
+      const missingG36Clips = REQUIRED_G36_PARRY_CLIPS.filter((clipId) => !skyrim.clips.has(clipId));
+      if (missingG36Clips.length) {
+        throw new Error(`${GUARD_RUNTIME_STAGE} missing production Power Parry clips: ${missingG36Clips.join(', ')}`);
       }
       character.registerAnimations(skyrim);
 
@@ -217,14 +218,16 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
         },
       });
       loaded = true;
-      setStatus(`${GUARD_RUNTIME_STAGE} ready · Parry = contact → deflect → free directional attack`);
+      setStatus(`${GUARD_RUNTIME_STAGE} ready · Parry Advantage / Perfect = Block Hit → Power Bash`);
       panel?.setAttribute('data-g351-ready', 'true');
       panel?.setAttribute('data-g351pt3-ready', 'true');
+      panel?.setAttribute('data-g36-ready', 'true');
     })().catch((error) => {
       loadPromise = null;
       setStatus(`${GUARD_RUNTIME_STAGE} load failed · ${error.message}`, true);
       panel?.setAttribute('data-g351-ready', 'false');
       panel?.setAttribute('data-g351pt3-ready', 'false');
+      panel?.setAttribute('data-g36-ready', 'false');
       throw error;
     });
     return loadPromise;
@@ -258,15 +261,15 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     if (mode === 'block') {
       machine.send(GUARD_EVENTS.BLOCK_CONFIRMED, {
         source: 'action-studio-preview-authority',
-        verification: 'action-studio-block-hit',
+        verification: 'action-studio-g36-guard-block-hit',
       });
     } else if (mode === 'parry' || mode === 'perfect' || mode === 'counter') {
       machine.send(GUARD_EVENTS.PARRY_CONFIRMED, {
         source: 'action-studio-preview-authority',
         perfect: mode === 'perfect',
         verification: mode === 'counter'
-          ? 'action-studio-g351-parry-advantage'
-          : `action-studio-${mode}`,
+          ? 'action-studio-g36-parry-advantage'
+          : `action-studio-g36-${mode}`,
       });
     } else {
       throw new Error(`Unknown Guard Runtime preview mode: ${mode}`);
@@ -288,7 +291,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     setActiveButton(mode);
     lastResult = dispatchPreviewMode(mode);
     updateReadout(lastResult);
-    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE}${mode === 'counter' ? ' · no dedicated Counter state or animation' : ''}`);
+    setStatus(`${MODE_LABELS[mode]} · ${GUARD_RUNTIME_STAGE}${mode === 'counter' ? ' · shared Power Parry motion; no dedicated Counter animation' : ''}`);
     updatePlaybackButtons();
     return lastResult;
   }
@@ -326,7 +329,7 @@ export function createStudioGuardRuntimeController(THREE, options = {}) {
     }
     restoreMountCalibration = null;
     if (options.restoreEvaluation !== false) applyCurrentEvaluation();
-    if (!options.quiet) setStatus(`${GUARD_RUNTIME_STAGE} ready · choose Guard / Parry Advantage preview`);
+    if (!options.quiet) setStatus(`${GUARD_RUNTIME_STAGE} ready · choose Guard Block / Power Parry preview`);
   }
 
   document.querySelectorAll('[data-guard-runtime]').forEach((button) => {
