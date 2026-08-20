@@ -3,15 +3,12 @@ import { createDebugSword, mountDebugSword } from '../../src/character/debug-swo
 import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
-import {
-  applyGuardQuaternionOffsetsWeighted,
-  resetGuardQuaternionOffsetRuntime,
-} from '../../src/combat/longsword-guard-correction.js';
 import { LONGSWORD_GUARD_AUTHORING_STATE } from '../../src/combat/longsword-guard-metadata.js';
 import { applyRigPose, captureRigPose } from '../../src/combat/guard-recovery-bridge.js';
 import {
   LIVING_GUARD_IDLE_CANDIDATE_IDS,
   LIVING_GUARD_IDLE_CANDIDATES,
+  LIVING_GUARD_IDLE_GENTLE_WINDOW,
   LIVING_GUARD_IDLE_SOURCE_CLIP_ID,
   LIVING_GUARD_IDLE_STAGE,
   buildLivingGuardIdleProbeReport,
@@ -70,7 +67,6 @@ const slots = LIVING_GUARD_IDLE_CANDIDATES.map((candidate, index) => ({
   candidate,
   character: createDefaultCharacter(THREE),
   sword: null,
-  canonicalPose: null,
   metrics: null,
   x: (index - SLOT_CENTER_INDEX) * SLOT_SPACING,
 }));
@@ -79,8 +75,13 @@ slots.forEach((slot) => {
   scene.add(slot.character.object3d);
 });
 
+// A dedicated sampler never receives the corrected/display pose. This keeps
+// raw source extraction independent from the G3.5.2 correction runtime cache.
+const rawSampler = createDefaultCharacter(THREE);
 let library = null;
 let sourceClip = null;
+let rawCanonicalPose = null;
+let correctedCanonicalPose = null;
 let autoplay = true;
 let playbackStartedAt = performance.now();
 let pausedElapsedSeconds = 0;
@@ -108,6 +109,27 @@ function quaternionAngleDegrees(a, b) {
   return THREE.MathUtils.radToDeg(2 * Math.acos(dot));
 }
 
+function asQuaternion(value) {
+  return new THREE.Quaternion(
+    Number(value?.x) || 0,
+    Number(value?.y) || 0,
+    Number(value?.z) || 0,
+    Number.isFinite(Number(value?.w)) ? Number(value.w) : 1,
+  ).normalize();
+}
+
+function plainQuaternion(value) {
+  return { x: value.x, y: value.y, z: value.z, w: value.w };
+}
+
+function cloneTransform(transform) {
+  return {
+    position: { ...transform.position },
+    quaternion: { ...transform.quaternion },
+    scale: { ...transform.scale },
+  };
+}
+
 function boneWorldQuaternion(slot, id) {
   const bone = slot.character.rig?.bones?.[id];
   if (!bone?.getWorldQuaternion) throw new Error(`Missing ${LIVING_GUARD_IDLE_STAGE} bone: ${id}`);
@@ -122,47 +144,57 @@ function swordTipWorldPosition(slot) {
   return slot.sword.getSweepSegment(new THREE.Vector3(), new THREE.Vector3()).end;
 }
 
-function sampleCorrectedSource(slot, sourceTimeSeconds) {
-  slot.character.sampleAnimation(LIVING_GUARD_IDLE_SOURCE_CLIP_ID, sourceTimeSeconds, {
+function sampleRawPose(sourceTimeSeconds) {
+  rawSampler.sampleAnimation(LIVING_GUARD_IDLE_SOURCE_CLIP_ID, sourceTimeSeconds, {
     inPlace: true,
     loop: false,
     rootRotationPolicy: 'lock',
   });
-  slot.character.object3d.position.x = slot.x;
-  resetGuardQuaternionOffsetRuntime(slot.character.rig, LONGSWORD_GUARD_AUTHORING_STATE.offsets);
-  applyGuardQuaternionOffsetsWeighted(
-    THREE,
-    slot.character.rig,
-    LONGSWORD_GUARD_AUTHORING_STATE.offsets,
-    1,
-  );
-  slot.character.object3d.updateMatrixWorld(true);
-  slot.sword.update();
+  rawSampler.object3d.updateMatrixWorld(true);
+  return captureRigPose(rawSampler.rig);
 }
 
-function blendCanonicalTowardLive(slot, livePose) {
-  applyRigPose(slot.character.rig, slot.canonicalPose);
-  for (const [boneId, liveTransform] of Object.entries(livePose || {})) {
-    const weight = getLivingGuardIdleBoneWeight(slot.candidate, boneId);
-    if (!(weight > 0)) continue;
-    const canonicalTransform = slot.canonicalPose?.[boneId];
-    const bone = slot.character.rig?.bones?.[boneId];
-    if (!canonicalTransform?.quaternion || !liveTransform?.quaternion || !bone?.quaternion) continue;
-    const from = new THREE.Quaternion(
-      canonicalTransform.quaternion.x,
-      canonicalTransform.quaternion.y,
-      canonicalTransform.quaternion.z,
-      canonicalTransform.quaternion.w,
-    );
-    const to = new THREE.Quaternion(
-      liveTransform.quaternion.x,
-      liveTransform.quaternion.y,
-      liveTransform.quaternion.z,
-      liveTransform.quaternion.w,
-    );
-    bone.quaternion.copy(from.slerp(to, weight));
+function correctedPoseFromRaw(rawPose) {
+  const corrected = {};
+  for (const [boneId, transform] of Object.entries(rawPose || {})) {
+    const next = cloneTransform(transform);
+    const offset = LONGSWORD_GUARD_AUTHORING_STATE.offsets[boneId];
+    if (offset) {
+      const q = asQuaternion(transform.quaternion)
+        .multiply(new THREE.Quaternion().fromArray(offset))
+        .normalize();
+      next.quaternion = plainQuaternion(q);
+    }
+    corrected[boneId] = next;
   }
-  slot.character.rig?.root?.updateMatrixWorld?.(true);
+  return corrected;
+}
+
+function livingTrianglePoseFromRaw(rawLivePose) {
+  const output = {};
+  for (const [boneId, correctedBase] of Object.entries(correctedCanonicalPose || {})) {
+    const next = cloneTransform(correctedBase);
+    const weight = getLivingGuardIdleBoneWeight(LIVING_GUARD_IDLE_CANDIDATE_IDS.LIVING_TRIANGLE, boneId);
+    const rawBase = rawCanonicalPose?.[boneId];
+    const rawLive = rawLivePose?.[boneId];
+    if (weight > 0 && rawBase?.quaternion && rawLive?.quaternion) {
+      const baseRawQ = asQuaternion(rawBase.quaternion);
+      const liveRawQ = asQuaternion(rawLive.quaternion);
+      let delta = baseRawQ.clone().invert().multiply(liveRawQ).normalize();
+      if (delta.w < 0) delta = new THREE.Quaternion(-delta.x, -delta.y, -delta.z, -delta.w);
+      const scaledDelta = new THREE.Quaternion().identity().slerp(delta, weight).normalize();
+      const correctedBaseQ = asQuaternion(correctedBase.quaternion);
+      next.quaternion = plainQuaternion(correctedBaseQ.multiply(scaledDelta).normalize());
+    }
+    // Deliberately retain corrected canonical positions/scales. G3.6.4 only
+    // restores authored local rotational life, never root/hips drift or bob.
+    output[boneId] = next;
+  }
+  return output;
+}
+
+function applyPoseToSlot(slot, pose) {
+  applyRigPose(slot.character.rig, pose);
   slot.character.object3d.position.x = slot.x;
   slot.character.object3d.updateMatrixWorld(true);
   slot.sword.update();
@@ -171,23 +203,22 @@ function blendCanonicalTowardLive(slot, livePose) {
 function sampleCandidate(slot, elapsedSeconds) {
   const sample = sampleLivingGuardIdleCandidate(slot.candidate, elapsedSeconds, sourceClip.duration);
   if (slot.candidate.id === LIVING_GUARD_IDLE_CANDIDATE_IDS.STABLE_G363) {
-    applyRigPose(slot.character.rig, slot.canonicalPose);
-    slot.character.object3d.position.x = slot.x;
-    slot.character.object3d.updateMatrixWorld(true);
-    slot.sword.update();
+    applyPoseToSlot(slot, correctedCanonicalPose);
     return sample;
   }
 
-  sampleCorrectedSource(slot, sample.sourceTimeSeconds);
-  if (slot.candidate.id === LIVING_GUARD_IDLE_CANDIDATE_IDS.LIVING_TRIANGLE) {
-    const livePose = captureRigPose(slot.character.rig);
-    blendCanonicalTowardLive(slot, livePose);
+  const rawLive = sampleRawPose(sample.sourceTimeSeconds);
+  if (slot.candidate.id === LIVING_GUARD_IDLE_CANDIDATE_IDS.SKYRIM_LIVE) {
+    applyPoseToSlot(slot, correctedPoseFromRaw(rawLive));
+    return sample;
   }
+
+  applyPoseToSlot(slot, livingTrianglePoseFromRaw(rawLive));
   return sample;
 }
 
 function measureCandidate(slot) {
-  const durationSeconds = 4;
+  const durationSeconds = 6;
   const stepSeconds = 1 / 60;
   sampleCandidate(slot, 0);
   const start = Object.freeze({
@@ -234,6 +265,7 @@ function measureCandidate(slot) {
   return Object.freeze({
     measurementDurationSeconds: durationSeconds,
     sourceRate: slot.candidate.sourceRate,
+    sourceWindow: slot.candidate.sourceWindow,
     maxRootExcursionDegrees: Number(maxRootExcursionDegrees.toFixed(4)),
     maxHipsExcursionDegrees: Number(maxHipsExcursionDegrees.toFixed(4)),
     maxChestExcursionDegrees: Number(maxChestExcursionDegrees.toFixed(4)),
@@ -251,12 +283,14 @@ function renderCards(sourceTimes = new Map()) {
     const card = cards.get(slot.candidate.id);
     if (!card) continue;
     const sourceTime = sourceTimes.get(slot.candidate.id);
+    const window = slot.candidate.sourceWindow;
+    const windowLabel = window ? ` · loop ${window.startSeconds.toFixed(0)}→${window.endSeconds.toFixed(0)}s` : '';
     card.querySelector('[data-role="source"]').textContent = Number.isFinite(sourceTime)
-      ? `${sourceTime.toFixed(3)}s · ${slot.candidate.sourceRate.toFixed(2)}×`
+      ? `${sourceTime.toFixed(3)}s · ${slot.candidate.sourceRate.toFixed(2)}×${windowLabel}`
       : '—';
-    card.querySelector('[data-role="chest"]').textContent = `excursion ${slot.metrics.maxChestExcursionDegrees.toFixed(2)}° · max step ${slot.metrics.maxChestStepDegrees.toFixed(2)}°`;
+    card.querySelector('[data-role="chest"]').textContent = `excursion ${slot.metrics.maxChestExcursionDegrees.toFixed(2)}° · max step ${slot.metrics.maxChestStepDegrees.toFixed(3)}°`;
     card.querySelector('[data-role="arm"]').textContent = `shoulder ${slot.metrics.maxShoulderExcursionDegrees.toFixed(2)}° · wrist ${slot.metrics.maxWristExcursionDegrees.toFixed(2)}°`;
-    card.querySelector('[data-role="sword"]').textContent = `path ${slot.metrics.swordTipPathMeters.toFixed(3)}m / 4s · max ${slot.metrics.swordTipMaxDisplacementMeters.toFixed(3)}m`;
+    card.querySelector('[data-role="sword"]').textContent = `path ${slot.metrics.swordTipPathMeters.toFixed(3)}m / ${slot.metrics.measurementDurationSeconds}s · max ${slot.metrics.swordTipMaxDisplacementMeters.toFixed(3)}m`;
   }
 }
 
@@ -278,17 +312,20 @@ function buildReport() {
   const gates = Object.freeze({
     productionUnchanged: contract.productionUnchanged === true,
     sourceClipPresent: Boolean(sourceClip?.tracks?.length),
+    selectedGentleWindow: living.sourceWindow?.startSeconds === LIVING_GUARD_IDLE_GENTLE_WINDOW.startSeconds
+      && living.sourceWindow?.endSeconds === LIVING_GUARD_IDLE_GENTLE_WINDOW.endSeconds,
     stableRemainsStatic: stable.maxChestExcursionDegrees <= 0.1 && stable.swordTipPathMeters <= 0.01,
-    skyrimLiveHasVisibleMotion: skyrim.maxChestExcursionDegrees > stable.maxChestExcursionDegrees + 0.1
+    skyrimReferenceHasVisibleMotion: skyrim.maxChestExcursionDegrees > stable.maxChestExcursionDegrees + 0.1
       && skyrim.swordTipPathMeters > stable.swordTipPathMeters + 0.01,
-    livingTriangleHasVisibleMotion: living.maxChestExcursionDegrees > stable.maxChestExcursionDegrees + 0.02
-      && living.swordTipPathMeters > stable.swordTipPathMeters + 0.002,
-    livingTriangleIsRestrained: living.maxChestExcursionDegrees < skyrim.maxChestExcursionDegrees
-      && living.maxShoulderExcursionDegrees < skyrim.maxShoulderExcursionDegrees
-      && living.maxWristExcursionDegrees < skyrim.maxWristExcursionDegrees
+    livingTriangleHasVisibleMotion: living.maxChestExcursionDegrees >= 0.15
+      && living.maxShoulderExcursionDegrees >= 0.15
+      && living.swordTipPathMeters >= 0.01,
+    livingTriangleIsRestrained: living.maxChestExcursionDegrees < Math.min(1.0, skyrim.maxChestExcursionDegrees)
+      && living.maxShoulderExcursionDegrees < Math.min(2.0, skyrim.maxShoulderExcursionDegrees)
+      && living.maxWristExcursionDegrees < Math.min(2.0, skyrim.maxWristExcursionDegrees)
       && living.swordTipPathMeters < skyrim.swordTipPathMeters,
     livingTriangleLocksFoundation: living.maxRootExcursionDegrees <= 0.1 && living.maxHipsExcursionDegrees <= 0.1,
-    livingTriangleFrameContinuous: living.maxChestStepDegrees <= 0.5,
+    livingTriangleLoopContinuous: living.maxChestStepDegrees <= 0.15,
   });
   const failures = Object.entries(gates).filter(([, pass]) => !pass).map(([name]) => name);
   const report = Object.freeze({
@@ -298,14 +335,15 @@ function buildReport() {
     metrics,
     gates,
     failures,
-    decision: 'PROBE_ONLY — C is the hybrid candidate: preserve the current Triangle Guard foundation and reintroduce only restrained Skyrim upper-body idle motion.',
+    decision: 'PROBE_ONLY — C uses the source-scanned 29–31s authored gentle loop as a raw local quaternion delta on top of the approved corrected Triangle Guard. Production remains G3.6.3.',
   });
   document.documentElement.dataset.g364 = report.pass ? 'pass' : 'fail';
   document.documentElement.dataset.g364ProductionUnchanged = gates.productionUnchanged ? 'pass' : 'fail';
   document.documentElement.dataset.g364Stable = gates.stableRemainsStatic ? 'pass' : 'fail';
-  document.documentElement.dataset.g364SkyrimLive = gates.skyrimLiveHasVisibleMotion ? 'pass' : 'fail';
+  document.documentElement.dataset.g364SkyrimLive = gates.skyrimReferenceHasVisibleMotion ? 'pass' : 'fail';
   document.documentElement.dataset.g364Living = gates.livingTriangleHasVisibleMotion && gates.livingTriangleIsRestrained ? 'pass' : 'fail';
   document.documentElement.dataset.g364Foundation = gates.livingTriangleLocksFoundation ? 'pass' : 'fail';
+  document.documentElement.dataset.g364Loop = gates.livingTriangleLoopContinuous ? 'pass' : 'fail';
   reportNode.textContent = JSON.stringify(report, null, 2);
   window.__G364_LIVING_GUARD_IDLE_RESULT__ = report;
   return report;
@@ -315,28 +353,37 @@ async function main() {
   status.textContent = `${LIVING_GUARD_IDLE_STAGE} loading Skyrim Guard idle…`;
   library = await loadSkyrimConvertedAnimationLibrary(new THREE.GLTFLoader(), {
     THREE,
-    rig: slots[0].character.rig,
+    rig: rawSampler.rig,
     fps: 30,
   });
   sourceClip = library.clips.get(LIVING_GUARD_IDLE_SOURCE_CLIP_ID);
   if (!sourceClip) throw new Error(`Missing ${LIVING_GUARD_IDLE_SOURCE_CLIP_ID}`);
+  if (sourceClip.duration + 1e-6 < LIVING_GUARD_IDLE_GENTLE_WINDOW.endSeconds) {
+    throw new Error(`${LIVING_GUARD_IDLE_STAGE} gentle source window exceeds shd_blockidle duration`);
+  }
   const bind = sourceClip.userData?.weaponBindCalibration;
   if (!bind?.correctionQuaternion) throw new Error(`${LIVING_GUARD_IDLE_STAGE} requires accepted Skyrim weapon bind calibration`);
   const mount = composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind);
 
+  rawSampler.registerAnimations(library);
   for (const slot of slots) {
-    slot.character.registerAnimations(library);
     slot.sword = createDebugSword(THREE);
     mountDebugSword(slot.character, slot.sword, mount);
-    const canonical = sampleLivingGuardIdleCandidate(slot.candidate, 0, sourceClip.duration).canonicalSourceTimeSeconds;
-    sampleCorrectedSource(slot, canonical);
-    slot.canonicalPose = captureRigPose(slot.character.rig);
   }
+
+  const canonicalSeconds = sampleLivingGuardIdleCandidate(
+    LIVING_GUARD_IDLE_CANDIDATE_IDS.STABLE_G363,
+    0,
+    sourceClip.duration,
+  ).canonicalSourceTimeSeconds;
+  rawCanonicalPose = sampleRawPose(canonicalSeconds);
+  correctedCanonicalPose = correctedPoseFromRaw(rawCanonicalPose);
+
   for (const slot of slots) slot.metrics = measureCandidate(slot);
 
   const report = buildReport();
   applyElapsed(0);
-  status.textContent = `${LIVING_GUARD_IDLE_STAGE} ${report.pass ? 'READY' : 'FAIL'} · A/B/C live comparison · production remains G3.6.3`;
+  status.textContent = `${LIVING_GUARD_IDLE_STAGE} ${report.pass ? 'READY' : 'FAIL'} · C loops authored 29→31s micro-sway · production remains G3.6.3`;
   status.className = report.pass ? 'good' : 'bad';
   playbackStartedAt = performance.now();
 }
