@@ -36,18 +36,20 @@ grep -q 'id="guardRuntimePanel"' "$DOM_FILE" || fail 'static #guardRuntimePanel 
 grep -q 'data-guard-runtime-static="true"' "$DOM_FILE" || fail 'panel is not authored as static HTML'
 grep -q 'data-controller-bound="true"' "$DOM_FILE" || fail 'Guard Runtime controller did not bind after browser boot'
 grep -q 'data-guard-runtime-button-count="5"' "$DOM_FILE" || fail 'controller did not validate all five Guard actions'
-grep -q 'data-stage="G3.5.1P-T3"' "$DOM_FILE" || fail 'main Guard Runtime surface is not labeled G3.5.1P-T3'
-grep -q 'data-parry-presentation="contact-deflect"' "$DOM_FILE" || fail 'main Guard Runtime surface does not declare contact-deflect Parry presentation'
-grep -q 'Contact → Deflect → Parry Advantage' "$DOM_FILE" || fail 'main Guard Runtime surface still describes the old Block-Hit-only Parry presentation'
+grep -q 'data-stage="G3.6"' "$DOM_FILE" || fail 'main Guard Runtime surface is not labeled G3.6'
+grep -q 'data-g36-ready="true"' "$DOM_FILE" || fail 'G3.6 production Power Parry clips did not load'
+grep -q 'data-parry-presentation="blockhit-powerbash"' "$DOM_FILE" || fail 'main Guard Runtime surface does not declare Block Hit to Power Bash Parry presentation'
+grep -q 'data-parry-motion-family="g36-blockhit-powerbash"' "$DOM_FILE" || fail 'main Guard Runtime surface does not expose the G3.6 shared motion family'
+grep -q 'Guard Block = Block Hit · Parry = Block Hit → Power Bash' "$DOM_FILE" || fail 'main Guard Runtime surface does not describe the G3.6 motion semantics'
 grep -q 'data-action-studio-entry="bundle-http"' "$DOM_FILE" || fail 'HTTP Action Studio is not exercising the versioned standalone bundle path'
 grep -q 'data-action-studio-boot="pass"' "$DOM_FILE" || fail 'HTTP Action Studio bundle did not boot successfully'
-grep -q 'data-pages-guard-gate="pass"' "$DOM_FILE" || fail 'normal Action Studio did not reach production Parry deflect during the deterministic browser probe'
+grep -q 'data-pages-guard-gate="pass"' "$DOM_FILE" || fail 'normal Action Studio did not reach production G3.6 Power Parry during the deterministic browser probe'
 grep -q 'data-pages-guard-state="guard_parry"' "$DOM_FILE" || fail 'normal Action Studio deterministic probe did not remain in guard_parry'
-grep -q 'data-pages-guard-clip="SKYRIM_GUARD/parry_contact_deflect_t3"' "$DOM_FILE" || fail 'normal Action Studio Parry is not using the T3 production virtual clip'
+grep -q 'data-pages-guard-clip="SKYRIM_GUARD/power_parry_g36"' "$DOM_FILE" || fail 'normal Action Studio Parry is not using the G3.6 production Power Parry clip'
 
 SOURCE_MS="$(grep -o 'data-pages-guard-source-ms="[0-9]*"' "$DOM_FILE" | head -1 | grep -o '[0-9]*' || true)"
-[[ -n "$SOURCE_MS" ]] || fail 'normal Action Studio did not report a deterministic T3 source sample'
-(( SOURCE_MS >= 350 && SOURCE_MS <= 370 )) || fail "normal Action Studio sampled T3 Parry outside the expected 360ms deflect checkpoint: ${SOURCE_MS}ms"
+[[ -n "$SOURCE_MS" ]] || fail 'normal Action Studio did not report a deterministic G3.6 source sample'
+(( SOURCE_MS >= 350 && SOURCE_MS <= 370 )) || fail "normal Action Studio sampled G3.6 Parry outside the expected 360ms Power Bash checkpoint: ${SOURCE_MS}ms"
 
 for mode in hold block parry perfect counter; do
   grep -q "data-guard-runtime=\"${mode}\"" "$DOM_FILE" || fail "missing ${mode} Guard Runtime button"
@@ -60,4 +62,4 @@ if grep -Eq 'data-template="(guard|parry|counter)"' "$DOM_FILE"; then
   fail 'legacy Phase A Guard/Parry/Counter template buttons are still rendered'
 fi
 
-echo "Action Studio Guard Runtime browser gate passed · bundle-http · deterministic T3 Parry ${SOURCE_MS}ms · 5 static buttons · controller bound."
+echo "Action Studio Guard Runtime browser gate passed · bundle-http · deterministic G3.6 Power Parry ${SOURCE_MS}ms · 5 static buttons · controller bound."
