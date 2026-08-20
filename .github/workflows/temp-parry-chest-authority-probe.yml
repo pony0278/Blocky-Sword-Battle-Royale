@@ -1,0 +1,36 @@
+name: TEMP T3.3 Chest Authority Probe
+
+on:
+  push:
+    branches:
+      - agent/t3-3-g3-5-2-guard-visual-stability
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+      - name: Measure chest authority layers
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          python3 -m http.server 4173 > /tmp/chest-authority-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1200,900 --virtual-time-budget=30000 --dump-dom \
+            'http://127.0.0.1:4173/tools/action-studio/parry-chest-authority-probe.html' > /tmp/chest-authority.html
+          grep -q 'data-chest-authority-probe="pass"' /tmp/chest-authority.html
+          sed -n '/<pre id="report"/,/<\/pre>/p' /tmp/chest-authority.html
