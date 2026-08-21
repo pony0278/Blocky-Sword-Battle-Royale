@@ -1,0 +1,44 @@
+name: G4.3B.5R.2.9.2R1.1.1 Bidirectional Shield-Blade Contact
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/combat/bidirectional-shield-blade-contact.js'
+      - 'src/combat/anatomical-3d-joint-response.js'
+      - 'src/combat/swept-blade-shield-physical-contact.js'
+      - 'tools/action-studio/bidirectional-shield-blade-contact-lab-r292r111.html'
+      - 'tools/action-studio/bidirectional-shield-blade-contact-lab-r292r111.js'
+      - 'tests/bidirectional-shield-blade-contact.test.js'
+      - 'tests/bidirectional-shield-blade-contact-lab.test.js'
+      - '.github/workflows/bidirectional-shield-blade-contact.yml'
+  push:
+    branches:
+      - 'g43b5r28-legacy-two-actor-recoil-passthrough'
+
+permissions:
+  contents: read
+
+jobs:
+  bidirectional-shield-blade-contact-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Verify bidirectional runtime and lab syntax
+        run: >-
+          node --check src/combat/bidirectional-shield-blade-contact.js
+          && node --check tools/action-studio/bidirectional-shield-blade-contact-lab-r292r111.js
+      - name: Run bidirectional and contact regressions
+        run: >-
+          node --test
+          tests/bidirectional-shield-blade-contact.test.js
+          tests/bidirectional-shield-blade-contact-lab.test.js
+          tests/anatomical-3d-joint-response.test.js
+          tests/swept-blade-shield-physical-contact.test.js
