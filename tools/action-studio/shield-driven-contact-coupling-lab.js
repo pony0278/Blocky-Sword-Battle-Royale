@@ -20,17 +20,21 @@ import {
   analyzePredictiveInterceptParry,
   createPredictiveInterceptParryPresentationRuntime,
   RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r241';
+} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r242';
 import {
   createTwoActorCombatIntegration,
   TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r241';
+} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r242';
 import {
   SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
   createShieldDrivenContactCouplingRuntime,
-} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r241';
+} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r242';
+import {
+  IMMEDIATE_BLOCK_REBOUND_PARITY_STAGE,
+  createImmediateBlockShieldGiveRuntime,
+} from '../../src/combat/immediate-block-rebound-parity.js?v=g43b5r242';
 
-const LAB_STAGE = 'G4.3B.5R.2.4.1';
+const LAB_STAGE = IMMEDIATE_BLOCK_REBOUND_PARITY_STAGE;
 const THREE = window.THREE;
 if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error(`${LAB_STAGE} requires Three.js r128 + GLTFLoader`);
 
@@ -59,7 +63,6 @@ attacker.object3d.position.set(0, 0, -1.15);
 defender.object3d.position.set(0, 0, 1.15);
 defender.object3d.rotation.y = Math.PI;
 scene.add(attacker.object3d, defender.object3d);
-
 const attackerSword = createDebugSword(THREE);
 mountDebugSword(attacker, attackerSword, DEFAULT_KAYKIT_SWORD_MOUNT);
 let defenderSword = null;
@@ -79,6 +82,10 @@ const predictivePresentation = createPredictiveInterceptParryPresentationRuntime
 const couplingRuntime = createShieldDrivenContactCouplingRuntime(THREE, {
   defenderRig: defender.rig,
   attackerRig: attacker.rig,
+  buckler,
+});
+const blockGiveRuntime = createImmediateBlockShieldGiveRuntime(THREE, {
+  defenderRig: defender.rig,
   buckler,
 });
 
@@ -133,6 +140,7 @@ let latestContact = null;
 let latestCombatResult = null;
 let latestCombatUpdate = null;
 let latestCouplingReport = null;
+let latestBlockGiveReport = null;
 let latestPredictiveReport = null;
 let latestPredictiveHandoff = null;
 let repeatCooldownMs = 0;
@@ -142,23 +150,20 @@ let hudClockMs = HUD_INTERVAL_MS;
 let reportClockMs = REPORT_INTERVAL_MS;
 let releaseTipCaptured = false;
 let maxReleaseTipDisplacementMeters = 0;
+let blockGiveStartedThisFrame = false;
 const releaseTipPosition = new THREE.Vector3();
 const currentTipPosition = new THREE.Vector3();
 
 function marker(name, color, radius) {
-  const node = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 12, 8),
-    new THREE.MeshBasicMaterial({ color, depthWrite: false }),
-  );
+  const node = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 8), new THREE.MeshBasicMaterial({ color, depthWrite: false }));
   node.name = name;
   node.visible = false;
   scene.add(node);
   return node;
 }
-
-const predictedMarker = marker('G43B5R241_PREDICTED', 0x6df0a7, 0.048);
-const contactMarker = marker('G43B5R241_CONTACT', 0xff625f, 0.062);
-const driveMarker = marker('G43B5R241_SHIELD_DRIVE', 0x59d9ff, 0.042);
+const predictedMarker = marker('G43B5R242_PREDICTED', 0x6df0a7, 0.048);
+const contactMarker = marker('G43B5R242_CONTACT', 0xff625f, 0.062);
+const driveMarker = marker('G43B5R242_SHIELD_DRIVE', 0x59d9ff, 0.042);
 const bladeNodes = [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip];
 const bladeScratch = bladeNodes.map(() => new THREE.Vector3());
 const bladeBuffers = [0, 1].map(() => bladeNodes.map(() => ({ x: 0, y: 0, z: 0 })));
@@ -184,7 +189,6 @@ function resize() {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
 }
-
 function setView(view) {
   if (view === 'side') camera.position.set(5.8, 1.7, 0.1);
   else if (view === 'contact') camera.position.set(2.25, 1.5, 2.2);
@@ -192,38 +196,26 @@ function setView(view) {
   camera.lookAt(0, 1.05, 0);
   camera.updateMatrixWorld(true);
 }
-
 function enterGuard() {
-  guardMachine.send(GUARD_EVENTS.RESET, { stage: RECOIL_PRESENTATION_AUTHORITY_STAGE });
-  guardRuntime.sync(camera);
-  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: RECOIL_PRESENTATION_AUTHORITY_STAGE });
-  guardRuntime.sync(camera);
+  guardMachine.send(GUARD_EVENTS.RESET, { stage: LAB_STAGE }); guardRuntime.sync(camera);
+  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: LAB_STAGE }); guardRuntime.sync(camera);
   const report = guardRuntime.update(180, camera);
   if (report.snapshot.state !== GUARD_STATES.HOLD) throw new Error(`Expected Guard Hold, got ${report.snapshot.state}`);
 }
-
 function sampleAttacker(snapshot, deltaMs) {
   if (snapshot.action) {
     const profile = snapshot.action.runtime;
-    attacker.sampleAnimation(profile.clipId, Math.min(profile.durationSeconds, snapshot.elapsedSeconds), {
-      loop: false,
-      inPlace: true,
-      rootRotationPolicy: 'lock',
-    });
+    attacker.sampleAnimation(profile.clipId, Math.min(profile.durationSeconds, snapshot.elapsedSeconds), { loop: false, inPlace: true, rootRotationPolicy: 'lock' });
     attacker.update(0, camera);
     return;
   }
   attackerIdleClockSeconds += deltaMs / 1000;
-  attacker.sampleAnimation(
-    'UAL1/Sword_Idle',
-    attackerIdleClockSeconds % Math.max(0.001, attackerIdleDuration),
-    { loop: true, inPlace: true, rootRotationPolicy: 'lock' },
-  );
+  attacker.sampleAnimation('UAL1/Sword_Idle', attackerIdleClockSeconds % Math.max(0.001, attackerIdleDuration), { loop: true, inPlace: true, rootRotationPolicy: 'lock' });
   attacker.update(0, camera);
 }
-
 function resetExchange() {
   couplingRuntime.reset();
+  blockGiveRuntime.reset();
   predictivePresentation.reset();
   trackingRuntime.reset();
   couplingReleasePose = null;
@@ -232,6 +224,7 @@ function resetExchange() {
   latestCombatResult = null;
   latestCombatUpdate = null;
   latestCouplingReport = null;
+  latestBlockGiveReport = null;
   latestPredictiveReport = null;
   latestPredictiveHandoff = null;
   latestAnalysis = null;
@@ -239,13 +232,13 @@ function resetExchange() {
   latestTrackingReport = null;
   releaseTipCaptured = false;
   maxReleaseTipDisplacementMeters = 0;
+  blockGiveStartedThisFrame = false;
   contactMarker.visible = false;
   predictedMarker.visible = false;
   driveMarker.visible = false;
 }
-
 function startAttack(direction = selectedDirection) {
-  if (!ready || combat.active || attackRuntime.active || couplingRuntime.active) return false;
+  if (!ready || combat.active || attackRuntime.active || couplingRuntime.active || blockGiveRuntime.active) return false;
   if (guardMachine.state !== GUARD_STATES.HOLD) enterGuard();
   selectedDirection = direction;
   resetExchange();
@@ -254,136 +247,79 @@ function startAttack(direction = selectedDirection) {
   previousBlade = captureBladePolyline();
   const started = combat.startAttack(direction);
   if (!started.accepted) return false;
-  document.querySelectorAll('[data-attack]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.attack === direction);
-  });
+  document.querySelectorAll('[data-attack]').forEach((button) => button.classList.toggle('active', button.dataset.attack === direction));
   return true;
 }
-
 function setMode(mode) {
   if (!['block', 'parry', 'perfect'].includes(mode)) return;
   selectedMode = mode;
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.mode === mode);
-  });
+  document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
 }
-
 function intentAgeMs() {
-  return selectedMode === 'perfect'
-    ? PERFECT_INTENT_AGE_MS
-    : selectedMode === 'parry' ? PARRY_INTENT_AGE_MS : BLOCK_INTENT_AGE_MS;
+  return selectedMode === 'perfect' ? PERFECT_INTENT_AGE_MS : selectedMode === 'parry' ? PARRY_INTENT_AGE_MS : BLOCK_INTENT_AGE_MS;
 }
-
-function normalizedRequestedOutcome() {
-  return selectedMode === 'perfect' ? 'perfect-parry' : selectedMode;
-}
+function normalizedRequestedOutcome() { return selectedMode === 'perfect' ? 'perfect-parry' : selectedMode; }
 
 function updatePreContact(snapshot, currentBlade, deltaSeconds) {
   if (!snapshot.action || firstContact) return;
   if (selectedMode === 'block') {
-    latestTrackingPlan = previousBlade
-      ? planGuardThreatCorrection({
-          mode: 'guard',
-          previousBlade,
-          currentBlade,
-          bucklerSurface: buckler.getWorldParrySurface(),
-          deltaSeconds,
-        })
-      : null;
+    latestTrackingPlan = previousBlade ? planGuardThreatCorrection({ mode: 'guard', previousBlade, currentBlade, bucklerSurface: buckler.getWorldParrySurface(), deltaSeconds }) : null;
     latestTrackingReport = trackingRuntime.update(latestTrackingPlan, deltaSeconds);
-    defender.update(0, camera);
-    defenderSword?.update();
+    defender.update(0, camera); defenderSword?.update();
     return;
   }
-
-  latestAnalysis = analyzePredictiveInterceptParry({
-    attackSnapshot: snapshot,
-    previousBlade,
-    currentBlade,
-    bucklerSurface: buckler.getWorldParrySurface(),
-    deltaSeconds,
-    requestedGrade: selectedMode,
-  });
+  latestAnalysis = analyzePredictiveInterceptParry({ attackSnapshot: snapshot, previousBlade, currentBlade, bucklerSurface: buckler.getWorldParrySurface(), deltaSeconds, requestedGrade: selectedMode });
   if (latestAnalysis?.threat?.point) {
-    predictedMarker.position.set(
-      latestAnalysis.threat.point.x,
-      latestAnalysis.threat.point.y,
-      latestAnalysis.threat.point.z,
-    );
+    predictedMarker.position.set(latestAnalysis.threat.point.x, latestAnalysis.threat.point.y, latestAnalysis.threat.point.z);
     predictedMarker.visible = true;
   }
-  if (!predictivePresentation.active && latestAnalysis?.shouldTrigger) {
-    predictivePresentation.start({
-      sequence: snapshot.sequence,
-      requestedGrade: selectedMode,
-      triggerTtcSeconds: latestAnalysis.triggerTtcSeconds,
-    });
-  }
+  if (!predictivePresentation.active && latestAnalysis?.shouldTrigger) predictivePresentation.start({ sequence: snapshot.sequence, requestedGrade: selectedMode, triggerTtcSeconds: latestAnalysis.triggerTtcSeconds });
   if (!predictivePresentation.active) return;
-  latestPredictiveReport = predictivePresentation.update({
-    deltaSeconds,
-    timeToContactSeconds: latestAnalysis?.timeToContactSeconds,
-    camera,
-  });
+  latestPredictiveReport = predictivePresentation.update({ deltaSeconds, timeToContactSeconds: latestAnalysis?.timeToContactSeconds, camera });
   const surface = buckler.getWorldParrySurface();
-  latestTrackingPlan = latestAnalysis?.threat
-    ? planGuardThreatCorrection({ mode: 'parry', threat: latestAnalysis.threat, bucklerSurface: surface })
-    : null;
+  latestTrackingPlan = latestAnalysis?.threat ? planGuardThreatCorrection({ mode: 'parry', threat: latestAnalysis.threat, bucklerSurface: surface }) : null;
   latestTrackingReport = trackingRuntime.update(latestTrackingPlan, deltaSeconds);
-  defender.update(0, camera);
-  defenderSword?.update();
+  defender.update(0, camera); defenderSword?.update();
 }
 
 function resolveContact(snapshot, currentBlade, deltaSeconds) {
   if (!previousBlade || !snapshot.action || firstContact) return;
-  latestContact = probeSweptSwordBucklerContact({
-    previousBlade,
-    currentBlade,
-    bucklerSurface: buckler.getWorldParrySurface(),
-    deltaSeconds,
-    active: snapshot.phase === LONGSWORD_ATTACK_PHASES.ACTIVE,
-  });
+  latestContact = probeSweptSwordBucklerContact({ previousBlade, currentBlade, bucklerSurface: buckler.getWorldParrySurface(), deltaSeconds, active: snapshot.phase === LONGSWORD_ATTACK_PHASES.ACTIVE });
   if (!latestContact.contact) return;
-
   firstContact = latestContact;
   const surfaceAtContact = buckler.getWorldParrySurface();
   contactMarker.position.set(latestContact.point.x, latestContact.point.y, latestContact.point.z);
   contactMarker.visible = true;
   predictedMarker.visible = false;
   latestPredictiveHandoff = predictivePresentation.active ? predictivePresentation.handoff() : null;
-  const guardIntentAgeMs = latestPredictiveHandoff?.accepted
-    ? latestPredictiveHandoff.guardIntentAgeMs
-    : intentAgeMs();
+  const guardIntentAgeMs = latestPredictiveHandoff?.accepted ? latestPredictiveHandoff.guardIntentAgeMs : intentAgeMs();
   latestCombatResult = combat.resolveContact({ contact: latestContact, guardIntentAgeMs });
   if (!latestCombatResult.accepted) return;
-
   guardRuntime.sync(camera);
-  couplingRuntime.start({
-    outcome: latestCombatResult.resolution.outcome,
-    attackDirection: latestCombatResult.resolution.attackDirection,
-    contact: latestContact,
-    surfaceAtContact,
-  });
-  combat.update(0, { camera });
-  latestCouplingReport = couplingRuntime.update(0);
-  attacker.update(0, camera);
-  defender.update(0, camera);
-  attackerSword.update();
-  defenderSword?.update();
+
+  const outcome = latestCombatResult.resolution.outcome;
+  if (outcome === 'block') {
+    blockGiveRuntime.start({ contact: latestContact, surfaceAtContact });
+    latestBlockGiveReport = blockGiveRuntime.update(0);
+    blockGiveStartedThisFrame = true;
+    latestCouplingReport = null;
+    combat.update(0, { camera });
+  } else {
+    couplingRuntime.start({ outcome, attackDirection: latestCombatResult.resolution.attackDirection, contact: latestContact, surfaceAtContact });
+    combat.update(0, { camera });
+    latestCouplingReport = couplingRuntime.update(0);
+  }
+  attacker.update(0, camera); defender.update(0, camera); attackerSword.update(); defenderSword?.update();
 }
 
 function updateCoupling(deltaSeconds) {
   if (!couplingRuntime.active) return false;
   latestCombatUpdate = combat.update(0, { camera });
   latestCouplingReport = couplingRuntime.update(deltaSeconds);
-  attacker.update(0, camera);
-  defender.update(0, camera);
-  attackerSword.update();
-  defenderSword?.update();
+  attacker.update(0, camera); defender.update(0, camera); attackerSword.update(); defenderSword?.update();
   if (latestCouplingReport?.finalSurface?.center) {
     const p = latestCouplingReport.finalSurface.center;
-    driveMarker.position.set(p.x, p.y, p.z);
-    driveMarker.visible = true;
+    driveMarker.position.set(p.x, p.y, p.z); driveMarker.visible = true;
   }
   if (latestCouplingReport?.complete) {
     couplingReleasePose = captureRigPose(attacker.rig);
@@ -396,27 +332,33 @@ function updateCoupling(deltaSeconds) {
   return true;
 }
 
+function updateBlockGive(deltaSeconds) {
+  if (!blockGiveRuntime.active || blockGiveStartedThisFrame) return false;
+  latestBlockGiveReport = blockGiveRuntime.update(deltaSeconds);
+  defender.update(0, camera); defenderSword?.update();
+  if (latestBlockGiveReport?.finalSurface?.center) {
+    const p = latestBlockGiveReport.finalSurface.center;
+    driveMarker.position.set(p.x, p.y, p.z); driveMarker.visible = !latestBlockGiveReport.complete;
+  }
+  if (latestBlockGiveReport?.complete) {
+    trackingRuntime.reset();
+    driveMarker.visible = false;
+  }
+  return true;
+}
+
 function updateReleaseSeparationProbe(combatSnapshot) {
   if (!releaseTipCaptured || couplingRuntime.active) return;
   const sample = combatSnapshot.attackerRecoil?.sample;
   if (!sample || !['separation', 'impulse'].includes(sample.phase)) return;
   attackerSword.tip.getWorldPosition(currentTipPosition);
-  maxReleaseTipDisplacementMeters = Math.max(
-    maxReleaseTipDisplacementMeters,
-    currentTipPosition.distanceTo(releaseTipPosition),
-  );
+  maxReleaseTipDisplacementMeters = Math.max(maxReleaseTipDisplacementMeters, currentTipPosition.distanceTo(releaseTipPosition));
 }
-
 function registerWhiff(snapshot) {
   if (selectedMode === 'block' || firstContact || !predictivePresentation.active || snapshot.action) return;
-  predictivePresentation.reset();
-  trackingRuntime.reset();
-  predictedMarker.visible = false;
+  predictivePresentation.reset(); trackingRuntime.reset(); predictedMarker.visible = false;
 }
-
-function magnitude(v) {
-  return v ? Math.hypot(v.x || 0, v.y || 0, v.z || 0) : 0;
-}
+function magnitude(v) { return v ? Math.hypot(v.x || 0, v.y || 0, v.z || 0) : 0; }
 
 function updateHud(snapshot, combatSnapshot) {
   const resolution = latestCombatResult?.resolution || null;
@@ -425,44 +367,35 @@ function updateHud(snapshot, combatSnapshot) {
   const mismatch = actual !== '—' && actual !== requested;
   const intent = resolution?.guard?.intentAgeMs;
   const responseClass = resolution?.attacker?.responseClass || '—';
-  const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
-  const separationSource = postHandoff?.separation?.source || '—';
   const recoil = combatSnapshot.attackerRecoil?.sample;
+  const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
+  const refresh = latestCombatUpdate?.attackerVisualRefreshApplied === true ? 'REFRESH YES' : 'refresh —';
+  hudAttack.textContent = `Requested: ${requested.toUpperCase()} · Actual: ${actual.toUpperCase()}${mismatch ? ' ⚠ DOWNGRADED/MISMATCH' : ''} · intent ${intent == null ? '—' : `${intent.toFixed(0)}ms`}`;
+  hudContact.textContent = firstContact ? `Contact: YES · radial ${firstContact.radialDistance.toFixed(3)}m · blade ${firstContact.bladeFraction.toFixed(2)} · response ${responseClass}` : 'Contact: —';
+
+  if (actual === 'block' && latestBlockGiveReport) {
+    hudCoupling.textContent = `BLOCK rebound: IMMEDIATE · shield ${latestBlockGiveReport.phase} ${latestBlockGiveReport.elapsedMs.toFixed(0)}ms · B3 RUNNING IN PARALLEL`;
+    hudShield.textContent = `Shield give: ${(magnitude(latestBlockGiveReport.shieldOffset) * 100).toFixed(1)}cm · defender-only`;
+    hudWeapon.textContent = 'Weapon authority: original B2/B3 · NO shield follow · NO post-coupling handoff';
+  } else {
+    hudCoupling.textContent = latestCouplingReport ? `Coupling: ${latestCouplingReport.outcome?.toUpperCase() || '—'} · ${latestCouplingReport.phase} · ${latestCouplingReport.elapsedMs.toFixed(0)}ms · ${latestCouplingReport.complete ? 'RELEASED' : 'B3 HELD'}` : 'Coupling: —';
+    hudShield.textContent = latestCouplingReport?.shieldOffset ? `Shield drive: ${(magnitude(latestCouplingReport.shieldOffset) * 100).toFixed(1)}cm` : 'Shield drive: —';
+    hudWeapon.textContent = latestCouplingReport?.attackerWeaponOffset ? `Weapon follow: ${(magnitude(latestCouplingReport.attackerWeaponOffset) * 100).toFixed(1)}cm · source=shield` : 'Weapon follow: —';
+  }
+
   const targetDistance = recoil?.profile?.releaseSeparationDistanceMeters || 0;
   const targetWindow = recoil?.profile?.releaseSeparationWindowMs || postHandoff?.separation?.releaseWindowMs || 0;
-  const refresh = latestCombatUpdate?.attackerVisualRefreshApplied === true ? 'REFRESH YES' : 'refresh —';
-
-  hudAttack.textContent = `Requested: ${requested.toUpperCase()} · Actual: ${actual.toUpperCase()}${mismatch ? ' ⚠ DOWNGRADED/MISMATCH' : ''} · intent ${intent == null ? '—' : `${intent.toFixed(0)}ms`}`;
-  hudContact.textContent = firstContact
-    ? `Contact: YES · radial ${firstContact.radialDistance.toFixed(3)}m · blade ${firstContact.bladeFraction.toFixed(2)} · response ${responseClass}`
-    : 'Contact: —';
-  hudCoupling.textContent = latestCouplingReport
-    ? `Coupling: ${latestCouplingReport.outcome?.toUpperCase() || '—'} · ${latestCouplingReport.phase} · ${latestCouplingReport.elapsedMs.toFixed(0)}ms · ${latestCouplingReport.complete ? 'RELEASED' : 'B3 HELD'}`
-    : 'Coupling: —';
-  hudShield.textContent = latestCouplingReport?.shieldOffset
-    ? `Shield drive: ${(magnitude(latestCouplingReport.shieldOffset) * 100).toFixed(1)}cm`
-    : 'Shield drive: —';
-  hudWeapon.textContent = latestCouplingReport?.attackerWeaponOffset
-    ? `Weapon follow: ${(magnitude(latestCouplingReport.attackerWeaponOffset) * 100).toFixed(1)}cm · source=shield`
-    : 'Weapon follow: —';
-  hudSeparation.textContent = targetDistance > 0 || maxReleaseTipDisplacementMeters > 0
-    ? `Release separation: phase ${recoil?.phase || '—'} · target ${(targetDistance * 100).toFixed(1)}cm / ${targetWindow.toFixed(0)}ms · tip observed ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm`
-    : 'Release separation: —';
-  hudRecoil.textContent = couplingRuntime.active
-    ? 'B3 recoil: LOCKED · coupling owns weapon motion'
-    : recoil
-      ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · ${refresh} · separation ${separationSource}`
-      : `B3 recoil: — · ${refresh} · separation ${separationSource}`;
+  hudSeparation.textContent = targetDistance > 0 || maxReleaseTipDisplacementMeters > 0 ? `Release separation: phase ${recoil?.phase || '—'} · target ${(targetDistance * 100).toFixed(1)}cm / ${targetWindow.toFixed(0)}ms · tip observed ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm` : 'Release separation: BLOCK uses immediate B3 bounce / Parry uses separation';
+  hudRecoil.textContent = couplingRuntime.active ? 'B3 recoil: LOCKED · Parry coupling owns weapon motion' : recoil ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · ${refresh}` : `B3 recoil: — · ${refresh}`;
 }
 
 function buildReport(combatSnapshot = combat.snapshot) {
   const exchange = combatSnapshot.activeExchange || combatSnapshot.lastExchange;
   const resolution = latestCombatResult?.resolution || null;
-  const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
   const recoil = combatSnapshot.attackerRecoil?.sample || null;
-  const requestedOutcome = normalizedRequestedOutcome();
+  const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
   const actualOutcome = resolution?.outcome || null;
-  const targetDistance = recoil?.profile?.releaseSeparationDistanceMeters || 0;
+  const block = actualOutcome === 'block';
   const report = {
     stage: LAB_STAGE,
     predictiveAuthorityStage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
@@ -472,28 +405,21 @@ function buildReport(combatSnapshot = combat.snapshot) {
     selectedDirection,
     selectedMode,
     authorityDebug: {
-      requestedOutcome,
+      requestedOutcome: normalizedRequestedOutcome(),
       actualOutcome,
-      outcomeMatchesRequest: actualOutcome == null ? null : actualOutcome === requestedOutcome,
-      guardIntentAgeMs: resolution?.guard?.intentAgeMs ?? null,
       responseClass: resolution?.attacker?.responseClass || null,
-      predictiveHandoff: latestPredictiveHandoff ? {
-        requestedGrade: latestPredictiveHandoff.requestedGrade,
-        variant: latestPredictiveHandoff.variant,
-        lockedGuardIntentAgeMs: latestPredictiveHandoff.lockedGuardIntentAgeMs,
-        presentationElapsedMs: latestPredictiveHandoff.presentationElapsedMs,
-        timingAuthority: latestPredictiveHandoff.timingAuthority,
-      } : null,
-      couplingOutcome: latestCouplingReport?.outcome || null,
+      blockReboundAuthority: block ? 'original-B2-B3-immediate' : null,
+      parryCouplingAuthority: !block && actualOutcome ? 'shield-driven-coupling' : null,
       postCouplingStage: postHandoff?.stage || null,
-      separationSource: postHandoff?.separation?.source || null,
-      separationMotionStage: recoil?.motionStage || null,
       attackerVisualRefreshApplied: latestCombatUpdate?.attackerVisualRefreshApplied === true,
     },
-    contact: firstContact ? {
-      point: firstContact.point,
-      bladeFraction: firstContact.bladeFraction,
-      incomingVelocity: firstContact.incomingVelocity,
+    blockGive: latestBlockGiveReport ? {
+      phase: latestBlockGiveReport.phase,
+      elapsedMs: latestBlockGiveReport.elapsedMs,
+      shieldGiveMeters: magnitude(latestBlockGiveReport.shieldOffset),
+      attackerRecoilFrozen: latestBlockGiveReport.attackerRecoilFrozen,
+      attackerWeaponFollow: latestBlockGiveReport.attackerWeaponFollow,
+      postCouplingHandoff: latestBlockGiveReport.postCouplingHandoff,
     } : null,
     coupling: latestCouplingReport ? {
       outcome: latestCouplingReport.outcome,
@@ -502,83 +428,69 @@ function buildReport(combatSnapshot = combat.snapshot) {
       shieldDriveMeters: magnitude(latestCouplingReport.shieldOffset),
       attackerWeaponFollowMeters: magnitude(latestCouplingReport.attackerWeaponOffset),
       complete: latestCouplingReport.complete,
-      releaseAttackerRecoil: latestCouplingReport.releaseAttackerRecoil,
       recoilBaseCaptured: Boolean(couplingReleasePose),
     } : null,
-    separationMotion: {
-      phase: recoil?.phase || null,
-      targetDistanceMeters: targetDistance,
-      releaseWindowMs: recoil?.profile?.releaseSeparationWindowMs || postHandoff?.separation?.releaseWindowMs || 0,
-      sampledOffsetMeters: recoil?.pose?.releaseSeparationDistanceMeters || 0,
-      observedTipDisplacementMeters: maxReleaseTipDisplacementMeters,
-      releaseTipCaptured,
-    },
-    exchange: exchange ? { outcome: exchange.outcome, responseClass: exchange.responseClass } : null,
+    recoil: recoil ? {
+      phase: recoil.phase,
+      armWeight: recoil.weights?.armWeight ?? null,
+      torsoWeight: recoil.weights?.torsoWeight ?? null,
+      responseClass: exchange?.responseClass || null,
+    } : null,
     invariants: {
-      rhythmGradeLockedUntilContact: true,
       swordShieldSweptContactAuthority: true,
-      frozenAttackerPoseDuringCoupling: true,
-      combatUpdateDeltaDuringCoupling: 0,
-      coupledTerminalPoseBecomesB3BasePose: true,
-      explicitSeparationPhaseAfterRelease: true,
-      separationTargetsRightArmBeforeBody: true,
-      actualSwordTipDisplacementMeasured: true,
+      blockUsesOriginalB2B3WithoutPostCouplingScaling: true,
+      blockB3ClockFrozen: false,
+      blockAttackerWeaponFollowFromShield: false,
+      blockShieldGiveRunsParallelToAttackerBounce: true,
+      parryB3ClockFrozenDuringCoupling: true,
+      parryCoupledTerminalPoseBecomesB3BasePose: true,
       postAdditiveAttackerAppearanceRefresh: true,
-      trackingResetAfterCouplingRelease: true,
       rootMotion: false,
     },
   };
   reportNode.textContent = JSON.stringify(report, null, 2);
-  document.documentElement.dataset.g43b5r241 = report.pass ? 'pass' : 'fail';
-  window.__G43B5R241_RESULT__ = report;
+  document.documentElement.dataset.g43b5r242 = report.pass ? 'pass' : 'fail';
+  window.__G43B5R242_RESULT__ = report;
   return report;
 }
 
 async function main() {
-  status.textContent = `Loading UAL attacks + Skyrim Guard + ${LAB_STAGE} separation motion…`;
+  status.textContent = `Loading UAL attacks + Skyrim Guard + ${LAB_STAGE}…`;
   const [ual1, ual2, skyrim] = await Promise.all([
     loadUal1AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
     loadUal2AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
     loadSkyrimConvertedAnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: defender.rig, fps: 30 }),
   ]);
-  attacker.registerAnimations(ual1);
-  attacker.registerAnimations(ual2);
-  defender.registerAnimations(skyrim);
+  attacker.registerAnimations(ual1); attacker.registerAnimations(ual2); defender.registerAnimations(skyrim);
   attackerIdleDuration = attacker.getAnimationDuration('UAL1/Sword_Idle') || 1;
   const idle = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle');
   const bind = idle?.userData?.weaponBindCalibration;
   if (!bind?.correctionQuaternion) throw new Error(`${LAB_STAGE} requires Skyrim Guard weapon bind calibration`);
   defenderSword = createDebugSword(THREE);
-  mountDebugSword(
-    defender,
-    defenderSword,
-    composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind),
-  );
+  mountDebugSword(defender, defenderSword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
   enterGuard();
   ready = true;
-  status.textContent = `${LAB_STAGE} READY · coupling → explicit SEPARATION → B3 force chain`;
+  status.textContent = `${LAB_STAGE} READY · BLOCK = immediate B2/B3 + parallel shield give · PARRY = coupling → separation`;
   status.className = 'good';
-  buildReport();
-  startAttack('right');
+  buildReport(); startAttack('right');
 }
 
 document.querySelectorAll('[data-attack]').forEach((button) => button.addEventListener('click', () => startAttack(button.dataset.attack)));
 document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.mode)));
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
 showSurface.addEventListener('change', () => buckler.setParrySurfaceVisible(showSurface.checked));
-setView('three');
-resize();
-addEventListener('resize', resize);
+setView('three'); resize(); addEventListener('resize', resize);
 
 function frame(timestamp) {
   const deltaMs = Math.min(50, Math.max(0, timestamp - lastTimestamp));
   const deltaSeconds = Math.max(1e-5, deltaMs / 1000);
   lastTimestamp = timestamp;
+  blockGiveStartedThisFrame = false;
   if (ready) {
     const snapshot = attackRuntime.update(deltaMs);
-    const couplingOwned = couplingRuntime.active;
+    const parryCouplingOwnsAttacker = couplingRuntime.active;
     if (combat.active) {
-      if (!couplingOwned) {
+      if (!parryCouplingOwnsAttacker) {
         latestCombatUpdate = combat.update(deltaSeconds, { camera });
         if (latestCombatUpdate?.justCompleted) couplingReleasePose = null;
       }
@@ -587,10 +499,9 @@ function frame(timestamp) {
     }
 
     if (!predictivePresentation.active) guardRuntime.update(deltaMs, camera);
-    attackerSword.update();
-    defenderSword?.update();
+    attackerSword.update(); defenderSword?.update();
 
-    if (couplingOwned) {
+    if (parryCouplingOwnsAttacker) {
       updateCoupling(deltaSeconds);
     } else {
       const currentBlade = captureBladePolyline();
@@ -599,20 +510,14 @@ function frame(timestamp) {
       previousBlade = currentBlade;
     }
 
+    updateBlockGive(deltaSeconds);
     registerWhiff(snapshot);
     const combatSnapshot = combat.snapshot;
     updateReleaseSeparationProbe(combatSnapshot);
-    hudClockMs += deltaMs;
-    reportClockMs += deltaMs;
-    if (hudClockMs >= HUD_INTERVAL_MS) {
-      hudClockMs %= HUD_INTERVAL_MS;
-      updateHud(snapshot, combatSnapshot);
-    }
-    if (reportClockMs >= REPORT_INTERVAL_MS) {
-      reportClockMs %= REPORT_INTERVAL_MS;
-      buildReport(combatSnapshot);
-    }
-    if (!combat.active && !attackRuntime.active && !couplingRuntime.active && guardMachine.state === GUARD_STATES.HOLD && autoRepeat.checked) {
+    hudClockMs += deltaMs; reportClockMs += deltaMs;
+    if (hudClockMs >= HUD_INTERVAL_MS) { hudClockMs %= HUD_INTERVAL_MS; updateHud(snapshot, combatSnapshot); }
+    if (reportClockMs >= REPORT_INTERVAL_MS) { reportClockMs %= REPORT_INTERVAL_MS; buildReport(combatSnapshot); }
+    if (!combat.active && !attackRuntime.active && !couplingRuntime.active && !blockGiveRuntime.active && guardMachine.state === GUARD_STATES.HOLD && autoRepeat.checked) {
       repeatCooldownMs += deltaMs;
       if (repeatCooldownMs >= 700) startAttack(selectedDirection);
     }
@@ -620,29 +525,19 @@ function frame(timestamp) {
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
-
 requestAnimationFrame(frame);
 main().catch((error) => {
-  document.documentElement.dataset.g43b5r241 = 'fail';
+  document.documentElement.dataset.g43b5r242 = 'fail';
   status.textContent = `${LAB_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G43B5R241_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
+  window.__G43B5R242_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
 });
-
-window.__G43B5R241_LAB__ = {
-  startAttack,
-  setMode,
-  combat,
-  attackRuntime,
-  guardMachine,
-  couplingRuntime,
-  trackingRuntime,
-  buckler,
+window.__G43B5R242_LAB__ = {
+  startAttack, setMode, combat, attackRuntime, guardMachine, couplingRuntime, blockGiveRuntime, trackingRuntime, buckler,
   get latestContact() { return latestContact; },
   get latestCouplingReport() { return latestCouplingReport; },
+  get latestBlockGiveReport() { return latestBlockGiveReport; },
   get latestCombatResult() { return latestCombatResult; },
   get latestCombatUpdate() { return latestCombatUpdate; },
-  get latestPredictiveHandoff() { return latestPredictiveHandoff; },
-  get maxReleaseTipDisplacementMeters() { return maxReleaseTipDisplacementMeters; },
 };
