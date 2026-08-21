@@ -18,7 +18,7 @@ const BASE = Object.freeze({
   swordCenter: { x: 0, y: 1.1, z: -0.24 },
   shieldCenter: { x: 0.08, y: 1.12, z: 0 },
   contactPoint: { x: 0.08, y: 1.1, z: -0.02 },
-  contactNormal: { x: -0.48, y: 0.02, z: -0.88 },
+  contactNormal: { x: 0.48, y: 0.02, z: -0.88 },
   swordLinearVelocity: { x: 0, y: 0, z: 4.6 },
   swordAngularVelocity: { x: 0, y: 0, z: 0 },
   shieldLinearVelocity: { x: 3.8, y: 0.2, z: 0.2 },
