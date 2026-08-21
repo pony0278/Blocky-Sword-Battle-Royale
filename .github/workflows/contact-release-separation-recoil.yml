@@ -1,10 +1,11 @@
-name: G4.3B.5R.2.6 Parry Backward Balance-Break
+name: G4.3B.5R.2.7 Two-Actor Whole-Body Recoil Burst
 
 on:
   pull_request:
     branches: [main]
     paths:
       - 'src/combat/post-coupling-recoil-stagger-handoff.js'
+      - 'src/combat/two-actor-whole-body-recoil-burst.js'
       - 'src/combat/shield-driven-contact-coupling.js'
       - 'src/combat/immediate-block-rebound-parity.js'
       - 'src/combat/parallel-parry-body-stagger.js'
@@ -23,19 +24,21 @@ on:
       - 'tests/parallel-parry-body-stagger-lab.test.js'
       - 'tests/parry-backward-balance-break.test.js'
       - 'tests/parry-backward-balance-break-lab.test.js'
+      - 'tests/two-actor-whole-body-recoil-burst.test.js'
+      - 'tests/two-actor-whole-body-recoil-burst-lab.test.js'
       - 'tests/shield-driven-contact-coupling-lab.test.js'
       - 'tests/recoil-presentation-authority.test.js'
       - 'tests/directional-recoil-planner.test.js'
       - '.github/workflows/contact-release-separation-recoil.yml'
   push:
     branches:
-      - 'g4.3b.5r.2.6-parry-backward-balance-break'
+      - 'g4.3b.5r.2.7-two-actor-whole-body-recoil-burst'
 
 permissions:
   contents: read
 
 jobs:
-  parry-backward-balance-break-regression:
+  whole-body-recoil-burst-regression:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,13 +55,14 @@ jobs:
       - name: Verify runtime and lab syntax
         run: >-
           node --check src/combat/immediate-block-rebound-parity.js
-          && node --check src/combat/parallel-parry-body-stagger.js
           && node --check src/combat/parry-backward-balance-break.js
+          && node --check src/combat/two-actor-whole-body-recoil-burst.js
+          && node --check src/combat/post-coupling-recoil-stagger-handoff.js
           && node --check src/combat/shield-driven-contact-coupling.js
           && node --check src/combat/attacker-recoil-presentation.js
           && node --check tools/action-studio/shield-driven-contact-coupling-lab.js
 
-      - name: Run Block parity, Parry separation, and backward balance-break regressions
+      - name: Run Block parity and whole-body Parry burst regressions
         run: >-
           node --test
           tests/post-coupling-recoil-stagger-handoff.test.js
@@ -71,6 +75,8 @@ jobs:
           tests/parallel-parry-body-stagger-lab.test.js
           tests/parry-backward-balance-break.test.js
           tests/parry-backward-balance-break-lab.test.js
+          tests/two-actor-whole-body-recoil-burst.test.js
+          tests/two-actor-whole-body-recoil-burst-lab.test.js
           tests/shield-driven-contact-coupling-lab.test.js
           tests/recoil-presentation-authority.test.js
           tests/directional-recoil-planner.test.js
