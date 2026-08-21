@@ -7,7 +7,10 @@ on:
       - 'src/combat/physical-shield-sword-impulse.js'
       - 'tools/action-studio/physical-shield-sword-impulse-lab.html'
       - 'tools/action-studio/physical-shield-sword-impulse-lab.js'
+      - 'tools/action-studio/physical-shield-sword-impulse-lab-r29.html'
+      - 'tools/action-studio/physical-shield-sword-impulse-lab-r29.js'
       - 'tests/physical-shield-sword-impulse.test.js'
+      - 'tests/physical-shield-sword-impulse-lab.test.js'
       - '.github/workflows/physical-shield-sword-impulse.yml'
   push:
     branches:
@@ -31,10 +34,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Verify physical solver and lab syntax
+      - name: Verify physical solver and corrected lab syntax
         run: >-
           node --check src/combat/physical-shield-sword-impulse.js
-          && node --check tools/action-studio/physical-shield-sword-impulse-lab.js
+          && node --check tools/action-studio/physical-shield-sword-impulse-lab-r29.js
 
-      - name: Run physical impulse regressions
-        run: node --test tests/physical-shield-sword-impulse.test.js
+      - name: Run physical impulse and visual-authority regressions
+        run: >-
+          node --test
+          tests/physical-shield-sword-impulse.test.js
+          tests/physical-shield-sword-impulse-lab.test.js
