@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3B.5R.2 Shield-Driven Contact Coupling</title>
+  <title>G4.3B.5R.2.2 Coupled Momentum Continuation</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 430px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block}
@@ -20,7 +20,7 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3B.5R.2 · Shield-Driven Contact Coupling</b>
+      <b>G4.3B.5R.2.2 · Coupled Momentum Continuation</b>
       <div id="hudAttack">Attack: loading…</div>
       <div id="hudContact">Contact: —</div>
       <div id="hudCoupling">Coupling: —</div>
@@ -31,25 +31,28 @@
     <div class="legend">Green = predictive intercept · Red = authoritative sword × shield contact · Cyan = shield-driven target</div>
   </main>
   <aside>
-    <h1>Shield-Driven Contact Coupling</h1>
-    <div class="note">碰撞後不再立刻讓攻擊者自行 recoil。先鎖住 frozen contact pose，盾牌沿接觸路徑吸收或推進，攻擊劍只跟隨盾造成的位移；coupling release 後 B.3 才負責身體失衡與回復。</div>
+    <h1>Coupled Momentum Continuation</h1>
+    <div class="note">B.5R.2 保留盾牌主動撥開的物理因果；B.5R.2.2 在 contact release 後讓攻擊劍沿同一個 shield-driven direction 繼續殘餘慣性，再依序帶動 shoulder → torso/hips → legs。禁止第二次無來源 weapon bounce。</div>
     <h2>Attack direction</h2><div class="row"><button data-attack="top">TOP</button><button data-attack="right" class="active">RIGHT</button><button data-attack="left">LEFT</button></div>
     <h2>Defense</h2><div class="row"><button data-mode="block">BLOCK</button><button data-mode="parry" class="active">PARRY</button><button data-mode="perfect">PERFECT</button></div>
     <div class="metric">
       <span>BLOCK coupling</span><b>105 ms · 3.5 cm give</b>
       <span>PARRY coupling</span><b>96 ms · 10.5 cm sweep</b>
       <span>PERFECT coupling</span><b>104 ms · 12.5 cm sweep</b>
-      <span>During coupling</span><b>B3 clock = frozen</b>
-      <span>Weapon motion source</span><b>shield displacement</b>
+      <span>PARRY residual</span><b>~0.49 strength · ~21°</b>
+      <span>Old full Parry</span><b>0.68 strength · 30°</b>
+      <span>BLOCK baseline</span><b>0.28 strength · 12°</b>
+      <span>Parry recovery chain</span><b>~0.40 s after release</b>
+      <span>Residual direction</span><b>shield-driven weapon offset</b>
       <span>Root motion</span><b>none</b>
     </div>
     <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat</label>
     <label class="toggle"><input id="showSurface" type="checkbox" checked> Show shield parry surface</label>
     <h2>Expected causality</h2>
-    <div class="metric"><span>1</span><b>Sword hits shield</b><span>2</span><b>Frozen contact anchor</b><span>3</span><b>Shield gives / sweeps</b><span>4</span><b>Attacker weapon follows shield</b><span>5</span><b>Contact releases</b><span>6</span><b>B3 body recoil begins</b></div>
+    <div class="metric"><span>1</span><b>Sword hits shield</b><span>2</span><b>Shield sweeps / gives</b><span>3</span><b>Weapon follows shield</b><span>4</span><b>Contact releases</b><span>5</span><b>Weapon + shoulder continue</b><span>6</span><b>Torso / hips stagger</b><span>7</span><b>Legs recover balance</b></div>
     <h2>Views</h2><div class="row"><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="contact">Contact</button></div>
     <h2>Verification</h2><div id="status" class="warn">Loading…</div><pre id="report">Not run.</pre>
   </aside>
-  <script type="module" src="./shield-driven-contact-coupling-lab.js"></script>
+  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r22"></script>
 </body>
 </html>
