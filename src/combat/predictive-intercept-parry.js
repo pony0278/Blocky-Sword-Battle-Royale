@@ -11,6 +11,7 @@ import { applyGuardQuaternionOffsetsWeighted } from './longsword-guard-correctio
 import { LONGSWORD_GUARD_AUTHORING_STATE } from './longsword-guard-metadata.js';
 
 export const PREDICTIVE_INTERCEPT_PARRY_STAGE = 'G4.3B.5R';
+export const RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE = 'G4.3B.5R.1';
 
 export const PREDICTIVE_PARRY_INPUT_GRADES = Object.freeze({
   TOO_EARLY: 'too-early',
@@ -32,7 +33,7 @@ export const PREDICTIVE_INTERCEPT_PARRY_PROFILE = Object.freeze({
   lateWindowStartSeconds: 0.020,
   presentationStartSourceSeconds: 0.205,
   interceptSourceSeconds: 0.35,
-  authority: 'predictive-presentation-and-tracking-only-until-authoritative-contact',
+  authority: 'rhythm-triggered-presentation-with-geometry-guided-tracking-until-authoritative-contact',
 });
 
 function finite(value, fallback = 0) {
@@ -69,16 +70,81 @@ export function getPredictiveParryTriggerTtcSeconds(requestedGrade = 'parry', ov
     : profile.normalTriggerTtcSeconds;
 }
 
+export function getCanonicalAttackTimeToContactSeconds(attackSnapshot = {}) {
+  const contactSeconds = finite(attackSnapshot?.contactSeconds, NaN);
+  const elapsedSeconds = finite(attackSnapshot?.elapsedSeconds, NaN);
+  if (!Number.isFinite(contactSeconds) || !Number.isFinite(elapsedSeconds)) return null;
+  return Math.max(0, contactSeconds - elapsedSeconds);
+}
+
+export function analyzeRhythmParryTrigger(input = {}) {
+  const profile = { ...PREDICTIVE_INTERCEPT_PARRY_PROFILE, ...(input.profile || {}) };
+  const requestedGrade = String(input.requestedGrade || 'parry').toLowerCase();
+  const triggerTtcSeconds = getPredictiveParryTriggerTtcSeconds(requestedGrade, profile);
+  const ttc = input.timeToContactSeconds == null
+    ? getCanonicalAttackTimeToContactSeconds(input.attackSnapshot)
+    : Math.max(0, finite(input.timeToContactSeconds));
+
+  if (ttc == null) {
+    return freeze({
+      stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      available: false,
+      reason: 'missing-canonical-attack-ttc',
+      requestedGrade,
+      timeToContactSeconds: null,
+      triggerTtcSeconds,
+      timingGrade: null,
+      shouldTrigger: false,
+      authority: 'attack-timeline-rhythm-trigger',
+    });
+  }
+
+  const tooLate = ttc < profile.minimumTriggerTtcSeconds;
+  const shouldTrigger = !tooLate && ttc <= triggerTtcSeconds;
+  return freeze({
+    stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+    available: true,
+    reason: tooLate
+      ? 'rhythm-window-missed'
+      : shouldTrigger
+        ? 'rhythm-trigger-window'
+        : 'rhythm-waiting',
+    requestedGrade,
+    timeToContactSeconds: ttc,
+    triggerTtcSeconds,
+    timingGrade: classifyPredictiveParryTiming(ttc, profile),
+    shouldTrigger,
+    authority: 'attack-timeline-rhythm-trigger',
+  });
+}
+
 export function analyzePredictiveInterceptParry(input = {}) {
   const profile = { ...PREDICTIVE_INTERCEPT_PARRY_PROFILE, ...(input.profile || {}) };
-  if (!input.previousBlade || !input.currentBlade || !input.bucklerSurface) {
+  const rhythm = analyzeRhythmParryTrigger({
+    attackSnapshot: input.attackSnapshot,
+    timeToContactSeconds: input.rhythmTimeToContactSeconds,
+    requestedGrade: input.requestedGrade,
+    profile,
+  });
+
+  const hasGeometry = Boolean(input.previousBlade && input.currentBlade && input.bucklerSurface);
+  if (!hasGeometry) {
     return freeze({
       stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
-      available: false,
-      reason: 'missing-predictive-geometry',
+      rhythmStage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      available: rhythm.available,
+      reason: rhythm.shouldTrigger ? 'rhythm-trigger-no-predicted-geometry' : rhythm.reason,
+      requestedGrade: rhythm.requestedGrade,
+      timingGrade: rhythm.timingGrade,
+      timeToContactSeconds: rhythm.timeToContactSeconds,
+      triggerTtcSeconds: rhythm.triggerTtcSeconds,
+      shouldTrigger: rhythm.shouldTrigger,
       threat: null,
       trackingPlan: null,
-      shouldTrigger: false,
+      planeCapturable: false,
+      interceptable: false,
+      rhythm,
+      parryTrackingProfile: getGuardThreatTrackingProfile('parry'),
       authority: profile.authority,
     });
   }
@@ -92,50 +158,39 @@ export function analyzePredictiveInterceptParry(input = {}) {
     timeSamples: input.timeSamples || 24,
   });
 
-  if (!threat) {
-    return freeze({
-      stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
-      available: false,
-      reason: 'no-predicted-threat',
-      threat: null,
-      trackingPlan: null,
-      shouldTrigger: false,
-      authority: profile.authority,
-    });
-  }
-
-  const trackingPlan = planGuardThreatCorrection({
+  const trackingPlan = threat ? planGuardThreatCorrection({
     mode: 'parry',
     threat,
     bucklerSurface: input.bucklerSurface,
-  });
-  const ttc = Math.max(0, finite(threat.futureSeconds));
-  const requestedGrade = String(input.requestedGrade || 'parry').toLowerCase();
-  const triggerTtcSeconds = getPredictiveParryTriggerTtcSeconds(requestedGrade, profile);
-  const planeCapturable = Math.abs(finite(threat.signedDistance)) <= profile.planeCaptureMeters;
+  }) : null;
+  const planeCapturable = Boolean(threat)
+    && Math.abs(finite(threat.signedDistance)) <= profile.planeCaptureMeters;
   const interceptable = Boolean(trackingPlan?.reachable) && planeCapturable;
-  const shouldTrigger = interceptable
-    && ttc <= triggerTtcSeconds
-    && ttc >= profile.minimumTriggerTtcSeconds;
+
+  let geometryReason = 'no-predicted-threat';
+  if (threat && !planeCapturable) geometryReason = 'predicted-plane-outside-capture-band';
+  else if (threat && !trackingPlan?.reachable) geometryReason = 'predicted-intercept-out-of-parry-reach';
+  else if (threat) geometryReason = 'predicted-intercept-trackable';
 
   return freeze({
     stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
-    available: true,
-    reason: !planeCapturable
-      ? 'predicted-plane-outside-capture-band'
-      : !trackingPlan?.reachable
-        ? 'predicted-intercept-out-of-parry-reach'
-        : shouldTrigger
-          ? 'predictive-parry-trigger-window'
-          : 'tracking-future-intercept',
-    requestedGrade,
-    timingGrade: classifyPredictiveParryTiming(ttc, profile),
-    timeToContactSeconds: ttc,
-    triggerTtcSeconds,
+    rhythmStage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+    available: rhythm.available || Boolean(threat),
+    reason: rhythm.shouldTrigger
+      ? (interceptable ? 'rhythm-trigger-trackable-intercept' : 'rhythm-trigger-reach-independent')
+      : rhythm.reason,
+    geometryReason,
+    requestedGrade: rhythm.requestedGrade,
+    timingGrade: rhythm.timingGrade,
+    timeToContactSeconds: rhythm.timeToContactSeconds,
+    predictedTimeToContactSeconds: threat?.futureSeconds ?? null,
+    triggerTtcSeconds: rhythm.triggerTtcSeconds,
+    planeCapturable,
     interceptable,
-    shouldTrigger,
+    shouldTrigger: rhythm.shouldTrigger,
     threat,
     trackingPlan,
+    rhythm,
     parryTrackingProfile: getGuardThreatTrackingProfile('parry'),
     authority: profile.authority,
   });
@@ -186,7 +241,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       sourceTimeSeconds: PREDICTIVE_INTERCEPT_PARRY_PROFILE.presentationStartSourceSeconds,
     };
     lastReport = freeze({
-      stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
+      stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       active: true,
       justStarted: true,
       sequence: active.sequence,
@@ -202,7 +258,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
 
   function update(input = {}) {
     if (!active) return freeze({
-      stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
+      stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       active: false,
       reason: 'predictive-parry-not-active',
       authority: PREDICTIVE_INTERCEPT_PARRY_PROFILE.authority,
@@ -231,7 +288,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
     character.update?.(0, input.camera);
 
     lastReport = freeze({
-      stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
+      stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       active: true,
       sequence: active.sequence,
       variant: active.variant,
@@ -254,7 +312,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
     active = null;
     return freeze({
       accepted: true,
-      stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
+      stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       sequence: report.sequence,
       variant: report.variant,
       guardIntentAgeMs: report.guardIntentAgeMs,
