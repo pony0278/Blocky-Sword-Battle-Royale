@@ -181,8 +181,12 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
     lastReport = Object.freeze({
       active: !sample.complete, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, outcome: active.outcome,
       phase: sample.phase, elapsedMs: active.elapsedMs, complete: sample.complete,
-      releaseAttackerRecoil: sample.releaseAttackerRecoil, shieldOffset: sample.shieldOffset,
-      attackerWeaponOffset: sample.attackerWeaponOffset, appliedDegrees: Object.freeze(appliedDegrees), finalSurface, profile: active.profile,
+      releaseAttackerRecoil: sample.releaseAttackerRecoil,
+      incomingDirection: sample.incomingDirection,
+      shieldTangent: sample.shieldTangent,
+      shieldOffset: sample.shieldOffset,
+      attackerWeaponOffset: sample.attackerWeaponOffset,
+      appliedDegrees: Object.freeze(appliedDegrees), finalSurface, profile: active.profile,
     });
     if (sample.complete) {
       publishPostCouplingRecoilStaggerHandoff(attackerRig, {
