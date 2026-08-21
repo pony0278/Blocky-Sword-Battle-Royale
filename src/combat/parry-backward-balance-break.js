@@ -13,8 +13,8 @@ export const PARRY_BACKWARD_BALANCE_BREAK_PROFILES = Object.freeze({
     outcome: 'parry',
     startMs: 24,
     riseEndMs: 88,
-    peakEndMs: 168,
-    completeMs: 300,
+    peakEndMs: 100,
+    completeMs: 132,
     minimumChestBackwardDegrees: 11.5,
     pitchAmplification: 1.90,
     spinePitchRatio: 0.66,
@@ -29,8 +29,8 @@ export const PARRY_BACKWARD_BALANCE_BREAK_PROFILES = Object.freeze({
     outcome: 'perfect-parry',
     startMs: 18,
     riseEndMs: 78,
-    peakEndMs: 188,
-    completeMs: 336,
+    peakEndMs: 112,
+    completeMs: 144,
     minimumChestBackwardDegrees: 15,
     pitchAmplification: 2.10,
     spinePitchRatio: 0.70,
@@ -164,7 +164,8 @@ export function sampleParryBackwardBalanceBreak(input = {}) {
     bodyFirst: true,
     contactConstraintLast: true,
     rootMotion: false,
-    authority: 'backward-pitch-dominant-balance-break-with-planted-root',
+    handoffTarget: 'G4.3B.5R.2.7',
+    authority: 'backward-preload-fades-into-two-actor-whole-body-burst',
   });
 }
 
