@@ -10,6 +10,7 @@ import {
   consumePostCouplingRecoilStaggerHandoff,
   publishPostCouplingRecoilStaggerHandoff,
 } from '../src/combat/post-coupling-recoil-stagger-handoff.js';
+import { TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE } from '../src/combat/two-actor-whole-body-recoil-burst.js';
 
 function recoilPlan(responseClass = 'parry-directional-recoil') {
   return {
@@ -20,20 +21,14 @@ function recoilPlan(responseClass = 'parry-directional-recoil') {
     weapon: {
       direction: { x: -0.7, y: 0.25, z: -0.65 },
       lateralSign: -1,
-      strength: responseClass === 'blocked-weapon-bounce'
-        ? 0.28
-        : responseClass === 'perfect-parry-directional-recoil' ? 1 : 0.68,
-      deflectDegrees: responseClass === 'blocked-weapon-bounce'
-        ? 12
-        : responseClass === 'perfect-parry-directional-recoil' ? 44 : 30,
+      strength: responseClass === 'blocked-weapon-bounce' ? 0.28 : responseClass === 'perfect-parry-directional-recoil' ? 1 : 0.68,
+      deflectDegrees: responseClass === 'blocked-weapon-bounce' ? 12 : responseClass === 'perfect-parry-directional-recoil' ? 44 : 30,
     },
     body: {
-      strength: responseClass === 'blocked-weapon-bounce'
-        ? 0.12
-        : responseClass === 'perfect-parry-directional-recoil' ? 0.56 : 0.38,
-      yawDegrees: responseClass === 'blocked-weapon-bounce' ? -4 : -10,
-      pitchDegrees: responseClass === 'blocked-weapon-bounce' ? -3 : -7,
-      rollDegrees: responseClass === 'blocked-weapon-bounce' ? -1.1 : -2.8,
+      strength: responseClass === 'blocked-weapon-bounce' ? 0.12 : responseClass === 'perfect-parry-directional-recoil' ? 0.56 : 0.38,
+      yawDegrees: responseClass === 'blocked-weapon-bounce' ? -4 : responseClass === 'perfect-parry-directional-recoil' ? -15 : -10,
+      pitchDegrees: responseClass === 'blocked-weapon-bounce' ? -3 : responseClass === 'perfect-parry-directional-recoil' ? -10 : -7,
+      rollDegrees: responseClass === 'blocked-weapon-bounce' ? -1.1 : responseClass === 'perfect-parry-directional-recoil' ? -4.2 : -2.8,
     },
   };
 }
@@ -51,161 +46,128 @@ function couplingReport(outcome = 'parry', drive = 0.105, follow = 0.105) {
   };
 }
 
-function dot(a, b) {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
 function normalize(v) {
   const m = Math.hypot(v.x, v.y, v.z);
   return { x: v.x / m, y: v.y / m, z: v.z / m };
 }
 
-test('G4.3B.5R.2.4 promotes post-coupling authority while retaining the previous stage marker', () => {
+function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+test('G4.3B.5R.2.7 is the latest post-coupling presentation authority', () => {
   assert.equal(POST_COUPLING_RECOIL_STAGGER_BASE_STAGE, 'G4.3B.5R.2.1');
   assert.equal(COUPLED_MOMENTUM_CONTINUATION_STAGE, 'G4.3B.5R.2.2');
   assert.equal(CONTACT_RELEASE_SEPARATION_RECOIL_STAGE, 'G4.3B.5R.2.4');
-  assert.equal(POST_COUPLING_RECOIL_STAGGER_STAGE, CONTACT_RELEASE_SEPARATION_RECOIL_STAGE);
+  assert.equal(POST_COUPLING_RECOIL_STAGGER_STAGE, TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE);
 });
 
-test('G4.3B.5R.2.4 Parry skips the second hold and gives release recoil a readable impulse window', () => {
+test('G4.3B.5R.2.7 Parry release bypasses separation and jumps into old Two-Actor impulse', () => {
   const handoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport(),
+    plan: recoilPlan(), couplingReport: couplingReport(),
     surfaceAtContact: { center: { x: 0, y: 1.1, z: 0.2 } },
     baseProfile: { contactHoldMs: 28, impulseEndMs: 105, recoilEndMs: 235, settleEndMs: 390, legStrengthScale: 0.78 },
   });
-
-  assert.equal(handoff.stage, CONTACT_RELEASE_SEPARATION_RECOIL_STAGE);
+  assert.equal(handoff.stage, TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE);
   assert.equal(handoff.previousStage, COUPLED_MOMENTUM_CONTINUATION_STAGE);
   assert.equal(handoff.accepted, true);
-  assert.equal(handoff.initialElapsedMs, 28);
-  assert.equal(handoff.reason, 'contact-release-separation-recoil-ready');
-  assert.equal(handoff.profileOverrides.impulseEndMs, 132);
-  assert.equal(handoff.profileOverrides.recoilEndMs, 275);
-  assert.equal(handoff.profileOverrides.settleEndMs, 445);
-  assert.equal(handoff.timelineIntent.releaseSeparationWindowMs, 78);
-  assert.equal(handoff.timelineIntent.weaponAndShoulderImpulseEndMs, 104);
-  assert.equal(handoff.timelineIntent.torsoAndHipsEndMs, 247);
-  assert.equal(handoff.timelineIntent.fullRecoveryEndMs, 417);
+  assert.equal(handoff.initialElapsedMs, 68);
+  assert.equal(handoff.reason, 'two-actor-whole-body-recoil-burst-ready');
+  assert.equal(handoff.profileOverrides.releaseSeparationWindowMs, 0);
+  assert.equal(handoff.profileOverrides.releaseSeparationDistanceMeters, 0);
+  assert.equal(handoff.profileOverrides.impulseEndMs, 112);
+  assert.equal(handoff.profileOverrides.recoilEndMs, 245);
+  assert.equal(handoff.profileOverrides.settleEndMs, 420);
+  assert.equal(handoff.timelineIntent.releaseSeparationWindowMs, 0);
+  assert.equal(handoff.timelineIntent.b3EntryElapsedMs, 68);
 });
 
-test('G4.3B.5R.2.4 Parry restores a strong readable weapon rebound without returning to a full uncoupled bounce', () => {
+test('G4.3B.5R.2.7 restores full sword-arm authority and old torso yaw/roll while adding backward bias', () => {
   const source = recoilPlan();
   const handoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: source,
-    couplingReport: couplingReport(),
-    surfaceAtContact: { center: { x: 0, y: 1.1, z: 0.2 } },
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+    plan: source, couplingReport: couplingReport(), baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
-
-  assert.ok(handoff.plan.weapon.strength > 0.55);
-  assert.ok(handoff.plan.weapon.strength > recoilPlan('blocked-weapon-bounce').weapon.strength);
-  assert.ok(handoff.plan.weapon.strength < source.weapon.strength);
-  assert.ok(handoff.plan.weapon.deflectDegrees > 25);
-  assert.ok(handoff.plan.weapon.deflectDegrees > recoilPlan('blocked-weapon-bounce').weapon.deflectDegrees);
-  assert.ok(handoff.plan.weapon.deflectDegrees < source.weapon.deflectDegrees);
-  assert.ok(Math.abs(handoff.plan.body.yawDegrees) > Math.abs(source.body.yawDegrees));
-  assert.ok(handoff.plan.body.strength > source.body.strength);
+  assert.ok(handoff.plan.weapon.strength >= source.weapon.strength * 0.98);
+  assert.ok(handoff.plan.weapon.deflectDegrees >= source.weapon.deflectDegrees * 0.98);
+  assert.ok(Math.abs(handoff.plan.body.yawDegrees) >= Math.abs(source.body.yawDegrees) * 0.95);
+  assert.ok(Math.abs(handoff.plan.body.rollDegrees) >= Math.abs(source.body.rollDegrees) * 0.95);
+  assert.ok(Math.abs(handoff.plan.body.pitchDegrees) >= 25);
   assert.ok(handoff.profileOverrides.legStrengthScale > 0.78);
-  assert.equal(handoff.channelIntent.weapon, 'contact-release-separation-impulse-then-directional-recoil');
-  assert.equal(handoff.channelIntent.shoulder, 'separation-recoil-pulls-shoulder-before-body');
+  assert.equal(handoff.channelIntent.weapon, 'old-two-actor-direct-arm-deflect-at-release-power-frame');
+  assert.equal(handoff.channelIntent.freeArm, 'parent-chain-motion-no-explicit-flail');
 });
 
-test('G4.3B.5R.2.4 release direction cannot collapse back into same-direction coupling travel', () => {
+test('G4.3B.5R.2.7 release direction still blends B2 authority with shield redirect', () => {
   const source = recoilPlan();
   const report = couplingReport('parry');
   const handoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: source,
-    couplingReport: report,
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+    plan: source, couplingReport: report, baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
   const b2 = normalize(source.weapon.direction);
   const coupled = normalize(report.attackerWeaponOffset);
   const actual = handoff.plan.weapon.direction;
-
   assert.equal(handoff.separation.source, 'contact-release-b2-shield-blend');
-  assert.equal(handoff.separation.couplingSource, 'coupling-attacker-weapon-offset');
   assert.ok(dot(b2, actual) > 0.90);
   assert.ok(dot(coupled, actual) < 0.50);
-  assert.ok(handoff.separation.b2Alignment > 0.90);
-  assert.ok(handoff.separation.couplingAlignment < 0.50);
+  assert.equal(handoff.separation.bypassedForWholeBodyBurst, true);
 });
 
-test('G4.3B.5R.2.4 stronger coupling still drives stronger inherited body momentum without stealing release direction authority', () => {
+test('G4.3B.5R.2.7 stronger coupling still increases inherited whole-body momentum', () => {
   const weak = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport('parry', 0.055, 0.05),
-    surfaceAtContact: { center: { x: 0, y: 1.1, z: 0.2 } },
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+    plan: recoilPlan(), couplingReport: couplingReport('parry', 0.055, 0.05),
+    surfaceAtContact: { center: { x: 0, y: 1.1, z: 0.2 } }, baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
   const strong = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport('parry', 0.13, 0.12),
-    surfaceAtContact: { center: { x: 0, y: 1.1, z: 0.2 } },
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+    plan: recoilPlan(), couplingReport: couplingReport('parry', 0.13, 0.12),
+    surfaceAtContact: { center: { x: 0, y: 1.1, z: 0.2 } }, baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
-
   assert.ok(strong.couplingMomentum.momentum > weak.couplingMomentum.momentum);
   assert.ok(Math.abs(strong.plan.body.yawDegrees) > Math.abs(weak.plan.body.yawDegrees));
-  assert.equal(strong.plan.weapon.separationSource, 'contact-release-b2-shield-blend');
   assert.ok(strong.separation.b2Alignment > 0.90);
 });
 
-test('G4.3B.5R.2.4 Perfect preserves a stronger and longer separation recoil than normal Parry', () => {
+test('G4.3B.5R.2.7 Perfect is stronger and longer than ordinary Parry', () => {
   const parry = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport('parry'),
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+    plan: recoilPlan(), couplingReport: couplingReport('parry'), baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
   const perfect = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan('perfect-parry-directional-recoil'),
-    couplingReport: couplingReport('perfect-parry', 0.125, 0.13),
+    plan: recoilPlan('perfect-parry-directional-recoil'), couplingReport: couplingReport('perfect-parry', 0.125, 0.13),
     baseProfile: { contactHoldMs: 36, legStrengthScale: 1 },
   });
-
-  assert.equal(perfect.initialElapsedMs, 36);
+  assert.equal(perfect.initialElapsedMs, 76);
   assert.ok(perfect.plan.weapon.strength > parry.plan.weapon.strength);
   assert.ok(perfect.plan.weapon.deflectDegrees > parry.plan.weapon.deflectDegrees);
-  assert.ok(Math.abs(perfect.plan.body.yawDegrees) > Math.abs(parry.plan.body.yawDegrees));
-  assert.equal(perfect.profileOverrides.settleEndMs, 540);
-  assert.equal(perfect.timelineIntent.releaseSeparationWindowMs, 86);
+  assert.ok(Math.abs(perfect.plan.body.pitchDegrees) > Math.abs(parry.plan.body.pitchDegrees));
+  assert.equal(perfect.profileOverrides.settleEndMs, 520);
+  assert.equal(perfect.timelineIntent.releaseSeparationWindowMs, 0);
 });
 
-test('G4.3B.5R.2.4 Block keeps the B2 direction and does not invent a separation impulse', () => {
+test('Block compatibility path remains old B2 direction and does not invent whole-body burst', () => {
   const source = recoilPlan('blocked-weapon-bounce');
   const handoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: source,
-    couplingReport: couplingReport('block', 0.035, 0.025),
-    baseProfile: { contactHoldMs: 18, legStrengthScale: 0.42 },
+    plan: source, couplingReport: couplingReport('block', 0.035, 0.025), baseProfile: { contactHoldMs: 18, legStrengthScale: 0.42 },
   });
-
   assert.equal(handoff.reason, 'post-coupling-body-stagger-ready');
   assert.equal(handoff.separation.source, 'b2-block-recoil-direction');
   assert.deepEqual(handoff.plan.weapon.direction, normalize(source.weapon.direction));
   assert.equal(handoff.timelineIntent, null);
+  assert.equal(handoff.wholeBodyBurst, null);
 });
 
-test('G4.3B.5R.2.4 release signal is one-shot per attacker rig', () => {
+test('G4.3B.5R.2.7 release signal is one-shot per attacker rig', () => {
   const rig = {};
   assert.equal(publishPostCouplingRecoilStaggerHandoff(rig, { couplingReport: couplingReport() }), true);
   const first = consumePostCouplingRecoilStaggerHandoff(rig);
   const second = consumePostCouplingRecoilStaggerHandoff(rig);
-  assert.equal(first.stage, CONTACT_RELEASE_SEPARATION_RECOIL_STAGE);
+  assert.equal(first.stage, TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE);
   assert.equal(first.previousStage, COUPLED_MOMENTUM_CONTINUATION_STAGE);
   assert.equal(second, null);
 });
 
-test('G4.3B.5R.2.4.1 source contract publishes coupling release and injects separation before B3 elapsed advances', () => {
+test('source contract injects .2.7 handoff before B3 elapsed advances', () => {
   const couplingSource = fs.readFileSync(new URL('../src/combat/shield-driven-contact-coupling.js', import.meta.url), 'utf8');
   const recoilSource = fs.readFileSync(new URL('../src/combat/attacker-recoil-presentation.js', import.meta.url), 'utf8');
-
-  assert.match(couplingSource, /shieldTangent: sample\.shieldTangent/);
-  assert.match(couplingSource, /attackerWeaponOffset: sample\.attackerWeaponOffset/);
   assert.match(couplingSource, /publishPostCouplingRecoilStaggerHandoff\(attackerRig/);
   assert.match(recoilSource, /const handoff = applyPendingPostCouplingHandoff\(\);\s*elapsedMs \+=/);
   assert.match(recoilSource, /elapsedMs = Math\.max\(elapsedMs, handoff\.initialElapsedMs\)/);
   assert.match(recoilSource, /activePlan = handoff\.plan/);
   assert.match(recoilSource, /handoff\.separation\?\.releaseWindowMs/);
-  assert.match(recoilSource, /RELEASE_SEPARATION_DISTANCE_METERS\[activePlan\.responseClass\]/);
-  assert.match(recoilSource, /activeProfile = \{[\s\S]*\.\.\.activeProfile,[\s\S]*\.\.\.handoff\.profileOverrides,[\s\S]*releaseSeparationWindowMs,[\s\S]*releaseSeparationDistanceMeters,[\s\S]*\};/);
 });
