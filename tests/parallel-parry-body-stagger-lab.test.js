@@ -10,9 +10,11 @@ test('G4.3B.5R.2.5 historical runtime remains available for comparison', () => {
   assert.match(historicalRuntime, /chestScale: 1\.45/);
 });
 
-test('G4.3B.5R.2.6 supersedes .2.5 as the active Shield Coupling Lab body authority', () => {
+test('G4.3B.5R.2.7 supersedes .2.5 as active release authority while keeping .2.6 preload', () => {
   assert.match(source, /PARRY_BACKWARD_BALANCE_BREAK_STAGE/);
+  assert.match(source, /TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
   assert.match(source, /createParryBackwardBalanceBreakRuntime/);
   assert.doesNotMatch(source, /createParallelParryBodyStaggerRuntime/);
-  assert.match(source, /backwardPitchDominatesLateralTwist: true/);
+  assert.match(source, /backwardPreloadFadesIntoReleaseBurst: true/);
+  assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
 });
