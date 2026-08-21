@@ -11,15 +11,25 @@ test('G4.3B.5R.2 Lab uses real swept Sword × Buckler contact as the authority g
   assert.match(source, /combat\.resolveContact\(\{ contact: latestContact, guardIntentAgeMs \}\)/);
 });
 
-test('G4.3B.5R.2 coupling owns the contact interval while B3 receives zero delta', () => {
-  assert.match(source, /const couplingOwned = couplingRuntime\.active;/);
+test('G4.3B.5R.2 Parry coupling still owns its contact interval while B3 receives zero delta', () => {
+  assert.match(source, /const parryCouplingOwnsAttacker = couplingRuntime\.active;/);
   assert.match(source, /latestCombatUpdate = combat\.update\(0, \{ camera \}\);/);
   assert.match(source, /latestCouplingReport = couplingRuntime\.update\(deltaSeconds\);/);
   assert.ok(
     source.indexOf('latestCombatUpdate = combat.update(0, { camera });')
       < source.indexOf('latestCouplingReport = couplingRuntime.update(deltaSeconds);'),
-    'frozen attacker base must be sampled before shield-driven coupling is applied',
+    'frozen attacker base must be sampled before shield-driven Parry coupling is applied',
   );
+});
+
+test('G4.3B.5R.2.4.2 Block no longer grants attacker ownership to Parry coupling', () => {
+  const branchStart = source.indexOf("if (outcome === 'block')");
+  const branchEnd = source.indexOf('} else {', branchStart);
+  const blockBranch = source.slice(branchStart, branchEnd);
+  assert.match(blockBranch, /blockGiveRuntime\.start/);
+  assert.doesNotMatch(blockBranch, /couplingRuntime\.start/);
+  assert.match(source, /blockShieldGiveRunsParallelToAttackerBounce: true/);
+  assert.match(source, /blockB3ClockFrozen: false/);
 });
 
 test('G4.3B.5R.2 does not reset pre-contact tracking at authoritative contact', () => {
@@ -30,17 +40,17 @@ test('G4.3B.5R.2 does not reset pre-contact tracking at authoritative contact', 
   assert.match(source.slice(couplingStart), /if \(latestCouplingReport\?\.complete\)[\s\S]*trackingRuntime\.reset\(\)/);
 });
 
-test('G4.3B.5R.2 hands terminal coupled attacker pose into the B3 frozen-pose sampler', () => {
+test('G4.3B.5R.2 hands terminal Parry-coupled attacker pose into the B3 frozen-pose sampler', () => {
   assert.match(source, /let couplingReleasePose = null;/);
   assert.match(source, /couplingReleasePose = captureRigPose\(attacker\.rig\);/);
   assert.match(source, /if \(couplingReleasePose\)[\s\S]*applyRigPose\(attacker\.rig, couplingReleasePose\)/);
-  assert.match(source, /coupledTerminalPoseBecomesB3BasePose: true/);
+  assert.match(source, /parryCoupledTerminalPoseBecomesB3BasePose: true/);
 });
 
-test('G4.3B.5R.2 lab exposes shield drive and attacker weapon follow telemetry', () => {
-  assert.match(html, /Shield drive/);
-  assert.match(html, /Weapon follow/);
-  assert.match(html, /B3 clock = frozen/);
-  assert.match(source, /attackerWeaponMotionDerivedFromShield: true/);
-  assert.match(source, /defenderShieldMovesBeforeB3: true/);
+test('G4.3B.5R.2.4.2 lab exposes separate Block and Parry ownership telemetry', () => {
+  assert.match(html, /BLOCK B3 clock/);
+  assert.match(html, /RUNNING during shield give/);
+  assert.match(html, /PARRY \/ PERFECT/);
+  assert.match(source, /Weapon authority: original B2\/B3/);
+  assert.match(source, /B3 recoil: LOCKED · Parry coupling owns weapon motion/);
 });
