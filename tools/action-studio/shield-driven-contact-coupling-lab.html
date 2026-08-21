@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3B.5R.2.4.1 Contact Release Separation Motion</title>
+  <title>G4.3B.5R.2.4.2 Impact Accent / Full-Body Recoil Fusion</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 430px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block}
     aside{overflow:auto;border-left:1px solid #26354d;padding:18px;background:#0e1521}h1{font-size:19px;margin:0 0 6px}h2{font-size:13px;margin:20px 0 8px;color:#94b8e8;text-transform:uppercase;letter-spacing:.08em}
     button{background:#182338;color:#dce9fb;border:1px solid #334969;border-radius:7px;padding:9px 11px;margin:3px;cursor:pointer}button.active{border-color:#75e6c2;background:#18352f}.row{display:flex;flex-wrap:wrap}.note{color:#9eb0c8;font-size:12px}
-    .hud{position:absolute;left:16px;top:16px;min-width:620px;background:#07101add;border:1px solid #26354d;border-radius:10px;padding:10px 12px;font:12px/1.5 ui-monospace,monospace;pointer-events:none}.legend{position:absolute;left:16px;bottom:16px;background:#07101add;border:1px solid #26354d;border-radius:10px;padding:8px 10px;font-size:12px}
+    .hud{position:absolute;left:16px;top:16px;min-width:650px;background:#07101add;border:1px solid #26354d;border-radius:10px;padding:10px 12px;font:12px/1.5 ui-monospace,monospace;pointer-events:none}.legend{position:absolute;left:16px;bottom:16px;background:#07101add;border:1px solid #26354d;border-radius:10px;padding:8px 10px;font-size:12px}
     .metric{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:8px 0;padding:10px;border:1px solid #243147;border-radius:8px;background:#080d14}.metric b{color:#ddecff}.toggle{display:flex;align-items:center;gap:8px;margin:10px 0}pre{white-space:pre-wrap;background:#080d14;border:1px solid #243147;border-radius:8px;padding:10px;font-size:11px;max-height:330px;overflow:auto}.good{color:#7ef0ad}.warn{color:#ffd27a}.bad{color:#ff8c8c}
     @media(max-width:900px){html,body{height:auto;min-height:100%;overflow:auto}body{display:block}main{height:58vh;min-height:360px}.hud{left:10px;right:10px;top:10px;min-width:0;font-size:10px}aside{border-left:0;border-top:1px solid #26354d}button{flex:1 1 30%;min-height:44px}}
   </style>
@@ -20,39 +20,41 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3B.5R.2.4.1 · Contact Release Separation Motion</b>
+      <b>G4.3B.5R.2.4.2 · Impact Accent / Full-Body Recoil Fusion</b>
       <div id="hudAttack">Requested / Actual: loading…</div>
       <div id="hudContact">Contact: —</div>
+      <div id="hudImpact">Impact accent: —</div>
       <div id="hudCoupling">Coupling: —</div>
       <div id="hudShield">Shield drive: —</div>
       <div id="hudWeapon">Weapon follow: —</div>
       <div id="hudSeparation">Release separation: —</div>
-      <div id="hudRecoil">B3 recoil: —</div>
+      <div id="hudRecoil">Full-body recoil: —</div>
     </div>
     <div class="legend">Green = predictive intercept · Red = authoritative sword × shield contact · Cyan = shield-driven target</div>
   </main>
   <aside>
-    <h1>Contact Release Separation Motion</h1>
-    <div class="note">本版把 .2.4 的方向契約真正變成可見動作：盾牌 coupling 結束後，攻擊方右手與劍會先進入獨立 SEPARATION phase，明確離開盾面，再由 shoulder → torso / hips → legs 接手原本 B3 recoil。</div>
+    <h1>Impact Accent / Full-Body Recoil Fusion</h1>
+    <div class="note">融合 two-actor combat integration 的接觸重量感與 shield-driven coupling：接觸瞬間雙方先產生 body compression / rebound，手臂與武器仍由 shield coupling IK 控制；release 後再由 weapon → right arm → chest → spine → hips → legs 形成可讀的全身反彈波。</div>
     <h2>Attack direction</h2><div class="row"><button data-attack="top">TOP</button><button data-attack="right" class="active">RIGHT</button><button data-attack="left">LEFT</button></div>
     <h2>Defense</h2><div class="row"><button data-mode="block">BLOCK</button><button data-mode="parry" class="active">PARRY</button><button data-mode="perfect">PERFECT</button></div>
     <div class="metric">
-      <span>Normal Parry rhythm authority</span><b>locked ~135 ms</b>
-      <span>Perfect rhythm authority</span><b>locked ~65 ms</b>
+      <span>Contact accent</span><b>compression → rebound → settle</b>
+      <span>Accent authority</span><b>body only; coupling owns arms</b>
       <span>During coupling</span><b>B3 clock = frozen</b>
       <span>Normal Parry separation</span><b>6.5 cm · 78 ms</b>
       <span>Perfect Parry separation</span><b>9.5 cm · 86 ms</b>
-      <span>Separation owner</span><b>weapon / right arm first</b>
-      <span>Then</span><b>B3 shoulder → body → legs</b>
+      <span>Normal full-body scale</span><b>×1.32</b>
+      <span>Perfect full-body scale</span><b>×1.50</b>
+      <span>Force chain</span><b>weapon → arm → chest → spine → hips → legs</b>
       <span>Root motion</span><b>none</b>
     </div>
     <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat</label>
     <label class="toggle"><input id="showSurface" type="checkbox" checked> Show shield parry surface</label>
     <h2>Expected causality</h2>
-    <div class="metric"><span>1</span><b>Rhythm Parry locks grade</b><span>2</span><b>Sword hits shield</b><span>3</span><b>Shield sweeps / gives</b><span>4</span><b>Weapon follows shield</b><span>5</span><b>Contact releases</b><span>6</span><b>SEPARATION: sword leaves shield</b><span>7</span><b>Shoulder / torso recoil</b><span>8</span><b>Hips / legs recover balance</b></div>
+    <div class="metric"><span>1</span><b>Sword hits shield</b><span>2</span><b>IMPACT ACCENT: both bodies compress</b><span>3</span><b>Shield catches / sweeps weapon</b><span>4</span><b>Contact rebounds while coupling releases</b><span>5</span><b>SEPARATION: sword leaves shield</b><span>6</span><b>Chest / spine are pulled into recoil</b><span>7</span><b>Hips lose balance</b><span>8</span><b>Legs recover stance</b></div>
     <h2>Views</h2><div class="row"><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="contact">Contact</button></div>
     <h2>Verification</h2><div id="status" class="warn">Loading…</div><pre id="report">Not run.</pre>
   </aside>
-  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r241"></script>
+  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r242"></script>
 </body>
 </html>
