@@ -2,9 +2,11 @@ import {
   buildPostCouplingRecoilStaggerHandoff,
   consumePostCouplingRecoilStaggerHandoff,
 } from './post-coupling-recoil-stagger-handoff.js';
+import { IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE } from './impact-accent-full-body-recoil-fusion.js';
 
 export const ATTACKER_RECOIL_PRESENTATION_STAGE = 'G4.3B.3';
 export const CONTACT_RELEASE_SEPARATION_MOTION_STAGE = 'G4.3B.5R.2.4.1';
+export const FULL_BODY_RECOIL_FUSION_STAGE = IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE;
 
 export const ATTACKER_RECOIL_PRESENTATION_PHASES = Object.freeze({
   CONTACT_HOLD: 'contact-hold',
@@ -24,6 +26,7 @@ export const ATTACKER_RECOIL_PRESENTATION_PROFILES = Object.freeze({
     armDeflectScale: 0.72,
     forearmDeflectScale: 0.42,
     legStrengthScale: 0.42,
+    fullBodyRecoilScale: 1,
   }),
   'parry-directional-recoil': Object.freeze({
     contactHoldMs: 28,
@@ -33,6 +36,7 @@ export const ATTACKER_RECOIL_PRESENTATION_PROFILES = Object.freeze({
     armDeflectScale: 0.78,
     forearmDeflectScale: 0.48,
     legStrengthScale: 0.78,
+    fullBodyRecoilScale: 1,
   }),
   'perfect-parry-directional-recoil': Object.freeze({
     contactHoldMs: 36,
@@ -42,12 +46,18 @@ export const ATTACKER_RECOIL_PRESENTATION_PROFILES = Object.freeze({
     armDeflectScale: 0.84,
     forearmDeflectScale: 0.54,
     legStrengthScale: 1,
+    fullBodyRecoilScale: 1,
   }),
 });
 
 const RELEASE_SEPARATION_DISTANCE_METERS = Object.freeze({
   'parry-directional-recoil': 0.065,
   'perfect-parry-directional-recoil': 0.095,
+});
+
+const FULL_BODY_RECOIL_SCALE = Object.freeze({
+  'parry-directional-recoil': 1.32,
+  'perfect-parry-directional-recoil': 1.50,
 });
 
 function finite(value, fallback = 0) {
@@ -98,6 +108,10 @@ function resolveProfile(plan, overrides = {}) {
   const contactHoldMs = clamp(overrides.contactHoldMs ?? base.contactHoldMs, 0, 120);
   const releaseSeparationWindowMs = clamp(overrides.releaseSeparationWindowMs ?? 0, 0, 120);
   const releaseSeparationDistanceMeters = clamp(overrides.releaseSeparationDistanceMeters ?? 0, 0, 0.16);
+  const inferredFullBodyScale = releaseSeparationWindowMs > 0
+    ? finite(FULL_BODY_RECOIL_SCALE[responseClass], 1)
+    : finite(base.fullBodyRecoilScale, 1);
+  const fullBodyRecoilScale = clamp(overrides.fullBodyRecoilScale ?? inferredFullBodyScale, 0.5, 2);
   const impulseEndMs = clamp(
     overrides.impulseEndMs ?? base.impulseEndMs,
     contactHoldMs + releaseSeparationWindowMs + 1,
@@ -119,6 +133,7 @@ function resolveProfile(plan, overrides = {}) {
     contactHoldMs,
     releaseSeparationWindowMs,
     releaseSeparationDistanceMeters,
+    fullBodyRecoilScale,
     impulseEndMs,
     recoilEndMs,
     settleEndMs,
@@ -128,28 +143,28 @@ function resolveProfile(plan, overrides = {}) {
   });
 }
 
+function bodyWeights(phase, armWeight, chestWeight, spineWeight, hipsWeight, legWeight, separationWeight = 0, complete = false) {
+  return Object.freeze({
+    phase,
+    armWeight,
+    torsoWeight: chestWeight,
+    chestWeight,
+    spineWeight,
+    hipsWeight,
+    legWeight,
+    separationWeight,
+    complete,
+  });
+}
+
 function sampleWeights(profile, elapsedMs) {
   const elapsed = Math.max(0, finite(elapsedMs));
   if (elapsed >= profile.settleEndMs) {
-    return Object.freeze({
-      phase: ATTACKER_RECOIL_PRESENTATION_PHASES.COMPLETE,
-      armWeight: 0,
-      torsoWeight: 0,
-      legWeight: 0,
-      separationWeight: 0,
-      complete: true,
-    });
+    return bodyWeights(ATTACKER_RECOIL_PRESENTATION_PHASES.COMPLETE, 0, 0, 0, 0, 0, 0, true);
   }
 
   if (elapsed <= profile.contactHoldMs) {
-    return Object.freeze({
-      phase: ATTACKER_RECOIL_PRESENTATION_PHASES.CONTACT_HOLD,
-      armWeight: 0,
-      torsoWeight: 0,
-      legWeight: 0,
-      separationWeight: 0,
-      complete: false,
-    });
+    return bodyWeights(ATTACKER_RECOIL_PRESENTATION_PHASES.CONTACT_HOLD, 0, 0, 0, 0, 0, 0, false);
   }
 
   const separationWindowMs = Math.max(0, finite(profile.releaseSeparationWindowMs));
@@ -157,14 +172,20 @@ function sampleWeights(profile, elapsedMs) {
   if (separationWindowMs > 0 && elapsed <= separationEndMs) {
     const t = clamp01((elapsed - profile.contactHoldMs) / separationWindowMs);
     const separationWeight = smoothstep01(t);
-    return Object.freeze({
-      phase: ATTACKER_RECOIL_PRESENTATION_PHASES.SEPARATION,
-      armWeight: 0.42 * separationWeight,
-      torsoWeight: 0.06 * smoothstep01((t - 0.55) / 0.45),
-      legWeight: 0,
+    const chestWeight = 0.32 * smoothstep01((t - 0.12) / 0.88);
+    const spineWeight = 0.24 * smoothstep01((t - 0.26) / 0.74);
+    const hipsWeight = 0.12 * smoothstep01((t - 0.48) / 0.52);
+    const legWeight = 0.06 * smoothstep01((t - 0.68) / 0.32);
+    return bodyWeights(
+      ATTACKER_RECOIL_PRESENTATION_PHASES.SEPARATION,
+      0.72 * separationWeight,
+      chestWeight,
+      spineWeight,
+      hipsWeight,
+      legWeight,
       separationWeight,
-      complete: false,
-    });
+      false,
+    );
   }
 
   if (elapsed <= profile.impulseEndMs) {
@@ -172,47 +193,69 @@ function sampleWeights(profile, elapsedMs) {
       const impulseSpan = Math.max(1, profile.impulseEndMs - separationEndMs);
       const t = clamp01((elapsed - separationEndMs) / impulseSpan);
       const eased = smoothstep01(t);
-      return Object.freeze({
-        phase: ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE,
-        armWeight: 0.42 + 0.58 * eased,
-        torsoWeight: smoothstep01((t - 0.08) / 0.92),
-        legWeight: smoothstep01((t - 0.35) / 0.65),
-        separationWeight: 1 - eased,
-        complete: false,
-      });
+      const chestWeight = 0.32 + 0.68 * eased;
+      const spineWeight = 0.24 + 0.76 * smoothstep01((t - 0.05) / 0.95);
+      const hipsWeight = 0.12 + 0.88 * smoothstep01((t - 0.18) / 0.82);
+      const legWeight = 0.06 + 0.94 * smoothstep01((t - 0.35) / 0.65);
+      return bodyWeights(
+        ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE,
+        0.72 + 0.28 * eased,
+        chestWeight,
+        spineWeight,
+        hipsWeight,
+        legWeight,
+        1 - eased,
+        false,
+      );
     }
     const t = clamp01((elapsed - profile.contactHoldMs) / (profile.impulseEndMs - profile.contactHoldMs));
-    return Object.freeze({
-      phase: ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE,
-      armWeight: smoothstep01(t),
-      torsoWeight: smoothstep01((t - 0.12) / 0.88),
-      legWeight: smoothstep01((t - 0.28) / 0.72),
-      separationWeight: 0,
-      complete: false,
-    });
+    const armWeight = smoothstep01(t);
+    const chestWeight = smoothstep01((t - 0.12) / 0.88);
+    const spineWeight = smoothstep01((t - 0.16) / 0.84);
+    const hipsWeight = smoothstep01((t - 0.22) / 0.78);
+    const legWeight = smoothstep01((t - 0.28) / 0.72);
+    return bodyWeights(
+      ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE,
+      armWeight,
+      chestWeight,
+      spineWeight,
+      hipsWeight,
+      legWeight,
+      0,
+      false,
+    );
   }
 
   if (elapsed <= profile.recoilEndMs) {
     const t = smoothstep01((elapsed - profile.impulseEndMs) / (profile.recoilEndMs - profile.impulseEndMs));
-    return Object.freeze({
-      phase: ATTACKER_RECOIL_PRESENTATION_PHASES.RECOIL,
-      armWeight: 1 - 0.22 * t,
-      torsoWeight: 1 - 0.12 * t,
-      legWeight: 1 - 0.07 * t,
-      separationWeight: 0,
-      complete: false,
-    });
+    const armWeight = 1 - 0.22 * t;
+    const chestWeight = 1 - 0.12 * t;
+    const spineWeight = 1 - 0.13 * t;
+    const hipsWeight = 1 - 0.10 * t;
+    const legWeight = 1 - 0.07 * t;
+    return bodyWeights(
+      ATTACKER_RECOIL_PRESENTATION_PHASES.RECOIL,
+      armWeight,
+      chestWeight,
+      spineWeight,
+      hipsWeight,
+      legWeight,
+      0,
+      false,
+    );
   }
 
   const t = smoothstep01((elapsed - profile.recoilEndMs) / (profile.settleEndMs - profile.recoilEndMs));
-  return Object.freeze({
-    phase: ATTACKER_RECOIL_PRESENTATION_PHASES.SETTLE,
-    armWeight: 0.78 * (1 - t),
-    torsoWeight: 0.88 * (1 - t),
-    legWeight: 0.93 * (1 - t),
-    separationWeight: 0,
-    complete: false,
-  });
+  return bodyWeights(
+    ATTACKER_RECOIL_PRESENTATION_PHASES.SETTLE,
+    0.78 * (1 - t),
+    0.88 * (1 - t),
+    0.86 * (1 - t),
+    0.90 * (1 - t),
+    0.93 * (1 - t),
+    0,
+    false,
+  );
 }
 
 function zeroPose() {
@@ -250,11 +293,13 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
   const deflectDegrees = clamp(finite(plan.weapon?.deflectDegrees), 0, 90);
   const lateralSign = Math.sign(finite(plan.weapon?.lateralSign));
   const attackDirection = String(plan.attackDirection || '');
+  const fusionActive = profile.releaseSeparationWindowMs > 0 && profile.fullBodyRecoilScale > 1;
 
   if (weights.complete) {
     return Object.freeze({
       stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
       motionStage: profile.releaseSeparationWindowMs > 0 ? CONTACT_RELEASE_SEPARATION_MOTION_STAGE : null,
+      fusionStage: fusionActive ? FULL_BODY_RECOIL_FUSION_STAGE : null,
       sequence: plan.sequence ?? null,
       responseClass: plan.responseClass || null,
       attackDirection,
@@ -264,7 +309,7 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
       pose: zeroPose(),
       complete: true,
       readyForAttackHandoff: true,
-      authority: 'attacker-recoil-presentation-only',
+      authority: fusionActive ? 'impact-accent-full-body-recoil-fusion' : 'attacker-recoil-presentation-only',
     });
   }
 
@@ -289,8 +334,9 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
   const topSymmetric = attackDirection === 'top';
   const loadedLeft = topSymmetric ? 0.75 : lateralSign >= 0 ? 1 : 0.48;
   const loadedRight = topSymmetric ? 0.75 : lateralSign <= 0 ? 1 : 0.48;
-  const legBase = 7.5 * bodyStrength * profile.legStrengthScale * weights.legWeight;
-  const kneeBase = 11 * bodyStrength * profile.legStrengthScale * weights.legWeight;
+  const bodyScale = profile.fullBodyRecoilScale;
+  const legBase = 9.5 * bodyStrength * profile.legStrengthScale * weights.legWeight * bodyScale;
+  const kneeBase = 14.5 * bodyStrength * profile.legStrengthScale * weights.legWeight * bodyScale;
 
   const pose = Object.freeze({
     weaponAimOffsetMeters: aimOffset,
@@ -298,15 +344,15 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
     releaseSeparationDistanceMeters: separationDistance,
     upperArmAimDegrees: deflectDegrees * profile.armDeflectScale * weights.armWeight,
     lowerArmAimDegrees: deflectDegrees * profile.forearmDeflectScale * weights.armWeight,
-    chestYawDegrees: finite(plan.body?.yawDegrees) * weights.torsoWeight * 0.58,
-    chestPitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.46,
-    chestRollDegrees: finite(plan.body?.rollDegrees) * weights.torsoWeight * 0.72,
-    spineYawDegrees: finite(plan.body?.yawDegrees) * weights.torsoWeight * 0.36,
-    spinePitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.34,
-    spineRollDegrees: finite(plan.body?.rollDegrees) * weights.torsoWeight * 0.44,
-    hipsYawDegrees: finite(plan.body?.yawDegrees) * weights.torsoWeight * 0.20,
-    hipsPitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.18,
-    hipsRollDegrees: finite(plan.body?.rollDegrees) * weights.torsoWeight * 0.26,
+    chestYawDegrees: finite(plan.body?.yawDegrees) * weights.chestWeight * 0.72 * bodyScale,
+    chestPitchDegrees: finite(plan.body?.pitchDegrees) * weights.chestWeight * 0.62 * bodyScale,
+    chestRollDegrees: finite(plan.body?.rollDegrees) * weights.chestWeight * 0.86 * bodyScale,
+    spineYawDegrees: finite(plan.body?.yawDegrees) * weights.spineWeight * 0.50 * bodyScale,
+    spinePitchDegrees: finite(plan.body?.pitchDegrees) * weights.spineWeight * 0.44 * bodyScale,
+    spineRollDegrees: finite(plan.body?.rollDegrees) * weights.spineWeight * 0.58 * bodyScale,
+    hipsYawDegrees: finite(plan.body?.yawDegrees) * weights.hipsWeight * 0.30 * bodyScale,
+    hipsPitchDegrees: finite(plan.body?.pitchDegrees) * weights.hipsWeight * 0.26 * bodyScale,
+    hipsRollDegrees: finite(plan.body?.rollDegrees) * weights.hipsWeight * 0.34 * bodyScale,
     leftThighBendDegrees: legBase * loadedLeft,
     rightThighBendDegrees: legBase * loadedRight,
     leftKneeBendDegrees: kneeBase * loadedLeft,
@@ -316,6 +362,7 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
   return Object.freeze({
     stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
     motionStage: profile.releaseSeparationWindowMs > 0 ? CONTACT_RELEASE_SEPARATION_MOTION_STAGE : null,
+    fusionStage: fusionActive ? FULL_BODY_RECOIL_FUSION_STAGE : null,
     sequence: plan.sequence ?? null,
     responseClass: plan.responseClass || null,
     attackDirection,
@@ -326,10 +373,15 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
     complete: false,
     readyForAttackHandoff: false,
     profile,
+    forceChain: fusionActive
+      ? Object.freeze(['weapon', 'right-arm', 'chest', 'spine', 'hips', 'legs'])
+      : Object.freeze(['weapon', 'right-arm', 'torso', 'legs']),
     basePoseRequirement: 'sample-frozen-contact-pose-before-each-additive-update',
-    authority: profile.releaseSeparationWindowMs > 0
-      ? 'contact-release-separation-motion-then-attacker-recoil'
-      : 'attacker-recoil-presentation-only',
+    authority: fusionActive
+      ? 'impact-accent-full-body-recoil-fusion'
+      : profile.releaseSeparationWindowMs > 0
+        ? 'contact-release-separation-motion-then-attacker-recoil'
+        : 'attacker-recoil-presentation-only',
   });
 }
 
@@ -405,6 +457,7 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     return Object.freeze({
       stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
       motionStage: sample?.motionStage || null,
+      fusionStage: sample?.fusionStage || null,
       active: Boolean(activePlan),
       elapsedMs,
       plan: activePlan,
@@ -450,11 +503,15 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     const releaseSeparationDistanceMeters = releaseSeparationWindowMs > 0
       ? finite(RELEASE_SEPARATION_DISTANCE_METERS[activePlan.responseClass], 0)
       : 0;
+    const fullBodyRecoilScale = releaseSeparationWindowMs > 0
+      ? finite(FULL_BODY_RECOIL_SCALE[activePlan.responseClass], 1)
+      : 1;
     activeProfile = {
       ...activeProfile,
       ...handoff.profileOverrides,
       releaseSeparationWindowMs,
       releaseSeparationDistanceMeters,
+      fullBodyRecoilScale,
     };
     elapsedMs = Math.max(elapsedMs, handoff.initialElapsedMs);
     return handoff;
@@ -522,6 +579,7 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
       lastCompleted = Object.freeze({
         stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
         motionStage: sample.motionStage || null,
+        fusionStage: sample.fusionStage || null,
         sequence: activePlan.sequence ?? null,
         responseClass: activePlan.responseClass,
         attackDirection: activePlan.attackDirection,

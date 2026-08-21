@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {
   ATTACKER_RECOIL_PRESENTATION_PHASES,
   CONTACT_RELEASE_SEPARATION_MOTION_STAGE,
+  FULL_BODY_RECOIL_FUSION_STAGE,
   sampleAttackerRecoilPresentation,
 } from '../src/combat/attacker-recoil-presentation.js';
 import { buildPostCouplingRecoilStaggerHandoff } from '../src/combat/post-coupling-recoil-stagger-handoff.js';
@@ -64,14 +65,15 @@ test('G4.3B.5R.2.4.1 creates an explicit SEPARATION phase after coupling release
   const sample = sampleAttackerRecoilPresentation(handoff.plan, elapsedMs, overrides);
 
   assert.equal(sample.motionStage, CONTACT_RELEASE_SEPARATION_MOTION_STAGE);
+  assert.equal(sample.fusionStage, FULL_BODY_RECOIL_FUSION_STAGE);
   assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.SEPARATION);
   assert.ok(sample.weights.separationWeight > 0 && sample.weights.separationWeight < 1);
-  assert.equal(sample.weights.legWeight, 0);
-  assert.ok(sample.weights.armWeight > sample.weights.torsoWeight);
+  assert.ok(sample.weights.armWeight > sample.weights.chestWeight);
+  assert.ok(sample.weights.chestWeight >= sample.weights.spineWeight);
   assert.ok(sample.pose.releaseSeparationDistanceMeters > 0.02);
 });
 
-test('G4.3B.5R.2.4.1 normal Parry reaches about 6.5cm release target before B3 impulse takes over', () => {
+test('G4.3B.5R.2.4.2 normal Parry reaches 6.5cm target while the body wave begins before B3 impulse', () => {
   const handoff = buildPostCouplingRecoilStaggerHandoff({
     plan: recoilPlan(),
     couplingReport: couplingReport(),
@@ -86,7 +88,10 @@ test('G4.3B.5R.2.4.1 normal Parry reaches about 6.5cm release target before B3 i
   assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.SEPARATION);
   assert.ok(Math.abs(displacement - 0.065) < 1e-6);
   assert.ok(Math.abs(sample.pose.releaseSeparationDistanceMeters - 0.065) < 1e-6);
-  assert.equal(sample.weights.legWeight, 0);
+  assert.ok(sample.weights.chestWeight > sample.weights.spineWeight);
+  assert.ok(sample.weights.spineWeight > sample.weights.hipsWeight);
+  assert.ok(sample.weights.hipsWeight > sample.weights.legWeight);
+  assert.ok(sample.weights.legWeight > 0);
 });
 
 test('G4.3B.5R.2.4.1 Perfect Parry gets a larger 9.5cm separation than normal Parry', () => {
@@ -113,9 +118,10 @@ test('G4.3B.5R.2.4.1 Perfect Parry gets a larger 9.5cm separation than normal Pa
 
   assert.ok(perfect.pose.releaseSeparationDistanceMeters > parry.pose.releaseSeparationDistanceMeters);
   assert.ok(Math.abs(perfect.pose.releaseSeparationDistanceMeters - 0.095) < 1e-6);
+  assert.ok(perfect.profile.fullBodyRecoilScale > parry.profile.fullBodyRecoilScale);
 });
 
-test('G4.3B.5R.2.4.1 separation hands off continuously into normal B3 IMPULSE', () => {
+test('G4.3B.5R.2.4.2 separation hands off continuously into B3 IMPULSE with body channels increasing', () => {
   const handoff = buildPostCouplingRecoilStaggerHandoff({
     plan: recoilPlan(),
     couplingReport: couplingReport(),
@@ -128,6 +134,10 @@ test('G4.3B.5R.2.4.1 separation hands off continuously into normal B3 IMPULSE', 
 
   assert.equal(afterRelease.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE);
   assert.ok(afterRelease.weights.armWeight >= atRelease.weights.armWeight);
+  assert.ok(afterRelease.weights.chestWeight >= atRelease.weights.chestWeight);
+  assert.ok(afterRelease.weights.spineWeight >= atRelease.weights.spineWeight);
+  assert.ok(afterRelease.weights.hipsWeight >= atRelease.weights.hipsWeight);
+  assert.ok(afterRelease.weights.legWeight >= atRelease.weights.legWeight);
   assert.ok(afterRelease.pose.releaseSeparationDistanceMeters < atRelease.pose.releaseSeparationDistanceMeters);
   assert.ok(Math.hypot(
     afterRelease.pose.weaponAimOffsetMeters.x,
