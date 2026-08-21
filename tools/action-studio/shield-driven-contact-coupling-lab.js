@@ -20,25 +20,25 @@ import {
   analyzePredictiveInterceptParry,
   createPredictiveInterceptParryPresentationRuntime,
   RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r25';
+} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r26';
 import {
   createTwoActorCombatIntegration,
   TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r25';
+} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r26';
 import {
   SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
   createShieldDrivenContactCouplingRuntime,
-} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r25';
+} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r26';
 import {
   IMMEDIATE_BLOCK_REBOUND_PARITY_STAGE,
   createImmediateBlockShieldGiveRuntime,
-} from '../../src/combat/immediate-block-rebound-parity.js?v=g43b5r25';
+} from '../../src/combat/immediate-block-rebound-parity.js?v=g43b5r26';
 import {
-  PARALLEL_PARRY_BODY_STAGGER_STAGE,
-  createParallelParryBodyStaggerRuntime,
-} from '../../src/combat/parallel-parry-body-stagger.js?v=g43b5r25';
+  PARRY_BACKWARD_BALANCE_BREAK_STAGE,
+  createParryBackwardBalanceBreakRuntime,
+} from '../../src/combat/parry-backward-balance-break.js?v=g43b5r26';
 
-const LAB_STAGE = PARALLEL_PARRY_BODY_STAGGER_STAGE;
+const LAB_STAGE = PARRY_BACKWARD_BALANCE_BREAK_STAGE;
 const THREE = window.THREE;
 if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error(`${LAB_STAGE} requires Three.js r128 + GLTFLoader`);
 
@@ -67,7 +67,6 @@ attacker.object3d.position.set(0, 0, -1.15);
 defender.object3d.position.set(0, 0, 1.15);
 defender.object3d.rotation.y = Math.PI;
 scene.add(attacker.object3d, defender.object3d);
-
 const attackerSword = createDebugSword(THREE);
 mountDebugSword(attacker, attackerSword, DEFAULT_KAYKIT_SWORD_MOUNT);
 let defenderSword = null;
@@ -93,7 +92,7 @@ const blockGiveRuntime = createImmediateBlockShieldGiveRuntime(THREE, {
   defenderRig: defender.rig,
   buckler,
 });
-const parallelBodyRuntime = createParallelParryBodyStaggerRuntime(THREE, {
+const balanceBreakRuntime = createParryBackwardBalanceBreakRuntime(THREE, {
   rig: attacker.rig,
 });
 
@@ -149,7 +148,8 @@ let latestCombatResult = null;
 let latestCombatUpdate = null;
 let latestCouplingReport = null;
 let latestBlockGiveReport = null;
-let latestParallelBodyReport = null;
+let latestBalanceBreakReport = null;
+let latestConstraintReapply = null;
 let latestPredictiveReport = null;
 let latestPredictiveHandoff = null;
 let repeatCooldownMs = 0;
@@ -170,9 +170,9 @@ function marker(name, color, radius) {
   scene.add(node);
   return node;
 }
-const predictedMarker = marker('G43B5R25_PREDICTED', 0x6df0a7, 0.048);
-const contactMarker = marker('G43B5R25_CONTACT', 0xff625f, 0.062);
-const driveMarker = marker('G43B5R25_SHIELD_DRIVE', 0x59d9ff, 0.042);
+const predictedMarker = marker('G43B5R26_PREDICTED', 0x6df0a7, 0.048);
+const contactMarker = marker('G43B5R26_CONTACT', 0xff625f, 0.062);
+const driveMarker = marker('G43B5R26_SHIELD_DRIVE', 0x59d9ff, 0.042);
 const bladeNodes = [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip];
 const bladeScratch = bladeNodes.map(() => new THREE.Vector3());
 const bladeBuffers = [0, 1].map(() => bladeNodes.map(() => ({ x: 0, y: 0, z: 0 })));
@@ -225,7 +225,7 @@ function sampleAttacker(snapshot, deltaMs) {
 function resetExchange() {
   couplingRuntime.reset();
   blockGiveRuntime.reset();
-  parallelBodyRuntime.reset();
+  balanceBreakRuntime.reset();
   predictivePresentation.reset();
   trackingRuntime.reset();
   couplingReleasePose = null;
@@ -235,7 +235,8 @@ function resetExchange() {
   latestCombatUpdate = null;
   latestCouplingReport = null;
   latestBlockGiveReport = null;
-  latestParallelBodyReport = null;
+  latestBalanceBreakReport = null;
+  latestConstraintReapply = null;
   latestPredictiveReport = null;
   latestPredictiveHandoff = null;
   latestAnalysis = null;
@@ -249,7 +250,7 @@ function resetExchange() {
   driveMarker.visible = false;
 }
 function startAttack(direction = selectedDirection) {
-  if (!ready || combat.active || attackRuntime.active || couplingRuntime.active || blockGiveRuntime.active || parallelBodyRuntime.active) return false;
+  if (!ready || combat.active || attackRuntime.active || couplingRuntime.active || blockGiveRuntime.active || balanceBreakRuntime.active) return false;
   if (guardMachine.state !== GUARD_STATES.HOLD) enterGuard();
   selectedDirection = direction;
   resetExchange();
@@ -316,8 +317,8 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
     latestCouplingReport = null;
     combat.update(0, { camera });
   } else {
-    parallelBodyRuntime.start({ outcome, plan: latestCombatResult.recoilPlan });
-    latestParallelBodyReport = parallelBodyRuntime.update(0);
+    balanceBreakRuntime.start({ outcome, plan: latestCombatResult.recoilPlan });
+    latestBalanceBreakReport = balanceBreakRuntime.update(0);
     couplingRuntime.start({ outcome, attackDirection: latestCombatResult.resolution.attackDirection, contact: latestContact, surfaceAtContact });
     combat.update(0, { camera });
     latestCouplingReport = couplingRuntime.update(0);
@@ -325,23 +326,46 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
   attacker.update(0, camera); defender.update(0, camera); attackerSword.update(); defenderSword?.update();
 }
 
+function rebuildNeutralCouplingReleaseBase() {
+  latestCombatUpdate = combat.update(0, { camera });
+  latestConstraintReapply = couplingRuntime.reapplyAttackerConstraint(latestCouplingReport);
+  attacker.update(0, camera);
+  attackerSword.update();
+  couplingReleasePose = captureRigPose(attacker.rig);
+  attackerSword.tip.getWorldPosition(releaseTipPosition);
+  releaseTipCaptured = true;
+  maxReleaseTipDisplacementMeters = 0;
+}
+
+function restoreVisibleBalanceBreakAtRelease() {
+  latestCombatUpdate = combat.update(0, { camera });
+  if (balanceBreakRuntime.active) latestBalanceBreakReport = balanceBreakRuntime.update(0);
+  latestConstraintReapply = couplingRuntime.reapplyAttackerConstraint(latestCouplingReport);
+  attacker.update(0, camera);
+  attackerSword.update();
+}
+
 function updateCoupling(deltaSeconds) {
   if (!couplingRuntime.active) return false;
+
+  // G4.3B.5R.2.6 ownership: frozen contact base -> backward body break ->
+  // shield/weapon contact constraint LAST. This prevents chest parent motion
+  // from fighting the right-arm IK on the same visible frame.
   latestCombatUpdate = combat.update(0, { camera });
+  if (balanceBreakRuntime.active) latestBalanceBreakReport = balanceBreakRuntime.update(deltaSeconds);
   latestCouplingReport = couplingRuntime.update(deltaSeconds);
   attacker.update(0, camera); defender.update(0, camera); attackerSword.update(); defenderSword?.update();
+
   if (latestCouplingReport?.finalSurface?.center) {
     const p = latestCouplingReport.finalSurface.center;
     driveMarker.position.set(p.x, p.y, p.z); driveMarker.visible = true;
   }
   if (latestCouplingReport?.complete) {
-    // Capture the coupling-only attacker pose BEFORE G4.3B.5R.2.5 body stagger
-    // is applied later in the frame. This prevents the early stagger from
-    // becoming the permanent B3 base pose.
-    couplingReleasePose = captureRigPose(attacker.rig);
-    attackerSword.tip.getWorldPosition(releaseTipPosition);
-    releaseTipCaptured = true;
-    maxReleaseTipDisplacementMeters = 0;
+    // Store a neutral-torso B3 base while preserving the exact terminal hand
+    // constraint. Then reconstruct the visible backward-break pose for this
+    // render frame. The body lean therefore cannot become a permanent base.
+    rebuildNeutralCouplingReleaseBase();
+    restoreVisibleBalanceBreakAtRelease();
     trackingRuntime.reset();
     driveMarker.visible = false;
   }
@@ -363,9 +387,9 @@ function updateBlockGive(deltaSeconds) {
   return true;
 }
 
-function updateParallelBody(deltaSeconds) {
-  if (!parallelBodyRuntime.active) return false;
-  latestParallelBodyReport = parallelBodyRuntime.update(deltaSeconds);
+function updateBalanceBreak(deltaSeconds) {
+  if (!balanceBreakRuntime.active) return false;
+  latestBalanceBreakReport = balanceBreakRuntime.update(deltaSeconds);
   attacker.update(0, camera);
   attackerSword.update();
   return true;
@@ -394,7 +418,7 @@ function updateHud(snapshot, combatSnapshot) {
   const recoil = combatSnapshot.attackerRecoil?.sample;
   const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
   const refresh = latestCombatUpdate?.attackerVisualRefreshApplied === true ? 'REFRESH YES' : 'refresh —';
-  const body = latestParallelBodyReport;
+  const balance = latestBalanceBreakReport;
   hudAttack.textContent = `Requested: ${requested.toUpperCase()} · Actual: ${actual.toUpperCase()}${mismatch ? ' ⚠ DOWNGRADED/MISMATCH' : ''} · intent ${intent == null ? '—' : `${intent.toFixed(0)}ms`}`;
   hudContact.textContent = firstContact ? `Contact: YES · radial ${firstContact.radialDistance.toFixed(3)}m · blade ${firstContact.bladeFraction.toFixed(2)} · response ${responseClass}` : 'Contact: —';
 
@@ -404,22 +428,22 @@ function updateHud(snapshot, combatSnapshot) {
     hudWeapon.textContent = 'Weapon authority: original B2/B3 · NO shield follow · NO post-coupling handoff';
   } else {
     hudCoupling.textContent = latestCouplingReport
-      ? `PARRY coupling: ${latestCouplingReport.phase} ${latestCouplingReport.elapsedMs.toFixed(0)}ms · weapon B3 HELD · body ${body?.phase || '—'} ${(body?.weight ?? 0).toFixed(2)}`
+      ? `PARRY coupling: ${latestCouplingReport.phase} ${latestCouplingReport.elapsedMs.toFixed(0)}ms · BODY FIRST → CONTACT LAST`
       : 'Coupling: —';
     hudShield.textContent = latestCouplingReport?.shieldOffset ? `Shield drive: ${(magnitude(latestCouplingReport.shieldOffset) * 100).toFixed(1)}cm` : 'Shield drive: —';
-    hudWeapon.textContent = latestCouplingReport?.attackerWeaponOffset ? `Weapon follow: ${(magnitude(latestCouplingReport.attackerWeaponOffset) * 100).toFixed(1)}cm · source=shield` : 'Weapon follow: —';
+    hudWeapon.textContent = latestCouplingReport?.attackerWeaponOffset ? `Weapon follow: ${(magnitude(latestCouplingReport.attackerWeaponOffset) * 100).toFixed(1)}cm · terminal constraint ${latestConstraintReapply?.applied ? 'READY' : '—'}` : 'Weapon follow: —';
   }
 
   const targetDistance = recoil?.profile?.releaseSeparationDistanceMeters || 0;
   const targetWindow = recoil?.profile?.releaseSeparationWindowMs || postHandoff?.separation?.releaseWindowMs || 0;
   hudSeparation.textContent = targetDistance > 0 || maxReleaseTipDisplacementMeters > 0
-    ? `Release separation: phase ${recoil?.phase || '—'} · target ${(targetDistance * 100).toFixed(1)}cm / ${targetWindow.toFixed(0)}ms · tip ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm`
+    ? `Release separation: ${recoil?.phase || '—'} · ${(targetDistance * 100).toFixed(1)}cm / ${targetWindow.toFixed(0)}ms · tip ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm`
     : 'Release separation: BLOCK immediate / PARRY after coupling';
   hudRecoil.textContent = couplingRuntime.active
-    ? `B3 weapon: LOCKED · Parallel body: ${body?.phase || 'wait'} ${(body?.weight ?? 0).toFixed(2)} · root locked`
+    ? `Backward break: ${balance?.phase || 'wait'} ${(balance?.weight ?? 0).toFixed(2)} · chest-back ${(balance?.chestBackwardDegrees ?? 0).toFixed(1)}° · weapon B3 LOCKED`
     : recoil
-      ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · parallel body ${body?.weight?.toFixed(2) ?? '0.00'} · ${refresh}`
-      : `B3 recoil: — · parallel body ${body?.weight?.toFixed(2) ?? '0.00'} · ${refresh}`;
+      ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · backward ${(balance?.chestBackwardDegrees ?? 0).toFixed(1)}° · ${refresh}`
+      : `B3 recoil: — · backward ${(balance?.chestBackwardDegrees ?? 0).toFixed(1)}° · ${refresh}`;
 }
 
 function buildReport(combatSnapshot = combat.snapshot) {
@@ -443,19 +467,21 @@ function buildReport(combatSnapshot = combat.snapshot) {
       actualOutcome,
       responseClass: resolution?.attacker?.responseClass || null,
       blockReboundAuthority: block ? 'original-B2-B3-immediate' : null,
-      parryWeaponAuthority: !block && actualOutcome ? 'shield-driven-coupling' : null,
-      parryBodyAuthority: !block && actualOutcome ? PARALLEL_PARRY_BODY_STAGGER_STAGE : null,
+      parryWeaponAuthority: !block && actualOutcome ? 'shield-driven-coupling-contact-constraint-last' : null,
+      parryBodyAuthority: !block && actualOutcome ? PARRY_BACKWARD_BALANCE_BREAK_STAGE : null,
       postCouplingStage: postHandoff?.stage || null,
+      terminalConstraintReapply: latestConstraintReapply?.applied === true,
       attackerVisualRefreshApplied: latestCombatUpdate?.attackerVisualRefreshApplied === true,
     },
-    parallelBody: latestParallelBodyReport ? {
-      stage: latestParallelBodyReport.stage,
-      phase: latestParallelBodyReport.phase,
-      elapsedMs: latestParallelBodyReport.elapsedMs,
-      weight: latestParallelBodyReport.weight,
-      weaponChannelsTouched: latestParallelBodyReport.weaponChannelsTouched,
-      rightArmChannelsTouched: latestParallelBodyReport.rightArmChannelsTouched,
-      rootMotion: latestParallelBodyReport.rootMotion,
+    balanceBreak: latestBalanceBreakReport ? {
+      stage: latestBalanceBreakReport.stage,
+      phase: latestBalanceBreakReport.phase,
+      elapsedMs: latestBalanceBreakReport.elapsedMs,
+      weight: latestBalanceBreakReport.weight,
+      chestBackwardDegrees: latestBalanceBreakReport.chestBackwardDegrees,
+      bodyFirst: latestBalanceBreakReport.bodyFirst,
+      contactConstraintLast: latestBalanceBreakReport.contactConstraintLast,
+      rootMotion: latestBalanceBreakReport.rootMotion,
     } : null,
     blockGive: latestBlockGiveReport ? {
       phase: latestBlockGiveReport.phase,
@@ -471,7 +497,7 @@ function buildReport(combatSnapshot = combat.snapshot) {
       shieldDriveMeters: magnitude(latestCouplingReport.shieldOffset),
       attackerWeaponFollowMeters: magnitude(latestCouplingReport.attackerWeaponOffset),
       complete: latestCouplingReport.complete,
-      recoilBaseCaptured: Boolean(couplingReleasePose),
+      neutralRecoilBaseCaptured: Boolean(couplingReleasePose),
     } : null,
     recoil: recoil ? {
       phase: recoil.phase,
@@ -485,17 +511,17 @@ function buildReport(combatSnapshot = combat.snapshot) {
       blockB3ClockFrozen: false,
       blockShieldGiveRunsParallelToAttackerBounce: true,
       parryWeaponB3ClockFrozenDuringCoupling: true,
-      parryBodyStaggerRunsDuringCoupling: true,
-      parryBodyStartsByAbout40ms: true,
-      parallelBodyNeverTouchesWeaponOrRightArm: true,
-      couplingReleasePoseCapturedBeforeParallelBodyApplication: true,
+      parryBackwardBalanceBreakRunsDuringCoupling: true,
+      backwardPitchDominatesLateralTwist: true,
+      bodyAppliedBeforeContactConstraint: true,
+      terminalHandConstraintReappliedForNeutralB3Base: true,
+      plantedRootNoTranslation: true,
       postAdditiveAttackerAppearanceRefresh: true,
-      rootMotion: false,
     },
   };
   reportNode.textContent = JSON.stringify(report, null, 2);
-  document.documentElement.dataset.g43b5r25 = report.pass ? 'pass' : 'fail';
-  window.__G43B5R25_RESULT__ = report;
+  document.documentElement.dataset.g43b5r26 = report.pass ? 'pass' : 'fail';
+  window.__G43B5R26_RESULT__ = report;
   return report;
 }
 
@@ -515,7 +541,7 @@ async function main() {
   mountDebugSword(defender, defenderSword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
   enterGuard();
   ready = true;
-  status.textContent = `${LAB_STAGE} READY · BLOCK unchanged · PARRY weapon coupling + parallel exaggerated body stagger`;
+  status.textContent = `${LAB_STAGE} READY · BLOCK unchanged · PARRY = backward balance-break → shield constraint → recoil`;
   status.className = 'good';
   buildReport(); startAttack('right');
 }
@@ -546,8 +572,9 @@ function frame(timestamp) {
     if (!predictivePresentation.active) guardRuntime.update(deltaMs, camera);
     attackerSword.update(); defenderSword?.update();
 
+    let balanceAdvancedWithCoupling = false;
     if (parryCouplingOwnsWeapon) {
-      updateCoupling(deltaSeconds);
+      balanceAdvancedWithCoupling = updateCoupling(deltaSeconds);
     } else {
       const currentBlade = captureBladePolyline();
       updatePreContact(snapshot, currentBlade, deltaSeconds);
@@ -556,17 +583,14 @@ function frame(timestamp) {
     }
 
     updateBlockGive(deltaSeconds);
-    // This is intentionally AFTER combat/coupling base sampling. During Parry
-    // coupling the weapon remains shield-owned while chest/spine/hips/legs
-    // begin reacting on the contact-relative .2.5 clock.
-    updateParallelBody(deltaSeconds);
+    if (!balanceAdvancedWithCoupling) updateBalanceBreak(deltaSeconds);
     registerWhiff(snapshot);
     const combatSnapshot = combat.snapshot;
     updateReleaseSeparationProbe(combatSnapshot);
     hudClockMs += deltaMs; reportClockMs += deltaMs;
     if (hudClockMs >= HUD_INTERVAL_MS) { hudClockMs %= HUD_INTERVAL_MS; updateHud(snapshot, combatSnapshot); }
     if (reportClockMs >= REPORT_INTERVAL_MS) { reportClockMs %= REPORT_INTERVAL_MS; buildReport(combatSnapshot); }
-    if (!combat.active && !attackRuntime.active && !couplingRuntime.active && !blockGiveRuntime.active && !parallelBodyRuntime.active && guardMachine.state === GUARD_STATES.HOLD && autoRepeat.checked) {
+    if (!combat.active && !attackRuntime.active && !couplingRuntime.active && !blockGiveRuntime.active && !balanceBreakRuntime.active && guardMachine.state === GUARD_STATES.HOLD && autoRepeat.checked) {
       repeatCooldownMs += deltaMs;
       if (repeatCooldownMs >= 700) startAttack(selectedDirection);
     }
@@ -576,18 +600,19 @@ function frame(timestamp) {
 }
 requestAnimationFrame(frame);
 main().catch((error) => {
-  document.documentElement.dataset.g43b5r25 = 'fail';
+  document.documentElement.dataset.g43b5r26 = 'fail';
   status.textContent = `${LAB_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G43B5R25_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
+  window.__G43B5R26_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
 });
-window.__G43B5R25_LAB__ = {
-  startAttack, setMode, combat, attackRuntime, guardMachine, couplingRuntime, blockGiveRuntime, parallelBodyRuntime, trackingRuntime, buckler,
+window.__G43B5R26_LAB__ = {
+  startAttack, setMode, combat, attackRuntime, guardMachine, couplingRuntime, blockGiveRuntime, balanceBreakRuntime, trackingRuntime, buckler,
   get latestContact() { return latestContact; },
   get latestCouplingReport() { return latestCouplingReport; },
   get latestBlockGiveReport() { return latestBlockGiveReport; },
-  get latestParallelBodyReport() { return latestParallelBodyReport; },
+  get latestBalanceBreakReport() { return latestBalanceBreakReport; },
+  get latestConstraintReapply() { return latestConstraintReapply; },
   get latestCombatResult() { return latestCombatResult; },
   get latestCombatUpdate() { return latestCombatUpdate; },
 };
