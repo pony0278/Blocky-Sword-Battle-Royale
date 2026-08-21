@@ -5,6 +5,11 @@ import { createDirectionalRecoilPlanner } from './directional-recoil-planner.js'
 import { createAttackerRecoilPresentationRuntime } from './attacker-recoil-presentation.js';
 
 export const TWO_ACTOR_COMBAT_INTEGRATION_STAGE = 'G4.3B.4';
+export const TWO_ACTOR_PARRY_SYNC_STAGE = 'G4.3B.5';
+
+export const TWO_ACTOR_PARRY_SYNC_PROFILE = Object.freeze({
+  presentationOffsetSeconds: 0.205,
+});
 
 export const TWO_ACTOR_COMBAT_PHASES = Object.freeze({
   IDLE: 'idle',
@@ -14,6 +19,33 @@ export const TWO_ACTOR_COMBAT_PHASES = Object.freeze({
 
 function freeze(value) {
   return Object.freeze(value);
+}
+
+function finite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, finite(value, min)));
+}
+
+export function buildSynchronizedDefenderPayload(resolution, overrides = {}) {
+  const payload = resolution?.defender?.payload || {};
+  const outcome = String(resolution?.outcome || '');
+  const parry = outcome === 'parry' || outcome === 'perfect-parry';
+  if (!parry) return freeze({ ...payload });
+  const presentationOffsetSeconds = clamp(
+    overrides.presentationOffsetSeconds ?? TWO_ACTOR_PARRY_SYNC_PROFILE.presentationOffsetSeconds,
+    0,
+    0.35,
+  );
+  return freeze({
+    ...payload,
+    presentationOffsetSeconds,
+    presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
+    presentationSyncIntent: 'defender-deflect-motion-leads-attacker-recoil-after-authoritative-contact',
+  });
 }
 
 function integrationFailure(reason, snapshot, extra = {}) {
@@ -32,6 +64,7 @@ export function createTwoActorCombatIntegration(options = {}) {
   const outcomeGate = options.outcomeGate || createGuardOutcomeResolutionGate(options.outcomeOptions);
   const recoilPlanner = options.recoilPlanner || createDirectionalRecoilPlanner(options.recoilOptions);
   const attackerCharacter = options.attackerCharacter || null;
+  const parrySync = options.parrySync || {};
   const sampleFrozenContactPose = typeof options.sampleFrozenContactPose === 'function'
     ? options.sampleFrozenContactPose
     : null;
@@ -76,6 +109,7 @@ export function createTwoActorCombatIntegration(options = {}) {
   function snapshot(extra = {}) {
     return freeze({
       stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
+      presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
       phase: phase(),
       attack: attackRuntime.snapshot,
       defenderGuard: guardMachine.snapshot,
@@ -226,7 +260,8 @@ export function createTwoActorCombatIntegration(options = {}) {
     }
 
     const enterBridge = bridgeGuardEnterForCombatOutcome(resolution);
-    const defenderDispatch = guardMachine.send(resolution.defender.event, resolution.defender.payload);
+    const defenderPayload = buildSynchronizedDefenderPayload(resolution, parrySync);
+    const defenderDispatch = guardMachine.send(resolution.defender.event, defenderPayload);
     if (!defenderDispatch.accepted) {
       rollbackResolvedSequence(resolution.attackSequence);
       rememberFailure('defender-event-dispatch-failed', {
@@ -239,12 +274,14 @@ export function createTwoActorCombatIntegration(options = {}) {
         recoilPlan,
         recoilStart,
         enterBridge,
+        defenderPayload,
         defenderDispatch,
       });
     }
 
     activeExchange = freeze({
       stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
+      presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
       sequence: resolution.attackSequence,
       attackDirection: resolution.attackDirection,
       outcome: resolution.outcome,
@@ -254,6 +291,7 @@ export function createTwoActorCombatIntegration(options = {}) {
       recoilPlan,
       defenderEvent: resolution.defender.event,
       defenderReactionVariant: resolution.defender.reactionVariant,
+      defenderPresentationOffsetSeconds: defenderPayload.presentationOffsetSeconds || 0,
       enterBridgeApplied: Boolean(enterBridge?.accepted),
     });
     lastFailure = null;
@@ -267,6 +305,7 @@ export function createTwoActorCombatIntegration(options = {}) {
       recoilPlan,
       recoilStart,
       enterBridge,
+      defenderPayload,
       defenderDispatch,
       snapshot: snapshot(),
     });
