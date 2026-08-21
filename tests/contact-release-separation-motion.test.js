@@ -65,13 +65,14 @@ test('G4.3B.5R.2.7 Parry handoff bypasses separation and enters B3 impulse direc
   const sample = sampleAttackerRecoilPresentation(handoff.plan, handoff.initialElapsedMs, handoff.profileOverrides);
   assert.equal(handoff.separation.releaseWindowMs, 0);
   assert.equal(handoff.separation.bypassedForWholeBodyBurst, true);
+  assert.equal(handoff.profileOverrides.legStrengthScale, 1.45);
   assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE);
   assert.equal(sample.pose.releaseSeparationDistanceMeters, 0);
   assert.ok(sample.weights.armWeight > 0.35);
   assert.ok(sample.weights.torsoWeight > 0.1);
 });
 
-test('G4.3B.5R.2.7 first 30fps frame after release is near whole-body impulse peak', () => {
+test('G4.3B.5R.2.7 first 30fps frame after release is near whole-body impulse peak with visible knee rescue', () => {
   const handoff = buildPostCouplingRecoilStaggerHandoff({
     plan: recoilPlan(), couplingReport: couplingReport(), baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
@@ -80,6 +81,9 @@ test('G4.3B.5R.2.7 first 30fps frame after release is near whole-body impulse pe
   assert.ok(sample.weights.armWeight > 0.9);
   assert.ok(sample.weights.torsoWeight > 0.8);
   assert.ok(sample.weights.legWeight > 0.5);
+  assert.ok(Math.max(sample.pose.leftKneeBendDegrees, sample.pose.rightKneeBendDegrees) > 6.5);
+  assert.ok(Math.abs(sample.pose.chestYawDegrees) > 5, 'parent-chain shoulder opening must be visible');
+  assert.ok(Math.abs(sample.pose.chestPitchDegrees) > 10, 'backward almost-fall bias must remain dominant');
   assert.equal(sample.pose.releaseSeparationDistanceMeters, 0);
 });
 
@@ -92,6 +96,7 @@ test('G4.3B.5R.2.7 Perfect also bypasses separation and preserves a stronger dir
   });
   assert.equal(parry.separation.releaseWindowMs, 0);
   assert.equal(perfect.separation.releaseWindowMs, 0);
+  assert.equal(perfect.profileOverrides.legStrengthScale, 1.5);
   assert.ok(perfect.plan.weapon.deflectDegrees > parry.plan.weapon.deflectDegrees);
   assert.ok(Math.abs(perfect.plan.body.pitchDegrees) > Math.abs(parry.plan.body.pitchDegrees));
   assert.ok(perfect.profileOverrides.settleEndMs > parry.profileOverrides.settleEndMs);
