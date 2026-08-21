@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3B.4 Two Actor Combat Integration</title>
+  <title>G4.3B.5 Contact-Synchronized Parry</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 430px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block;touch-action:none}
@@ -21,18 +21,18 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3B.4 · Two Actor Combat Integration</b>
+      <b>G4.3B.5 · Contact-Synchronized Parry</b>
       <div id="hudAttack">Attack: loading…</div>
       <div id="hudOutcome">Outcome: —</div>
       <div id="hudContact">Contact: —</div>
       <div id="hudRecoil">Recoil: —</div>
       <div id="hudDefender">Defender: —</div>
     </div>
-    <div class="legend">Red = G4.3A real contact · attacker recoil = B.2 vector + B.3 additive pose · defender = Skyrim Guard reaction</div>
+    <div class="legend">Red = final G4.3A contact after Fine Tracking · defender deflect visually leads attacker recoil</div>
   </main>
   <aside>
-    <h1>Two Actor Combat Integration</h1>
-    <div class="note">這一頁把 G4.3A → G4.3A.4 → G4.3B.1 → B.2 → B.3 串成一次完整交換。攻擊者在真正 Sword × Buckler contact 被凍結，接著按 incoming velocity 彈開；防守者同一 tick 收到 Block / Parry authoritative event。</div>
+    <h1>Contact-Synchronized Parry</h1>
+    <div class="note">B.5 保留 B.4 的完整 combat chain，但修正三件事：Parry 視覺 pre-roll 讓防守者先開始撥劍、恢復最多 7cm Fine Guard Tracking 以接住 LEFT、並降低 debug HUD/report 與 render density 以減少卡頓。</div>
 
     <h2>Attack direction</h2>
     <div class="row"><button data-attack="top">TOP</button><button data-attack="right" class="active">RIGHT</button><button data-attack="left">LEFT</button></div>
@@ -43,8 +43,10 @@
       <span>BLOCK test age</span><b>260 ms</b>
       <span>PARRY test age</span><b>120 ms</b>
       <span>PERFECT test age</span><b>50 ms</b>
-      <span>Contact authority</span><b>G4.3A swept geometry</b>
-      <span>Duplicate contact</span><b>one result / attack sequence</b>
+      <span>Parry visual pre-roll</span><b>205 ms</b>
+      <span>Attacker recoil gate</span><b>14–20 ms</b>
+      <span>Fine Guard Tracking</span><b>max 0.07 m</b>
+      <span>Contact authority</span><b>final swept geometry</b>
     </div>
     <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat after defender returns Hold</label>
     <label class="toggle"><input id="showSurface" type="checkbox" checked> Show Buckler parry surface</label>
@@ -55,16 +57,24 @@
     <h2>Expected chain</h2>
     <div class="metric">
       <span>1</span><b>Directional attack</b>
-      <span>2</span><b>Swept contact</b>
-      <span>3</span><b>Outcome resolution</b>
+      <span>2</span><b>Body brace + Fine Tracking</b>
+      <span>3</span><b>Final swept contact</b>
       <span>4</span><b>Freeze contact pose</b>
-      <span>5</span><b>Directional recoil</b>
-      <span>6</span><b>Defender reaction</b>
-      <span>7</span><b>Attacker handoff</b>
+      <span>5</span><b>Defender starts redirect</b>
+      <span>6</span><b>Attacker directional recoil</b>
+      <span>7</span><b>Handoff / recovery</b>
+    </div>
+
+    <h2>Debug performance</h2>
+    <div class="metric">
+      <span>HUD refresh</span><b>20 Hz</b>
+      <span>JSON report</span><b>5 Hz</b>
+      <span>Pixel ratio cap</span><b>1.5</b>
+      <span>Blade polyline</span><b>double-buffered</b>
     </div>
 
     <h2>Verification</h2>
-    <div id="status" class="warn">Loading G4.3B.4…</div>
+    <div id="status" class="warn">Loading G4.3B.5…</div>
     <pre id="report">Not run.</pre>
   </aside>
   <script type="module" src="./two-actor-combat-integration-lab.js"></script>
