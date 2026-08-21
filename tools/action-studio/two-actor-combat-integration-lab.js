@@ -19,6 +19,8 @@ import {
 import { captureRigPose, applyRigPose, blendRecoveryPose } from '../../src/combat/guard-recovery-bridge.js';
 import { sampleLongswordAttackRecovery } from '../../src/combat/longsword-contact-recovery-presentation.js';
 import { probeSweptSwordBucklerContact } from '../../src/combat/swept-sword-buckler-contact.js';
+import { createGuardThreatTrackingRuntime } from '../../src/combat/guard-threat-tracking.js';
+import { planFineGuardTracking } from '../../src/combat/directional-guard-bracing.js';
 import {
   createArticulatedImpactBracingRuntime,
   planArticulatedImpactBracing,
@@ -26,17 +28,20 @@ import {
 import {
   createTwoActorCombatIntegration,
   TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
+  TWO_ACTOR_PARRY_SYNC_STAGE,
 } from '../../src/combat/two-actor-combat-integration.js';
 
 const THREE = window.THREE;
 if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) {
-  throw new Error('G4.3B.4 requires Three.js r128 + GLTFLoader');
+  throw new Error('G4.3B.5 requires Three.js r128 + GLTFLoader');
 }
 
 const TIMING_AGE_MS = Object.freeze({ block: 260, parry: 120, perfect: 50 });
+const HUD_INTERVAL_MS = 50;
+const REPORT_INTERVAL_MS = 200;
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.shadowMap.enabled = true;
 
@@ -82,6 +87,10 @@ const bracingRuntime = createArticulatedImpactBracingRuntime(THREE, {
   rig: defender.rig,
   buckler,
 });
+const fineTrackingRuntime = createGuardThreatTrackingRuntime(THREE, {
+  rig: defender.rig,
+  buckler,
+});
 const combat = createTwoActorCombatIntegration({
   THREE,
   attackerCharacter: attacker,
@@ -113,7 +122,11 @@ let firstContact = null;
 let latestCombatResult = null;
 let latestCombatUpdate = null;
 let latestBracing = null;
+let latestFinePlan = null;
+let latestFineTracking = null;
 let guardReport = null;
+let hudClockMs = HUD_INTERVAL_MS;
+let reportClockMs = REPORT_INTERVAL_MS;
 
 function marker(name, color, radius = 0.065) {
   const node = new THREE.Mesh(
@@ -126,7 +139,7 @@ function marker(name, color, radius = 0.065) {
   return node;
 }
 
-const contactMarker = marker('G43B4_CONTACT', 0xff625f);
+const contactMarker = marker('G43B5_CONTACT', 0xff625f);
 
 function resize() {
   const width = Math.max(1, canvas.clientWidth);
@@ -145,19 +158,29 @@ function setView(view) {
   camera.updateMatrixWorld(true);
 }
 
+const bladeNodes = [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip];
+const bladeScratch = bladeNodes.map(() => new THREE.Vector3());
+const bladeBuffers = [0, 1].map(() => bladeNodes.map(() => ({ x: 0, y: 0, z: 0 })));
+let bladeBufferIndex = 0;
+
 function captureBladePolyline() {
   attackerSword.object3d.updateMatrixWorld(true);
-  return [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip].map((node) => {
-    const point = new THREE.Vector3();
-    node.getWorldPosition(point);
-    return { x: point.x, y: point.y, z: point.z };
-  });
+  const buffer = bladeBuffers[bladeBufferIndex];
+  bladeBufferIndex = 1 - bladeBufferIndex;
+  for (let index = 0; index < bladeNodes.length; index += 1) {
+    const point = bladeScratch[index];
+    bladeNodes[index].getWorldPosition(point);
+    buffer[index].x = point.x;
+    buffer[index].y = point.y;
+    buffer[index].z = point.z;
+  }
+  return buffer;
 }
 
 function enterProductionGuard() {
-  guardMachine.send(GUARD_EVENTS.RESET, { stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE });
+  guardMachine.send(GUARD_EVENTS.RESET, { stage: TWO_ACTOR_PARRY_SYNC_STAGE });
   guardRuntime.sync(camera);
-  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE });
+  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: TWO_ACTOR_PARRY_SYNC_STAGE });
   guardRuntime.sync(camera);
   guardReport = guardRuntime.update(180, camera);
   if (guardReport.snapshot.state !== GUARD_STATES.HOLD) {
@@ -230,7 +253,10 @@ function startAttack(direction = selectedDirection) {
   latestContact = null;
   latestCombatResult = null;
   latestCombatUpdate = null;
+  latestFinePlan = null;
+  latestFineTracking = null;
   bracingRuntime.resetImpact();
+  fineTrackingRuntime.reset();
   contactMarker.visible = false;
   repeatCooldownMs = 0;
   previousBlade = captureBladePolyline();
@@ -286,61 +312,108 @@ function updateContact(snapshot, currentBlade, deltaSeconds) {
   });
 }
 
-function updateHud(snapshot) {
-  const exchange = combat.snapshot.activeExchange || combat.snapshot.lastExchange;
-  const recoilSample = combat.snapshot.attackerRecoil?.sample;
+function updateHud(snapshot, combatSnapshot, guardSnapshot) {
+  const exchange = combatSnapshot.activeExchange || combatSnapshot.lastExchange;
+  const recoilSample = combatSnapshot.attackerRecoil?.sample;
+  const fine = latestFinePlan;
   hudAttack.textContent = `Attack: ${snapshot.direction?.toUpperCase() || selectedDirection.toUpperCase()} · ${snapshot.phase}`;
   hudOutcome.textContent = exchange
     ? `Outcome: ${exchange.outcome.toUpperCase()} · ${exchange.responseClass}`
     : `Outcome: waiting · requested ${selectedGrade.toUpperCase()} (${TIMING_AGE_MS[selectedGrade]}ms)`;
   hudContact.textContent = firstContact
     ? `Contact: ACTIVE · radial ${firstContact.radialDistance.toFixed(3)}m · speed ${Math.hypot(firstContact.incomingVelocity.x, firstContact.incomingVelocity.y, firstContact.incomingVelocity.z).toFixed(2)}m/s`
-    : 'Contact: —';
+    : fine
+      ? `Contact: — · fine ${(fine.appliedDistance * 100).toFixed(1)}/${(fine.requiredDistance * 100).toFixed(1)}cm · ${fine.reason}`
+      : 'Contact: —';
   hudRecoil.textContent = recoilSample
     ? `Recoil: ${recoilSample.phase} · arm ${recoilSample.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoilSample.weights?.torsoWeight?.toFixed(2) ?? '—'}`
     : 'Recoil: —';
-  hudDefender.textContent = `Defender: ${guardMachine.state} · ${guardMachine.snapshot.presentation?.reactionVariant || guardMachine.snapshot.presentation?.role || '—'}`;
+  hudDefender.textContent = `Defender: ${guardSnapshot.state} · ${guardSnapshot.presentation?.reactionVariant || guardSnapshot.presentation?.role || '—'}`;
 }
 
-function buildReport() {
-  const exchange = combat.snapshot.activeExchange || combat.snapshot.lastExchange;
+function compactExchange(exchange) {
+  if (!exchange) return null;
+  return {
+    sequence: exchange.sequence,
+    attackDirection: exchange.attackDirection,
+    outcome: exchange.outcome,
+    responseClass: exchange.responseClass,
+    defenderReactionVariant: exchange.defenderReactionVariant,
+    defenderPresentationOffsetSeconds: exchange.defenderPresentationOffsetSeconds || 0,
+    attackerHandoffReleased: Boolean(exchange.attackerHandoffReleased),
+  };
+}
+
+function compactContact(contact) {
+  if (!contact) return null;
+  return {
+    contact: contact.contact,
+    reason: contact.reason,
+    radialDistance: contact.radialDistance,
+    bladeFraction: contact.bladeFraction,
+    sweepAlpha: contact.sweepAlpha,
+    incomingVelocity: contact.incomingVelocity,
+  };
+}
+
+function buildReport(combatSnapshot = combat.snapshot, guardSnapshot = guardMachine.snapshot) {
+  const exchange = combatSnapshot.activeExchange || combatSnapshot.lastExchange;
   const report = {
-    stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
+    stage: TWO_ACTOR_PARRY_SYNC_STAGE,
+    baseIntegrationStage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
     pass: ready,
     selectedDirection,
     selectedGrade,
     timingAgeMs: TIMING_AGE_MS[selectedGrade],
-    combatPhase: combat.snapshot.phase,
+    combatPhase: combatSnapshot.phase,
     attackPhase: attackRuntime.snapshot.phase,
-    defenderState: guardMachine.state,
-    exchange,
-    latestCombatResult,
-    latestCombatUpdate,
-    firstContact,
-    latestBracing,
+    defenderState: guardSnapshot.state,
+    exchange: compactExchange(exchange),
+    latestCombatResult: latestCombatResult
+      ? { accepted: latestCombatResult.accepted, reason: latestCombatResult.reason, outcome: latestCombatResult.resolution?.outcome || null }
+      : null,
+    latestCombatUpdate: latestCombatUpdate
+      ? { updated: latestCombatUpdate.updated, justCompleted: Boolean(latestCombatUpdate.justCompleted) }
+      : null,
+    firstContact: compactContact(firstContact),
+    fineTracking: latestFinePlan
+      ? {
+          requiredDistance: latestFinePlan.requiredDistance,
+          appliedDistance: latestFinePlan.appliedDistance,
+          reachable: latestFinePlan.reachable,
+          reason: latestFinePlan.reason,
+          achievedDistance: latestFineTracking?.achievedDistance || 0,
+        }
+      : null,
     authority: {
-      contact: 'G4.3A swept geometry',
+      contact: 'G4.3A swept geometry after final fine-tracked Buckler surface',
       outcome: 'G4.3A.4 resolution gate',
       interruption: 'G4.3B.1 frozen source pose',
       recoilPlan: 'G4.3B.2 incoming-vector planner',
       recoilPresentation: 'G4.3B.3 additive attacker pose',
       orchestration: 'G4.3B.4',
+      contactSynchronization: TWO_ACTOR_PARRY_SYNC_STAGE,
     },
     invariants: {
+      fineTrackingMaxMeters: 0.07,
+      fineTrackingBeforeContactProbe: true,
       oneResolutionPerAttackSequence: true,
       frozenPoseSampledBeforeAdditiveRecoil: true,
       defenderUsesAuthoritativeGuardEvent: true,
       attackerRootTeleport: false,
+      hudRateHz: Math.round(1000 / HUD_INTERVAL_MS),
+      reportRateHz: Math.round(1000 / REPORT_INTERVAL_MS),
+      pixelRatioMax: 1.5,
     },
   };
   reportNode.textContent = JSON.stringify(report, null, 2);
-  document.documentElement.dataset.g43b4 = report.pass ? 'pass' : 'fail';
-  window.__G43B4_RESULT__ = report;
+  document.documentElement.dataset.g43b5 = report.pass ? 'pass' : 'fail';
+  window.__G43B5_RESULT__ = report;
   return report;
 }
 
 async function main() {
-  status.textContent = 'Loading UAL attacks + Skyrim Guard + B.4 integration…';
+  status.textContent = 'Loading UAL attacks + Skyrim Guard + B.5 synchronization…';
   const [ual1, ual2, skyrim] = await Promise.all([
     loadUal1AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
     loadUal2AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
@@ -355,7 +428,7 @@ async function main() {
   const idle = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle');
   const bind = idle?.userData?.weaponBindCalibration;
   if (!bind?.correctionQuaternion) {
-    throw new Error('G4.3B.4 requires Skyrim Guard weapon bind calibration');
+    throw new Error('G4.3B.5 requires Skyrim Guard weapon bind calibration');
   }
 
   defenderSword = createDebugSword(THREE);
@@ -367,7 +440,7 @@ async function main() {
 
   enterProductionGuard();
   ready = true;
-  status.textContent = 'G4.3B.4 READY · real contact now drives Block / Parry / Perfect recoil';
+  status.textContent = 'G4.3B.5 READY · synchronized Parry + fine tracking + stabilized debug loop';
   status.className = 'good';
   buildReport();
   startAttack('right');
@@ -408,7 +481,6 @@ function frame(timestamp) {
     }
 
     guardReport = guardRuntime.update(deltaMs, camera);
-    defender.update(0, camera);
     attackerSword.update();
     defenderSword?.update();
 
@@ -427,14 +499,33 @@ function frame(timestamp) {
           deltaSeconds,
         })
       : zeroBracePlan();
+
     latestBracing = bracingRuntime.update(bracePlan, deltaSeconds);
+    const postBraceSurface = buckler.getWorldParrySurface();
+    latestFinePlan = planFineGuardTracking({
+      threat: bracePlan?.analysis?.threat || null,
+      bucklerSurface: postBraceSurface,
+      maxCorrectionMeters: bracePlan?.fineTrackMaxMeters || 0,
+    });
+    latestFineTracking = fineTrackingRuntime.update(latestFinePlan, deltaSeconds);
     defender.update(0, camera);
     defenderSword?.update();
 
     updateContact(snapshot, currentBlade, deltaSeconds);
-    updateHud(snapshot);
     previousBlade = currentBlade;
-    buildReport();
+
+    const combatSnapshot = combat.snapshot;
+    const guardSnapshot = guardMachine.snapshot;
+    hudClockMs += deltaMs;
+    reportClockMs += deltaMs;
+    if (hudClockMs >= HUD_INTERVAL_MS) {
+      hudClockMs %= HUD_INTERVAL_MS;
+      updateHud(snapshot, combatSnapshot, guardSnapshot);
+    }
+    if (reportClockMs >= REPORT_INTERVAL_MS) {
+      reportClockMs %= REPORT_INTERVAL_MS;
+      buildReport(combatSnapshot, guardSnapshot);
+    }
 
     if (!combat.active
       && !attackRuntime.active
@@ -453,25 +544,28 @@ function frame(timestamp) {
 requestAnimationFrame(frame);
 
 main().catch((error) => {
-  document.documentElement.dataset.g43b4 = 'fail';
-  status.textContent = `G4.3B.4 FAIL · ${error?.message || error}`;
+  document.documentElement.dataset.g43b5 = 'fail';
+  status.textContent = `G4.3B.5 FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G43B4_RESULT__ = {
-    stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
+  window.__G43B5_RESULT__ = {
+    stage: TWO_ACTOR_PARRY_SYNC_STAGE,
     pass: false,
     error: error?.stack || String(error),
   };
 });
 
-window.__G43B4_LAB__ = {
+window.__G43B5_LAB__ = {
   startAttack,
   setGrade,
   combat,
   attackRuntime,
   guardMachine,
   bracingRuntime,
+  fineTrackingRuntime,
   buckler,
+  get latestFinePlan() { return latestFinePlan; },
+  get latestFineTracking() { return latestFineTracking; },
   get latestContact() { return latestContact; },
   get latestCombatResult() { return latestCombatResult; },
   get latestCombatUpdate() { return latestCombatUpdate; },
