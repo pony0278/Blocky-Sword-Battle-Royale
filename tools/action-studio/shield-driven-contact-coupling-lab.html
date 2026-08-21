@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3B.5R.2.3 Recoil Presentation Authority</title>
+  <title>G4.3B.5R.2.4.1 Contact Release Separation Motion</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 430px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block}
@@ -20,40 +20,39 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3B.5R.2.3 · Recoil Presentation Authority</b>
+      <b>G4.3B.5R.2.4.1 · Contact Release Separation Motion</b>
       <div id="hudAttack">Requested / Actual: loading…</div>
       <div id="hudContact">Contact: —</div>
       <div id="hudCoupling">Coupling: —</div>
       <div id="hudShield">Shield drive: —</div>
       <div id="hudWeapon">Weapon follow: —</div>
+      <div id="hudSeparation">Release separation: —</div>
       <div id="hudRecoil">B3 recoil: —</div>
     </div>
     <div class="legend">Green = predictive intercept · Red = authoritative sword × shield contact · Cyan = shield-driven target</div>
   </main>
   <aside>
-    <h1>Recoil Presentation Authority</h1>
-    <div class="note">本版不再猜數值。Predictive Parry 由 rhythm trigger 鎖住 timing grade，實際幾何接觸只決定是否命中，不可把已啟動的 Parry 靜默降級成 Block；B.3 additive recoil 套完後也會重新刷新 attacker appearance，讓 shoulder → torso/hips → legs 真正顯示出來。</div>
+    <h1>Contact Release Separation Motion</h1>
+    <div class="note">本版把 .2.4 的方向契約真正變成可見動作：盾牌 coupling 結束後，攻擊方右手與劍會先進入獨立 SEPARATION phase，明確離開盾面，再由 shoulder → torso / hips → legs 接手原本 B3 recoil。</div>
     <h2>Attack direction</h2><div class="row"><button data-attack="top">TOP</button><button data-attack="right" class="active">RIGHT</button><button data-attack="left">LEFT</button></div>
     <h2>Defense</h2><div class="row"><button data-mode="block">BLOCK</button><button data-mode="parry" class="active">PARRY</button><button data-mode="perfect">PERFECT</button></div>
     <div class="metric">
       <span>Normal Parry rhythm authority</span><b>locked ~135 ms</b>
       <span>Perfect rhythm authority</span><b>locked ~65 ms</b>
-      <span>Actual outcome</span><b>shown in HUD</b>
-      <span>Outcome mismatch</span><b>explicit warning</b>
       <span>During coupling</span><b>B3 clock = frozen</b>
-      <span>Post-additive appearance</span><b>refreshed every recoil frame</b>
-      <span>PARRY residual</span><b>~0.49 strength · ~21°</b>
-      <span>BLOCK baseline</span><b>0.28 strength · 12°</b>
-      <span>Parry recovery chain</span><b>~0.40 s after release</b>
+      <span>Normal Parry separation</span><b>6.5 cm · 78 ms</b>
+      <span>Perfect Parry separation</span><b>9.5 cm · 86 ms</b>
+      <span>Separation owner</span><b>weapon / right arm first</b>
+      <span>Then</span><b>B3 shoulder → body → legs</b>
       <span>Root motion</span><b>none</b>
     </div>
     <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat</label>
     <label class="toggle"><input id="showSurface" type="checkbox" checked> Show shield parry surface</label>
     <h2>Expected causality</h2>
-    <div class="metric"><span>1</span><b>Rhythm Parry locks grade</b><span>2</span><b>Sword hits shield</b><span>3</span><b>Shield sweeps / gives</b><span>4</span><b>Weapon follows shield</b><span>5</span><b>Contact releases</b><span>6</span><b>Weapon + shoulder continue</b><span>7</span><b>Torso / hips stagger</b><span>8</span><b>Legs recover balance</b></div>
+    <div class="metric"><span>1</span><b>Rhythm Parry locks grade</b><span>2</span><b>Sword hits shield</b><span>3</span><b>Shield sweeps / gives</b><span>4</span><b>Weapon follows shield</b><span>5</span><b>Contact releases</b><span>6</span><b>SEPARATION: sword leaves shield</b><span>7</span><b>Shoulder / torso recoil</b><span>8</span><b>Hips / legs recover balance</b></div>
     <h2>Views</h2><div class="row"><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="contact">Contact</button></div>
     <h2>Verification</h2><div id="status" class="warn">Loading…</div><pre id="report">Not run.</pre>
   </aside>
-  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r23"></script>
+  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r241"></script>
 </body>
 </html>
