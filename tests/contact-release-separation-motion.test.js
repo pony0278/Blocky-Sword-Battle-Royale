@@ -15,9 +15,7 @@ function recoilPlan(responseClass = 'parry-directional-recoil') {
     attackDirection: 'right',
     responseClass,
     weapon: {
-      direction: responseClass === 'perfect-parry-directional-recoil'
-        ? { x: -0.78, y: 0.31, z: -0.54 }
-        : { x: -0.7, y: 0.25, z: -0.65 },
+      direction: responseClass === 'perfect-parry-directional-recoil' ? { x: -0.78, y: 0.31, z: -0.54 } : { x: -0.7, y: 0.25, z: -0.65 },
       lateralSign: -1,
       strength: responseClass === 'perfect-parry-directional-recoil' ? 1 : 0.68,
       deflectDegrees: responseClass === 'perfect-parry-directional-recoil' ? 44 : 30,
@@ -45,100 +43,62 @@ function couplingReport(outcome = 'parry') {
   };
 }
 
-function sampleOverrides(handoff, distanceMeters) {
-  return {
-    ...handoff.profileOverrides,
-    releaseSeparationWindowMs: handoff.separation.releaseWindowMs,
-    releaseSeparationDistanceMeters: distanceMeters,
-  };
-}
-
-test('G4.3B.5R.2.4.1 creates an explicit SEPARATION phase after coupling release', () => {
-  const handoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport(),
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+test('G4.3B.5R.2.4.1 historical explicit SEPARATION sampler remains available', () => {
+  const sample = sampleAttackerRecoilPresentation(recoilPlan(), 28 + 39, {
+    contactHoldMs: 28,
+    releaseSeparationWindowMs: 78,
+    releaseSeparationDistanceMeters: 0.065,
+    impulseEndMs: 132,
+    recoilEndMs: 275,
+    settleEndMs: 445,
   });
-  const overrides = sampleOverrides(handoff, 0.065);
-  const elapsedMs = handoff.initialElapsedMs + handoff.separation.releaseWindowMs * 0.5;
-  const sample = sampleAttackerRecoilPresentation(handoff.plan, elapsedMs, overrides);
-
   assert.equal(sample.motionStage, CONTACT_RELEASE_SEPARATION_MOTION_STAGE);
   assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.SEPARATION);
   assert.ok(sample.weights.separationWeight > 0 && sample.weights.separationWeight < 1);
   assert.equal(sample.weights.legWeight, 0);
-  assert.ok(sample.weights.armWeight > sample.weights.torsoWeight);
-  assert.ok(sample.pose.releaseSeparationDistanceMeters > 0.02);
 });
 
-test('G4.3B.5R.2.4.1 normal Parry reaches about 6.5cm release target before B3 impulse takes over', () => {
+test('G4.3B.5R.2.7 Parry handoff bypasses separation and enters B3 impulse directly', () => {
   const handoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport(),
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+    plan: recoilPlan(), couplingReport: couplingReport(), baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
-  const overrides = sampleOverrides(handoff, 0.065);
-  const releaseEnd = handoff.initialElapsedMs + handoff.separation.releaseWindowMs;
-  const sample = sampleAttackerRecoilPresentation(handoff.plan, releaseEnd, overrides);
-  const offset = sample.pose.releaseSeparationOffsetMeters;
-  const displacement = Math.hypot(offset.x, offset.y, offset.z);
-
-  assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.SEPARATION);
-  assert.ok(Math.abs(displacement - 0.065) < 1e-6);
-  assert.ok(Math.abs(sample.pose.releaseSeparationDistanceMeters - 0.065) < 1e-6);
-  assert.equal(sample.weights.legWeight, 0);
+  const sample = sampleAttackerRecoilPresentation(handoff.plan, handoff.initialElapsedMs, handoff.profileOverrides);
+  assert.equal(handoff.separation.releaseWindowMs, 0);
+  assert.equal(handoff.separation.bypassedForWholeBodyBurst, true);
+  assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE);
+  assert.equal(sample.pose.releaseSeparationDistanceMeters, 0);
+  assert.ok(sample.weights.armWeight > 0.35);
+  assert.ok(sample.weights.torsoWeight > 0.1);
 });
 
-test('G4.3B.5R.2.4.1 Perfect Parry gets a larger 9.5cm separation than normal Parry', () => {
-  const parryHandoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport(),
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
-  });
-  const perfectHandoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan('perfect-parry-directional-recoil'),
-    couplingReport: couplingReport('perfect-parry'),
-    baseProfile: { contactHoldMs: 36, legStrengthScale: 1 },
-  });
-  const parry = sampleAttackerRecoilPresentation(
-    parryHandoff.plan,
-    parryHandoff.initialElapsedMs + parryHandoff.separation.releaseWindowMs,
-    sampleOverrides(parryHandoff, 0.065),
-  );
-  const perfect = sampleAttackerRecoilPresentation(
-    perfectHandoff.plan,
-    perfectHandoff.initialElapsedMs + perfectHandoff.separation.releaseWindowMs,
-    sampleOverrides(perfectHandoff, 0.095),
-  );
-
-  assert.ok(perfect.pose.releaseSeparationDistanceMeters > parry.pose.releaseSeparationDistanceMeters);
-  assert.ok(Math.abs(perfect.pose.releaseSeparationDistanceMeters - 0.095) < 1e-6);
-});
-
-test('G4.3B.5R.2.4.1 separation hands off continuously into normal B3 IMPULSE', () => {
+test('G4.3B.5R.2.7 first 30fps frame after release is near whole-body impulse peak', () => {
   const handoff = buildPostCouplingRecoilStaggerHandoff({
-    plan: recoilPlan(),
-    couplingReport: couplingReport(),
-    baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+    plan: recoilPlan(), couplingReport: couplingReport(), baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
   });
-  const overrides = sampleOverrides(handoff, 0.065);
-  const releaseEnd = handoff.initialElapsedMs + handoff.separation.releaseWindowMs;
-  const atRelease = sampleAttackerRecoilPresentation(handoff.plan, releaseEnd, overrides);
-  const afterRelease = sampleAttackerRecoilPresentation(handoff.plan, releaseEnd + 8, overrides);
-
-  assert.equal(afterRelease.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE);
-  assert.ok(afterRelease.weights.armWeight >= atRelease.weights.armWeight);
-  assert.ok(afterRelease.pose.releaseSeparationDistanceMeters < atRelease.pose.releaseSeparationDistanceMeters);
-  assert.ok(Math.hypot(
-    afterRelease.pose.weaponAimOffsetMeters.x,
-    afterRelease.pose.weaponAimOffsetMeters.y,
-    afterRelease.pose.weaponAimOffsetMeters.z,
-  ) >= afterRelease.pose.releaseSeparationDistanceMeters);
+  const sample = sampleAttackerRecoilPresentation(handoff.plan, handoff.initialElapsedMs + 1000 / 30, handoff.profileOverrides);
+  assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE);
+  assert.ok(sample.weights.armWeight > 0.9);
+  assert.ok(sample.weights.torsoWeight > 0.8);
+  assert.ok(sample.weights.legWeight > 0.5);
+  assert.equal(sample.pose.releaseSeparationDistanceMeters, 0);
 });
 
-test('G4.3B.5R.2.4.1 runtime source applies the separation target through the real arm IK path', () => {
+test('G4.3B.5R.2.7 Perfect also bypasses separation and preserves a stronger direct burst', () => {
+  const parry = buildPostCouplingRecoilStaggerHandoff({
+    plan: recoilPlan(), couplingReport: couplingReport(), baseProfile: { contactHoldMs: 28, legStrengthScale: 0.78 },
+  });
+  const perfect = buildPostCouplingRecoilStaggerHandoff({
+    plan: recoilPlan('perfect-parry-directional-recoil'), couplingReport: couplingReport('perfect-parry'), baseProfile: { contactHoldMs: 36, legStrengthScale: 1 },
+  });
+  assert.equal(parry.separation.releaseWindowMs, 0);
+  assert.equal(perfect.separation.releaseWindowMs, 0);
+  assert.ok(perfect.plan.weapon.deflectDegrees > parry.plan.weapon.deflectDegrees);
+  assert.ok(Math.abs(perfect.plan.body.pitchDegrees) > Math.abs(parry.plan.body.pitchDegrees));
+  assert.ok(perfect.profileOverrides.settleEndMs > parry.profileOverrides.settleEndMs);
+});
+
+test('G4.3B.5R.2.4.1 historical separation IK path remains in runtime for compatibility', () => {
   const source = fs.readFileSync(new URL('../src/combat/attacker-recoil-presentation.js', import.meta.url), 'utf8');
-
   assert.match(source, /SEPARATION: 'separation'/);
   assert.match(source, /releaseSeparationDistanceMeters/);
   assert.match(source, /targetWorld\.copy\(handWorld\)\.add\(aimOffset\)/);
