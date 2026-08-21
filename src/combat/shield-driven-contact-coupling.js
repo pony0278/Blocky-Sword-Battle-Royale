@@ -1,3 +1,5 @@
+import { publishPostCouplingRecoilStaggerHandoff } from './post-coupling-recoil-stagger-handoff.js';
+
 export const SHIELD_DRIVEN_CONTACT_COUPLING_STAGE = 'G4.3B.5R.2';
 
 export const SHIELD_CONTACT_COUPLING_PHASES = Object.freeze({
@@ -175,13 +177,20 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
     attackerRig.root?.updateMatrixWorld?.(true);
 
     const finalSurface = buckler.getWorldParrySurface();
+    const surfaceAtContact = Object.freeze({ center: freezeVector(active.surfaceCenter) });
     lastReport = Object.freeze({
       active: !sample.complete, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, outcome: active.outcome,
       phase: sample.phase, elapsedMs: active.elapsedMs, complete: sample.complete,
       releaseAttackerRecoil: sample.releaseAttackerRecoil, shieldOffset: sample.shieldOffset,
       attackerWeaponOffset: sample.attackerWeaponOffset, appliedDegrees: Object.freeze(appliedDegrees), finalSurface, profile: active.profile,
     });
-    if (sample.complete) active = null;
+    if (sample.complete) {
+      publishPostCouplingRecoilStaggerHandoff(attackerRig, {
+        couplingReport: lastReport,
+        surfaceAtContact,
+      });
+      active = null;
+    }
     return lastReport;
   }
 
