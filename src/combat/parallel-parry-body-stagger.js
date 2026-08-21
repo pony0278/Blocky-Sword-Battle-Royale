@@ -47,15 +47,17 @@ function smoothstep01(value) {
   return t * t * (3 - 2 * t);
 }
 
-function resolveOutcome(value) {
-  const outcome = String(value || '').toLowerCase();
-  return outcome === 'perfect-parry' ? 'perfect-parry' : outcome === 'parry' ? 'parry' : null;
+function resolveOutcome(value, responseClass = '') {
+  const explicit = String(value || '').toLowerCase();
+  if (explicit === 'parry' || explicit === 'perfect-parry') return explicit;
+  if (responseClass === 'perfect-parry-directional-recoil') return 'perfect-parry';
+  if (responseClass === 'parry-directional-recoil') return 'parry';
+  return null;
 }
 
 function getProfile(outcome, overrides = {}) {
-  const key = resolveOutcome(outcome);
-  if (!key) return null;
-  return Object.freeze({ ...PARALLEL_PARRY_BODY_STAGGER_PROFILES[key], ...overrides });
+  if (!outcome || !PARALLEL_PARRY_BODY_STAGGER_PROFILES[outcome]) return null;
+  return Object.freeze({ ...PARALLEL_PARRY_BODY_STAGGER_PROFILES[outcome], ...overrides });
 }
 
 function sampleWeight(profile, elapsedMs) {
@@ -88,9 +90,9 @@ function loadedLegs(plan = {}) {
 }
 
 export function sampleParallelParryBodyStagger(input = {}) {
-  const outcome = resolveOutcome(input.outcome || input.plan?.responseClass === 'perfect-parry-directional-recoil' ? 'perfect-parry' : input.outcome);
-  const profile = getProfile(outcome, input.profile || {});
   const plan = input.plan;
+  const outcome = resolveOutcome(input.outcome, plan?.responseClass);
+  const profile = getProfile(outcome, input.profile || {});
   if (!profile || !plan?.planned) {
     return Object.freeze({
       stage: PARALLEL_PARRY_BODY_STAGGER_STAGE,
@@ -107,9 +109,9 @@ export function sampleParallelParryBodyStagger(input = {}) {
   const bodyStrength = Math.max(0, finite(body.strength));
   const legs = loadedLegs(plan);
   const weight = sampled.weight;
-
   const legBase = 7.5 * bodyStrength * profile.legScale * weight;
   const kneeBase = 11 * bodyStrength * profile.legScale * weight;
+
   const pose = Object.freeze({
     chestYawDegrees: finite(body.yawDegrees) * 0.58 * profile.chestScale * weight,
     chestPitchDegrees: finite(body.pitchDegrees) * 0.46 * profile.chestScale * weight,
@@ -164,7 +166,7 @@ export function createParallelParryBodyStaggerRuntime(THREE, options = {}) {
   let lastReport = null;
 
   function start(input = {}) {
-    const outcome = resolveOutcome(input.outcome);
+    const outcome = resolveOutcome(input.outcome, input.plan?.responseClass);
     if (!outcome) return Object.freeze({ accepted: false, reason: 'non-parry-outcome', report: lastReport });
     if (!input.plan?.planned) return Object.freeze({ accepted: false, reason: 'missing-recoil-plan', report: lastReport });
     active = {
