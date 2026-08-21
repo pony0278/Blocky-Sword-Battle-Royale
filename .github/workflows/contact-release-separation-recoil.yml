@@ -14,7 +14,9 @@ on:
       - 'src/combat/directional-recoil-planner.js'
       - 'tools/action-studio/shield-driven-contact-coupling-lab.html'
       - 'tools/action-studio/shield-driven-contact-coupling-lab.js'
+      - 'tools/action-studio/shield-driven-contact-coupling-lab-r28.js'
       - 'tests/legacy-two-actor-recoil-passthrough.test.js'
+      - 'tests/legacy-two-actor-recoil-visual-lab.test.js'
       - 'tests/post-coupling-recoil-stagger-handoff.test.js'
       - 'tests/attacker-recoil-presentation.test.js'
       - 'tests/contact-release-separation-motion.test.js'
@@ -62,11 +64,13 @@ jobs:
           && node --check src/combat/shield-driven-contact-coupling.js
           && node --check src/combat/attacker-recoil-presentation.js
           && node --check tools/action-studio/shield-driven-contact-coupling-lab.js
+          && node --check tools/action-studio/shield-driven-contact-coupling-lab-r28.js
 
-      - name: Run Block parity, historical burst, and legacy passthrough regressions
+      - name: Run Block parity, historical burst, legacy passthrough, and visual-base regressions
         run: >-
           node --test
           tests/legacy-two-actor-recoil-passthrough.test.js
+          tests/legacy-two-actor-recoil-visual-lab.test.js
           tests/post-coupling-recoil-stagger-handoff.test.js
           tests/attacker-recoil-presentation.test.js
           tests/contact-release-separation-motion.test.js
