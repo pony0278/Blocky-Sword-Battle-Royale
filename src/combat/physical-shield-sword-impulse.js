@@ -100,8 +100,8 @@ export function solveKinematicShieldSwordImpulse(input = {}) {
     ),
   );
   const inverseInertia = 1 / inertia;
-  const restitution = clamp(input.restitution, 0, 0.95);
-  const friction = clamp(input.friction, 0, 1.5);
+  const restitution = clamp(finite(input.restitution, defaults.restitution), 0, 0.95);
+  const friction = clamp(finite(input.friction, defaults.friction), 0, 1.5);
   const maximumImpulseNs = Math.max(0.1, finite(input.maximumImpulseNs, defaults.maximumImpulseNs));
 
   const contactPoint = vec(input.contactPoint);
