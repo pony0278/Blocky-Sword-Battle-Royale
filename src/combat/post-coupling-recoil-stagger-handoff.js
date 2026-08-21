@@ -270,8 +270,11 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
   const profileOverrides = wholeBodyBurst?.accepted
     ? Object.freeze({
         ...wholeBodyBurst.profileOverrides,
+        // G4.3B.5R.2.7 owns the post-release leg response outright. Do not
+        // multiply this by the historical B3 leg scale (0.78 for Parry), or
+        // the knee-rescue silhouette becomes too small to read at 30fps.
         legStrengthScale: clamp(
-          finite(baseProfile.legStrengthScale, 1) * finite(wholeBodyBurst.profileOverrides.legStrengthScale, 1),
+          finite(wholeBodyBurst.profileOverrides.legStrengthScale, 1),
           0,
           1.5,
         ),
