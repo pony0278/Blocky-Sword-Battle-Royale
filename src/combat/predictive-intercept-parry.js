@@ -12,6 +12,7 @@ import { LONGSWORD_GUARD_AUTHORING_STATE } from './longsword-guard-metadata.js';
 
 export const PREDICTIVE_INTERCEPT_PARRY_STAGE = 'G4.3B.5R';
 export const RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE = 'G4.3B.5R.1';
+export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';
 
 export const PREDICTIVE_PARRY_INPUT_GRADES = Object.freeze({
   TOO_EARLY: 'too-early',
@@ -70,6 +71,14 @@ export function getPredictiveParryTriggerTtcSeconds(requestedGrade = 'parry', ov
     : profile.normalTriggerTtcSeconds;
 }
 
+export function getLockedRhythmGuardIntentAgeMs(requestedGrade = 'parry', overrides = {}) {
+  const requested = String(requestedGrade || 'parry').toLowerCase();
+  const triggerMs = getPredictiveParryTriggerTtcSeconds(requested, overrides) * 1000;
+  return requested === 'perfect'
+    ? clamp(triggerMs, 0, 75)
+    : clamp(triggerMs, 76, 180);
+}
+
 export function getCanonicalAttackTimeToContactSeconds(attackSnapshot = {}) {
   const contactSeconds = finite(attackSnapshot?.contactSeconds, NaN);
   const elapsedSeconds = finite(attackSnapshot?.elapsedSeconds, NaN);
@@ -93,8 +102,8 @@ export function analyzeRhythmParryTrigger(input = {}) {
       requestedGrade,
       timeToContactSeconds: null,
       triggerTtcSeconds,
-      timingGrade: null,
       shouldTrigger: false,
+      timingGrade: null,
       authority: 'attack-timeline-rhythm-trigger',
     });
   }
@@ -222,35 +231,52 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
 
   function start(input = {}) {
     if (active) return freeze({ accepted: false, reason: 'predictive-parry-already-active', report: lastReport });
+    const requestedGrade = String(input.requestedGrade || input.variant || 'parry').toLowerCase();
     const variant = String(input.variant || '').toLowerCase() === GUARD_REACTION_VARIANTS.PERFECT_PARRY
-      || String(input.requestedGrade || '').toLowerCase() === 'perfect'
+      || requestedGrade === 'perfect'
+      || requestedGrade === GUARD_REACTION_VARIANTS.PERFECT_PARRY
       ? GUARD_REACTION_VARIANTS.PERFECT_PARRY
       : GUARD_REACTION_VARIANTS.PARRY;
     const { profile, payload } = presentationProfile(variant);
     const triggerTtcSeconds = Math.max(
       PREDICTIVE_INTERCEPT_PARRY_PROFILE.minimumTriggerTtcSeconds,
-      finite(input.triggerTtcSeconds, getPredictiveParryTriggerTtcSeconds(input.requestedGrade || variant)),
+      finite(input.triggerTtcSeconds, getPredictiveParryTriggerTtcSeconds(requestedGrade || variant)),
+    );
+    const lockedGuardIntentAgeMs = getLockedRhythmGuardIntentAgeMs(
+      variant === GUARD_REACTION_VARIANTS.PERFECT_PARRY ? 'perfect' : 'parry',
+      { ...PREDICTIVE_INTERCEPT_PARRY_PROFILE, ...(input.profile || {}),
+        perfectTriggerTtcSeconds: variant === GUARD_REACTION_VARIANTS.PERFECT_PARRY ? triggerTtcSeconds : PREDICTIVE_INTERCEPT_PARRY_PROFILE.perfectTriggerTtcSeconds,
+        normalTriggerTtcSeconds: variant === GUARD_REACTION_VARIANTS.PARRY ? triggerTtcSeconds : PREDICTIVE_INTERCEPT_PARRY_PROFILE.normalTriggerTtcSeconds,
+      },
     );
     active = {
       sequence: finite(input.sequence, 0),
+      requestedGrade,
       variant,
       payload,
       profile,
       triggerTtcSeconds,
+      lockedGuardIntentAgeMs,
       elapsedMs: 0,
       sourceTimeSeconds: PREDICTIVE_INTERCEPT_PARRY_PROFILE.presentationStartSourceSeconds,
     };
     lastReport = freeze({
       stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      authorityStage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
       baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       active: true,
       justStarted: true,
       sequence: active.sequence,
+      requestedGrade,
       variant,
       elapsedMs: 0,
+      presentationElapsedMs: 0,
       sourceTimeSeconds: active.sourceTimeSeconds,
       triggerTtcSeconds,
+      guardIntentAgeMs: lockedGuardIntentAgeMs,
+      lockedGuardIntentAgeMs,
       readyForAuthoritativeHandoff: false,
+      timingAuthority: 'rhythm-trigger-locked-until-authoritative-contact',
       authority: PREDICTIVE_INTERCEPT_PARRY_PROFILE.authority,
     });
     return freeze({ accepted: true, report: lastReport });
@@ -259,6 +285,7 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
   function update(input = {}) {
     if (!active) return freeze({
       stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      authorityStage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
       baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       active: false,
       reason: 'predictive-parry-not-active',
@@ -289,18 +316,23 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
 
     lastReport = freeze({
       stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      authorityStage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
       baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       active: true,
       sequence: active.sequence,
+      requestedGrade: active.requestedGrade,
       variant: active.variant,
       elapsedMs: active.elapsedMs,
+      presentationElapsedMs: active.elapsedMs,
       sourceTimeSeconds,
       triggerTtcSeconds: active.triggerTtcSeconds,
       timeToContactSeconds: ttc,
       progress,
       readyForAuthoritativeHandoff: ttc <= 0.02 || progress >= 0.9,
       defenderPresentationOffsetSeconds: sourceTimeSeconds,
-      guardIntentAgeMs: active.elapsedMs,
+      guardIntentAgeMs: active.lockedGuardIntentAgeMs,
+      lockedGuardIntentAgeMs: active.lockedGuardIntentAgeMs,
+      timingAuthority: 'rhythm-trigger-locked-until-authoritative-contact',
       authority: PREDICTIVE_INTERCEPT_PARRY_PROFILE.authority,
     });
     return lastReport;
@@ -313,12 +345,17 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
     return freeze({
       accepted: true,
       stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+      authorityStage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
       baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
       sequence: report.sequence,
+      requestedGrade: report.requestedGrade,
       variant: report.variant,
-      guardIntentAgeMs: report.guardIntentAgeMs,
+      guardIntentAgeMs: report.lockedGuardIntentAgeMs,
+      lockedGuardIntentAgeMs: report.lockedGuardIntentAgeMs,
+      presentationElapsedMs: report.presentationElapsedMs,
       defenderPresentationOffsetSeconds: report.sourceTimeSeconds,
-      authority: 'authoritative-contact-handoff',
+      timingAuthority: 'rhythm-trigger-locked-until-authoritative-contact',
+      authority: 'authoritative-contact-handoff-with-locked-rhythm-grade',
     });
   }
 
