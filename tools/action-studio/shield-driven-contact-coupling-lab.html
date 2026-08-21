@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3B.5R.2.4.1 Contact Release Separation Motion</title>
+  <title>G4.3B.5R.2.4.2 Immediate Block Rebound Parity</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 430px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block}
@@ -20,39 +20,43 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3B.5R.2.4.1 · Contact Release Separation Motion</b>
+      <b>G4.3B.5R.2.4.2 · Immediate Block Rebound Parity</b>
       <div id="hudAttack">Requested / Actual: loading…</div>
       <div id="hudContact">Contact: —</div>
-      <div id="hudCoupling">Coupling: —</div>
-      <div id="hudShield">Shield drive: —</div>
-      <div id="hudWeapon">Weapon follow: —</div>
+      <div id="hudCoupling">Defense ownership: —</div>
+      <div id="hudShield">Shield response: —</div>
+      <div id="hudWeapon">Weapon authority: —</div>
       <div id="hudSeparation">Release separation: —</div>
       <div id="hudRecoil">B3 recoil: —</div>
     </div>
-    <div class="legend">Green = predictive intercept · Red = authoritative sword × shield contact · Cyan = shield-driven target</div>
+    <div class="legend">Red = authoritative sword × shield contact · Cyan = defender shield response · BLOCK rebound is B2/B3 immediate</div>
   </main>
   <aside>
-    <h1>Contact Release Separation Motion</h1>
-    <div class="note">本版把 .2.4 的方向契約真正變成可見動作：盾牌 coupling 結束後，攻擊方右手與劍會先進入獨立 SEPARATION phase，明確離開盾面，再由 shoulder → torso / hips → legs 接手原本 B3 recoil。</div>
+    <h1>Immediate Block Rebound Parity</h1>
+    <div class="note">BLOCK 不再共用 Parry 的完整 coupling。命中盾牌後，攻擊方直接使用 predictive-intercept-parry-lab 已驗證的原始 B2/B3 blocked-weapon-bounce；防守盾只做約 3cm defender-only give，兩者同時發生。PARRY / PERFECT 仍維持 shield-driven coupling → separation → stagger。</div>
     <h2>Attack direction</h2><div class="row"><button data-attack="top">TOP</button><button data-attack="right" class="active">RIGHT</button><button data-attack="left">LEFT</button></div>
     <h2>Defense</h2><div class="row"><button data-mode="block">BLOCK</button><button data-mode="parry" class="active">PARRY</button><button data-mode="perfect">PERFECT</button></div>
     <div class="metric">
-      <span>Normal Parry rhythm authority</span><b>locked ~135 ms</b>
-      <span>Perfect rhythm authority</span><b>locked ~65 ms</b>
-      <span>During coupling</span><b>B3 clock = frozen</b>
-      <span>Normal Parry separation</span><b>6.5 cm · 78 ms</b>
-      <span>Perfect Parry separation</span><b>9.5 cm · 86 ms</b>
-      <span>Separation owner</span><b>weapon / right arm first</b>
-      <span>Then</span><b>B3 shoulder → body → legs</b>
+      <span>BLOCK attacker authority</span><b>original B2/B3 · immediate</b>
+      <span>BLOCK B2 baseline</span><b>0.28 strength · 12°</b>
+      <span>BLOCK B3 timeline</span><b>18 → 82 → 142 → 220 ms</b>
+      <span>BLOCK shield give</span><b>3.0 cm peak · 68 ms</b>
+      <span>BLOCK shield recovery</span><b>150 ms total</b>
+      <span>BLOCK B3 clock</span><b>RUNNING during shield give</b>
+      <span>BLOCK weapon follow</span><b>none</b>
+      <span>BLOCK post-coupling handoff</span><b>none</b>
+      <span>PARRY / PERFECT</span><b>coupling → separation → stagger</b>
       <span>Root motion</span><b>none</b>
     </div>
     <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat</label>
     <label class="toggle"><input id="showSurface" type="checkbox" checked> Show shield parry surface</label>
-    <h2>Expected causality</h2>
-    <div class="metric"><span>1</span><b>Rhythm Parry locks grade</b><span>2</span><b>Sword hits shield</b><span>3</span><b>Shield sweeps / gives</b><span>4</span><b>Weapon follows shield</b><span>5</span><b>Contact releases</b><span>6</span><b>SEPARATION: sword leaves shield</b><span>7</span><b>Shoulder / torso recoil</b><span>8</span><b>Hips / legs recover balance</b></div>
+    <h2>Expected BLOCK causality</h2>
+    <div class="metric"><span>1</span><b>Sword hits shield</b><span>2A</span><b>Attacker sword immediately rebounds</b><span>2B</span><b>Shield gives 2–3cm in parallel</b><span>3</span><b>Arm / chest short recoil</b><span>4</span><b>~220ms settle</b></div>
+    <h2>Expected PARRY causality</h2>
+    <div class="metric"><span>1</span><b>Rhythm Parry locks grade</b><span>2</span><b>Sword hits shield</b><span>3</span><b>Shield sweeps / weapon follows</b><span>4</span><b>Contact releases</b><span>5</span><b>SEPARATION → stagger</b></div>
     <h2>Views</h2><div class="row"><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="contact">Contact</button></div>
     <h2>Verification</h2><div id="status" class="warn">Loading…</div><pre id="report">Not run.</pre>
   </aside>
-  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r241"></script>
+  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r242"></script>
 </body>
 </html>
