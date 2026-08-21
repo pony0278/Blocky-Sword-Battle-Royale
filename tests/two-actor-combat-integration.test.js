@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildSynchronizedDefenderPayload,
   createTwoActorCombatIntegration,
   TWO_ACTOR_COMBAT_PHASES,
+  TWO_ACTOR_PARRY_SYNC_PROFILE,
+  TWO_ACTOR_PARRY_SYNC_STAGE,
 } from '../src/combat/two-actor-combat-integration.js';
 import {
   createLongswordDirectionalAttackRuntime,
@@ -123,6 +126,37 @@ test('G4.3B.4 resolves a Parry into defender reaction, frozen attacker and recoi
   assert.equal(harness.integration.snapshot.phase, TWO_ACTOR_COMBAT_PHASES.RECOIL);
 });
 
+test('G4.3B.5 pre-rolls defender Parry presentation without moving gameplay timing', () => {
+  const harness = createHarness();
+  startIntoActive(harness, 'right');
+  const result = harness.integration.resolveContact({
+    contact: authoritativeContact(),
+    guardIntentAgeMs: 120,
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.resolution.outcome, 'parry');
+  assert.equal(result.defenderPayload.presentationSyncStage, TWO_ACTOR_PARRY_SYNC_STAGE);
+  assert.equal(
+    result.defenderPayload.presentationOffsetSeconds,
+    TWO_ACTOR_PARRY_SYNC_PROFILE.presentationOffsetSeconds,
+  );
+  assert.equal(
+    harness.guardMachine.snapshot.lastTransition.payload.presentationOffsetSeconds,
+    TWO_ACTOR_PARRY_SYNC_PROFILE.presentationOffsetSeconds,
+  );
+  assert.equal(result.snapshot.activeExchange.defenderPresentationOffsetSeconds, 0.205);
+});
+
+test('G4.3B.5 does not pre-roll ordinary Block presentation', () => {
+  const payload = buildSynchronizedDefenderPayload({
+    outcome: 'block',
+    defender: { payload: { outcome: 'block', grade: 'block' } },
+  });
+  assert.equal(payload.presentationOffsetSeconds, undefined);
+  assert.equal(payload.presentationSyncStage, undefined);
+});
+
 test('G4.3B.4 bridges guard_enter so an early Perfect Parry reaches the defender Parry state', () => {
   const harness = createHarness({ enterOnly: true });
   startIntoActive(harness, 'left');
@@ -140,6 +174,10 @@ test('G4.3B.4 bridges guard_enter so an early Perfect Parry reaches the defender
   assert.equal(harness.guardMachine.state, GUARD_STATES.PARRY);
   assert.equal(harness.guardMachine.snapshot.lastTransition.payload.perfect, true);
   assert.equal(harness.guardMachine.snapshot.presentation.reactionVariant, 'perfect-parry');
+  assert.equal(
+    harness.guardMachine.snapshot.lastTransition.payload.presentationOffsetSeconds,
+    TWO_ACTOR_PARRY_SYNC_PROFILE.presentationOffsetSeconds,
+  );
 });
 
 test('G4.3B.4 ordinary Block uses the same exchange path but selects block-hit and short bounce', () => {
