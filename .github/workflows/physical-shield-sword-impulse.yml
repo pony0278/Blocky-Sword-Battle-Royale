@@ -1,0 +1,40 @@
+name: G4.3B.5R.2.9 Physical Shield-Sword Impulse
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/combat/physical-shield-sword-impulse.js'
+      - 'tools/action-studio/physical-shield-sword-impulse-lab.html'
+      - 'tools/action-studio/physical-shield-sword-impulse-lab.js'
+      - 'tests/physical-shield-sword-impulse.test.js'
+      - '.github/workflows/physical-shield-sword-impulse.yml'
+  push:
+    branches:
+      - 'g43b5r28-legacy-two-actor-recoil-passthrough'
+
+permissions:
+  contents: read
+
+jobs:
+  physical-shield-sword-impulse-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify physical solver and lab syntax
+        run: >-
+          node --check src/combat/physical-shield-sword-impulse.js
+          && node --check tools/action-studio/physical-shield-sword-impulse-lab.js
+
+      - name: Run physical impulse regressions
+        run: node --test tests/physical-shield-sword-impulse.test.js
