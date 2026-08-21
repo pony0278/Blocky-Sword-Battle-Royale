@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildSynchronizedDefenderPayload,
   createTwoActorCombatIntegration,
+  getAttackerRecoilDelayMs,
   TWO_ACTOR_COMBAT_PHASES,
   TWO_ACTOR_PARRY_SYNC_PROFILE,
   TWO_ACTOR_PARRY_SYNC_STAGE,
@@ -148,6 +149,29 @@ test('G4.3B.5 pre-rolls defender Parry presentation without moving gameplay timi
   assert.equal(result.snapshot.activeExchange.defenderPresentationOffsetSeconds, 0.205);
 });
 
+test('G4.3B.5 keeps attacker frozen briefly so defender motion visually leads recoil', () => {
+  assert.equal(getAttackerRecoilDelayMs('block'), 0);
+  assert.equal(getAttackerRecoilDelayMs('parry'), 20);
+  assert.equal(getAttackerRecoilDelayMs('perfect-parry'), 14);
+
+  const harness = createHarness({ completeAfter: 1 });
+  startIntoActive(harness, 'right');
+  const resolved = harness.integration.resolveContact({
+    contact: authoritativeContact(),
+    guardIntentAgeMs: 120,
+  });
+  assert.equal(resolved.snapshot.activeExchange.attackerRecoilDelayMs, 20);
+
+  const beforeGate = harness.integration.update(0.01);
+  assert.equal(beforeGate.recoilUpdate.delayedByContactSync, true);
+  assert.equal(harness.attackerRecoil.updates, 0);
+  assert.equal(harness.attackRuntime.interrupted, true);
+
+  const afterGate = harness.integration.update(0.011);
+  assert.equal(afterGate.justCompleted, true);
+  assert.equal(harness.attackerRecoil.updates, 1);
+});
+
 test('G4.3B.5 does not pre-roll ordinary Block presentation', () => {
   const payload = buildSynchronizedDefenderPayload({
     outcome: 'block',
@@ -230,14 +254,22 @@ test('G4.3B.4 samples the exact frozen contact pose before every additive recoil
   const firstUpdate = harness.integration.update(1 / 60);
   assert.equal(firstUpdate.updated, true);
   assert.equal(firstUpdate.sampledFrozenPose, true);
+  assert.equal(firstUpdate.recoilUpdate.delayedByContactSync, true);
   assert.equal(harness.sampled.length, 1);
   assert.equal(harness.sampled[0].sourceTimeSeconds, frozenTime);
   assert.equal(harness.attackRuntime.interrupted, true);
 
   const secondUpdate = harness.integration.update(1 / 60);
-  assert.equal(secondUpdate.justCompleted, true);
+  assert.equal(secondUpdate.updated, true);
+  assert.equal(secondUpdate.justCompleted, undefined);
   assert.equal(harness.sampled.length, 2);
   assert.equal(harness.sampled[1].sourceTimeSeconds, frozenTime);
+  assert.equal(harness.attackRuntime.interrupted, true);
+
+  const thirdUpdate = harness.integration.update(1 / 60);
+  assert.equal(thirdUpdate.justCompleted, true);
+  assert.equal(harness.sampled.length, 3);
+  assert.equal(harness.sampled[2].sourceTimeSeconds, frozenTime);
   assert.equal(harness.attackRuntime.interrupted, false);
   assert.equal(harness.attackRuntime.snapshot.phase, LONGSWORD_ATTACK_PHASES.IDLE);
   assert.equal(harness.integration.active, false);
