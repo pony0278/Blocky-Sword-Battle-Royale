@@ -1,8 +1,13 @@
+import {
+  TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE,
+  buildTwoActorWholeBodyRecoilBurst,
+} from './two-actor-whole-body-recoil-burst.js';
+
 export const POST_COUPLING_RECOIL_STAGGER_BASE_STAGE = 'G4.3B.5R.2.1';
 export const COUPLED_MOMENTUM_CONTINUATION_STAGE = 'G4.3B.5R.2.2';
 export const CONTACT_RELEASE_SEPARATION_RECOIL_STAGE = 'G4.3B.5R.2.4';
 // Compatibility export follows the latest post-coupling presentation authority.
-export const POST_COUPLING_RECOIL_STAGGER_STAGE = CONTACT_RELEASE_SEPARATION_RECOIL_STAGE;
+export const POST_COUPLING_RECOIL_STAGGER_STAGE = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE;
 
 export const POST_COUPLING_RECOIL_STAGGER_PROFILES = Object.freeze({
   block: Object.freeze({
@@ -21,41 +26,33 @@ export const POST_COUPLING_RECOIL_STAGGER_PROFILES = Object.freeze({
   }),
   parry: Object.freeze({
     outcome: 'parry',
-    // G4.3B.5R.2.4 restores a readable release rebound. Coupling still owns
-    // contact, but B2 regains most directional authority after separation.
-    weaponStrengthScale: 0.90,
-    weaponDeflectScale: 0.92,
-    torsoScale: 1.16,
-    bodyStrengthScale: 1.18,
-    legStrengthScale: 1.12,
+    weaponStrengthScale: 1.0,
+    weaponDeflectScale: 1.0,
+    torsoScale: 1.0,
+    bodyStrengthScale: 1.0,
+    legStrengthScale: 1.0,
     referenceDriveMeters: 0.105,
     minimumMomentum: 0.95,
     maximumMomentum: 1.30,
     separationFromCoupling: true,
     b2DirectionWeight: 0.72,
     couplingRedirectWeight: 0.28,
-    releaseSeparationWindowMs: 78,
-    impulseEndMs: 132,
-    recoilEndMs: 275,
-    settleEndMs: 445,
+    releaseSeparationWindowMs: 0,
   }),
   'perfect-parry': Object.freeze({
     outcome: 'perfect-parry',
-    weaponStrengthScale: 0.95,
-    weaponDeflectScale: 0.93,
-    torsoScale: 1.28,
-    bodyStrengthScale: 1.30,
-    legStrengthScale: 1.20,
+    weaponStrengthScale: 1.0,
+    weaponDeflectScale: 1.0,
+    torsoScale: 1.0,
+    bodyStrengthScale: 1.0,
+    legStrengthScale: 1.0,
     referenceDriveMeters: 0.125,
     minimumMomentum: 1.05,
     maximumMomentum: 1.42,
     separationFromCoupling: true,
     b2DirectionWeight: 0.76,
     couplingRedirectWeight: 0.24,
-    releaseSeparationWindowMs: 86,
-    impulseEndMs: 148,
-    recoilEndMs: 320,
-    settleEndMs: 540,
+    releaseSeparationWindowMs: 0,
   }),
 });
 
@@ -116,12 +113,12 @@ function resolveOutcome(value, responseClass = '') {
 export function publishPostCouplingRecoilStaggerHandoff(attackerRig, payload = {}) {
   if (!attackerRig || (typeof attackerRig !== 'object' && typeof attackerRig !== 'function')) return false;
   pendingByRig.set(attackerRig, Object.freeze({
-    stage: CONTACT_RELEASE_SEPARATION_RECOIL_STAGE,
+    stage: POST_COUPLING_RECOIL_STAGGER_STAGE,
     previousStage: COUPLED_MOMENTUM_CONTINUATION_STAGE,
     baseStage: POST_COUPLING_RECOIL_STAGGER_BASE_STAGE,
     couplingReport: payload.couplingReport || payload.report || payload,
     surfaceAtContact: payload.surfaceAtContact || null,
-    authority: 'shield-coupling-release-to-contact-separation-recoil',
+    authority: 'shield-coupling-release-to-two-actor-whole-body-recoil-burst',
   }));
   return true;
 }
@@ -198,7 +195,7 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
   const baseProfile = input.baseProfile || {};
   if (!plan?.planned) {
     return Object.freeze({
-      stage: CONTACT_RELEASE_SEPARATION_RECOIL_STAGE,
+      stage: POST_COUPLING_RECOIL_STAGGER_STAGE,
       accepted: false,
       reason: 'missing-recoil-plan',
     });
@@ -225,54 +222,80 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
   const rawMomentum = 0.58 + driveRatio * 0.24 + followRatio * 0.10 + speedRatio * 0.18;
   const momentum = clamp(rawMomentum, profile.minimumMomentum, profile.maximumMomentum);
   const separation = resolveContactReleaseSeparationDirection(outcome, couplingReport, plan, profile);
-  // Coupling magnitude still influences the residual magnitude, but release
-  // direction is no longer allowed to inherit shield travel as sole authority.
   const weaponMomentum = profile.separationFromCoupling
     ? clamp(0.92 + momentum * 0.10, 0.98, 1.08)
     : 1;
 
-  const weapon = Object.freeze({
-    ...(plan.weapon || {}),
-    direction: separation.direction,
-    strength: finite(plan.weapon?.strength) * profile.weaponStrengthScale * weaponMomentum,
-    deflectDegrees: finite(plan.weapon?.deflectDegrees) * profile.weaponDeflectScale * weaponMomentum,
-    continuationSource: separation.source,
-    separationSource: separation.source,
-  });
+  const wholeBodyBurst = outcome === 'block'
+    ? null
+    : buildTwoActorWholeBodyRecoilBurst({
+        plan,
+        outcome,
+        momentum,
+        weaponMomentum,
+        releaseDirection: separation.direction,
+      });
+
+  const weapon = wholeBodyBurst?.accepted
+    ? wholeBodyBurst.plan.weapon
+    : Object.freeze({
+        ...(plan.weapon || {}),
+        direction: separation.direction,
+        strength: finite(plan.weapon?.strength) * profile.weaponStrengthScale * weaponMomentum,
+        deflectDegrees: finite(plan.weapon?.deflectDegrees) * profile.weaponDeflectScale * weaponMomentum,
+        continuationSource: separation.source,
+        separationSource: separation.source,
+      });
+
   const bodyScale = profile.torsoScale * momentum;
-  const body = Object.freeze({
-    ...(plan.body || {}),
-    strength: finite(plan.body?.strength) * profile.bodyStrengthScale * momentum,
-    yawDegrees: finite(plan.body?.yawDegrees) * bodyScale,
-    pitchDegrees: finite(plan.body?.pitchDegrees) * bodyScale,
-    rollDegrees: finite(plan.body?.rollDegrees) * bodyScale,
-  });
+  const body = wholeBodyBurst?.accepted
+    ? wholeBodyBurst.plan.body
+    : Object.freeze({
+        ...(plan.body || {}),
+        strength: finite(plan.body?.strength) * profile.bodyStrengthScale * momentum,
+        yawDegrees: finite(plan.body?.yawDegrees) * bodyScale,
+        pitchDegrees: finite(plan.body?.pitchDegrees) * bodyScale,
+        rollDegrees: finite(plan.body?.rollDegrees) * bodyScale,
+      });
+
   const transformedPlan = Object.freeze({
     ...plan,
     weapon,
     body,
-    postCouplingStage: CONTACT_RELEASE_SEPARATION_RECOIL_STAGE,
+    postCouplingStage: wholeBodyBurst?.accepted
+      ? TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE
+      : CONTACT_RELEASE_SEPARATION_RECOIL_STAGE,
   });
 
-  const profileOverrides = {
-    legStrengthScale: clamp(finite(baseProfile.legStrengthScale, 1) * profile.legStrengthScale, 0, 1.5),
-  };
-  if (profile.impulseEndMs) profileOverrides.impulseEndMs = profile.impulseEndMs;
-  if (profile.recoilEndMs) profileOverrides.recoilEndMs = profile.recoilEndMs;
-  if (profile.settleEndMs) profileOverrides.settleEndMs = profile.settleEndMs;
+  const profileOverrides = wholeBodyBurst?.accepted
+    ? Object.freeze({
+        ...wholeBodyBurst.profileOverrides,
+        legStrengthScale: clamp(
+          finite(baseProfile.legStrengthScale, 1) * finite(wholeBodyBurst.profileOverrides.legStrengthScale, 1),
+          0,
+          1.5,
+        ),
+      })
+    : Object.freeze({
+        legStrengthScale: clamp(finite(baseProfile.legStrengthScale, 1) * profile.legStrengthScale, 0, 1.5),
+      });
 
   return Object.freeze({
-    stage: CONTACT_RELEASE_SEPARATION_RECOIL_STAGE,
+    stage: wholeBodyBurst?.accepted
+      ? TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE
+      : CONTACT_RELEASE_SEPARATION_RECOIL_STAGE,
     previousStage: COUPLED_MOMENTUM_CONTINUATION_STAGE,
     baseStage: POST_COUPLING_RECOIL_STAGGER_BASE_STAGE,
     accepted: true,
-    reason: outcome === 'block'
-      ? 'post-coupling-body-stagger-ready'
-      : 'contact-release-separation-recoil-ready',
+    reason: wholeBodyBurst?.accepted
+      ? wholeBodyBurst.reason
+      : 'post-coupling-body-stagger-ready',
     outcome,
-    initialElapsedMs: Math.max(0, finite(baseProfile.contactHoldMs)),
+    initialElapsedMs: wholeBodyBurst?.accepted
+      ? wholeBodyBurst.initialElapsedMs
+      : Math.max(0, finite(baseProfile.contactHoldMs)),
     plan: transformedPlan,
-    profileOverrides: Object.freeze(profileOverrides),
+    profileOverrides,
     separation: Object.freeze({
       direction: separation.direction,
       source: separation.source,
@@ -281,15 +304,16 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
       couplingSource: separation.couplingSource,
       b2Alignment: separation.b2Alignment,
       couplingAlignment: separation.couplingAlignment,
-      releaseWindowMs: finite(profile.releaseSeparationWindowMs),
+      releaseWindowMs: wholeBodyBurst?.accepted ? 0 : finite(profile.releaseSeparationWindowMs),
       weaponMomentum,
+      bypassedForWholeBodyBurst: wholeBodyBurst?.accepted === true,
     }),
-    // Compatibility shape retained for existing lab/HUD readers.
     continuation: Object.freeze({
       direction: separation.direction,
-      source: separation.source,
+      source: wholeBodyBurst?.accepted ? 'two-actor-whole-body-release-burst' : separation.source,
       weaponMomentum,
     }),
+    wholeBodyBurst: wholeBodyBurst?.accepted ? wholeBodyBurst : null,
     couplingMomentum: Object.freeze({
       plannedDriveMeters,
       achievedDriveMeters,
@@ -299,24 +323,31 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
       weaponFollowSpeedMps,
       momentum,
     }),
-    channelIntent: Object.freeze({
-      weapon: profile.separationFromCoupling
-        ? 'contact-release-separation-impulse-then-directional-recoil'
-        : 'short-block-bounce',
-      shoulder: profile.separationFromCoupling
-        ? 'separation-recoil-pulls-shoulder-before-body'
-        : 'block-impact-arm-response',
-      torso: 'post-coupling-inertia',
-      hipsAndLegs: 'stagger-and-balance-recovery',
-    }),
-    timelineIntent: profile.separationFromCoupling
+    channelIntent: wholeBodyBurst?.accepted
       ? Object.freeze({
-          releaseSeparationWindowMs: finite(profile.releaseSeparationWindowMs),
-          weaponAndShoulderImpulseEndMs: profile.impulseEndMs - Math.max(0, finite(baseProfile.contactHoldMs)),
-          torsoAndHipsEndMs: profile.recoilEndMs - Math.max(0, finite(baseProfile.contactHoldMs)),
-          fullRecoveryEndMs: profile.settleEndMs - Math.max(0, finite(baseProfile.contactHoldMs)),
+          weapon: 'old-two-actor-direct-arm-deflect-at-release-power-frame',
+          shoulder: 'weapon-and-shoulders-open-on-same-impulse-clock',
+          torso: 'old-two-actor-yaw-roll-plus-backward-bias',
+          hipsAndLegs: 'same-clock-almost-fall-then-knee-rescue',
+          freeArm: 'parent-chain-motion-no-explicit-flail',
+        })
+      : Object.freeze({
+          weapon: 'short-block-bounce',
+          shoulder: 'block-impact-arm-response',
+          torso: 'post-coupling-inertia',
+          hipsAndLegs: 'stagger-and-balance-recovery',
+        }),
+    timelineIntent: wholeBodyBurst?.accepted
+      ? Object.freeze({
+          releaseSeparationWindowMs: 0,
+          b3EntryElapsedMs: wholeBodyBurst.initialElapsedMs,
+          weaponAndShoulderImpulseEndMs: wholeBodyBurst.profileOverrides.impulseEndMs,
+          torsoAndHipsEndMs: wholeBodyBurst.profileOverrides.recoilEndMs,
+          fullRecoveryEndMs: wholeBodyBurst.profileOverrides.settleEndMs,
         })
       : null,
-    authority: 'contact-release-separation-recoil-presentation-handoff',
+    authority: wholeBodyBurst?.accepted
+      ? 'shield-release-to-old-two-actor-unified-whole-body-burst'
+      : 'post-coupling-block-presentation-handoff',
   });
 }
