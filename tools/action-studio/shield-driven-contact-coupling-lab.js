@@ -16,12 +16,19 @@ import { createLongswordDirectionalAttackRuntime, LONGSWORD_ATTACK_PHASES } from
 import { captureRigPose, applyRigPose } from '../../src/combat/guard-recovery-bridge.js';
 import { probeSweptSwordBucklerContact } from '../../src/combat/swept-sword-buckler-contact.js';
 import { createGuardThreatTrackingRuntime, planGuardThreatCorrection } from '../../src/combat/guard-threat-tracking.js';
-import { analyzePredictiveInterceptParry, createPredictiveInterceptParryPresentationRuntime } from '../../src/combat/predictive-intercept-parry.js';
-import { createTwoActorCombatIntegration } from '../../src/combat/two-actor-combat-integration.js';
+import {
+  analyzePredictiveInterceptParry,
+  createPredictiveInterceptParryPresentationRuntime,
+  RECOIL_PRESENTATION_AUTHORITY_STAGE,
+} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r23';
+import {
+  createTwoActorCombatIntegration,
+  TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
+} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r23';
 import { SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, createShieldDrivenContactCouplingRuntime } from '../../src/combat/shield-driven-contact-coupling.js';
 
 const THREE = window.THREE;
-if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G4.3B.5R.2 requires Three.js r128 + GLTFLoader');
+if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error('G4.3B.5R.2.3 requires Three.js r128 + GLTFLoader');
 const BLOCK_INTENT_AGE_MS = 260;
 const PARRY_INTENT_AGE_MS = 120;
 const PERFECT_INTENT_AGE_MS = 50;
@@ -106,6 +113,7 @@ let latestCombatResult = null;
 let latestCombatUpdate = null;
 let latestCouplingReport = null;
 let latestPredictiveReport = null;
+let latestPredictiveHandoff = null;
 let repeatCooldownMs = 0;
 let attackerIdleDuration = 1;
 let attackerIdleClockSeconds = 0;
@@ -116,9 +124,9 @@ function marker(name, color, radius) {
   const node = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 8), new THREE.MeshBasicMaterial({ color, depthWrite: false }));
   node.name = name; node.visible = false; scene.add(node); return node;
 }
-const predictedMarker = marker('G43B5R2_PREDICTED', 0x6df0a7, 0.048);
-const contactMarker = marker('G43B5R2_CONTACT', 0xff625f, 0.062);
-const driveMarker = marker('G43B5R2_SHIELD_DRIVE', 0x59d9ff, 0.042);
+const predictedMarker = marker('G43B5R23_PREDICTED', 0x6df0a7, 0.048);
+const contactMarker = marker('G43B5R23_CONTACT', 0xff625f, 0.062);
+const driveMarker = marker('G43B5R23_SHIELD_DRIVE', 0x59d9ff, 0.042);
 const bladeNodes = [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip];
 const bladeScratch = bladeNodes.map(() => new THREE.Vector3());
 const bladeBuffers = [0, 1].map(() => bladeNodes.map(() => ({ x: 0, y: 0, z: 0 })));
@@ -143,8 +151,8 @@ function setView(view) {
   camera.lookAt(0, 1.05, 0); camera.updateMatrixWorld(true);
 }
 function enterGuard() {
-  guardMachine.send(GUARD_EVENTS.RESET, { stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE }); guardRuntime.sync(camera);
-  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE }); guardRuntime.sync(camera);
+  guardMachine.send(GUARD_EVENTS.RESET, { stage: RECOIL_PRESENTATION_AUTHORITY_STAGE }); guardRuntime.sync(camera);
+  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: RECOIL_PRESENTATION_AUTHORITY_STAGE }); guardRuntime.sync(camera);
   const report = guardRuntime.update(180, camera);
   if (report.snapshot.state !== GUARD_STATES.HOLD) throw new Error(`Expected Guard Hold, got ${report.snapshot.state}`);
 }
@@ -161,7 +169,8 @@ function sampleAttacker(snapshot, deltaMs) {
 function resetExchange() {
   couplingRuntime.reset(); predictivePresentation.reset(); trackingRuntime.reset(); couplingReleasePose = null;
   firstContact = null; latestContact = null; latestCombatResult = null; latestCombatUpdate = null;
-  latestCouplingReport = null; latestPredictiveReport = null; latestAnalysis = null; latestTrackingPlan = null; latestTrackingReport = null;
+  latestCouplingReport = null; latestPredictiveReport = null; latestPredictiveHandoff = null;
+  latestAnalysis = null; latestTrackingPlan = null; latestTrackingReport = null;
   contactMarker.visible = false; predictedMarker.visible = false; driveMarker.visible = false;
 }
 function startAttack(direction = selectedDirection) {
@@ -179,6 +188,7 @@ function setMode(mode) {
   document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
 }
 function intentAgeMs() { return selectedMode === 'perfect' ? PERFECT_INTENT_AGE_MS : selectedMode === 'parry' ? PARRY_INTENT_AGE_MS : BLOCK_INTENT_AGE_MS; }
+function normalizedRequestedOutcome() { return selectedMode === 'perfect' ? 'perfect-parry' : selectedMode; }
 
 function updatePreContact(snapshot, currentBlade, deltaSeconds) {
   if (!snapshot.action || firstContact) return;
@@ -204,8 +214,8 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
   firstContact = latestContact;
   const surfaceAtContact = buckler.getWorldParrySurface();
   contactMarker.position.set(latestContact.point.x, latestContact.point.y, latestContact.point.z); contactMarker.visible = true; predictedMarker.visible = false;
-  const handoff = predictivePresentation.active ? predictivePresentation.handoff() : null;
-  const guardIntentAgeMs = handoff?.accepted ? handoff.guardIntentAgeMs : intentAgeMs();
+  latestPredictiveHandoff = predictivePresentation.active ? predictivePresentation.handoff() : null;
+  const guardIntentAgeMs = latestPredictiveHandoff?.accepted ? latestPredictiveHandoff.guardIntentAgeMs : intentAgeMs();
   latestCombatResult = combat.resolveContact({ contact: latestContact, guardIntentAgeMs });
   if (!latestCombatResult.accepted) return;
   guardRuntime.sync(camera);
@@ -234,21 +244,58 @@ function registerWhiff(snapshot) {
 }
 function magnitude(v) { return v ? Math.hypot(v.x || 0, v.y || 0, v.z || 0) : 0; }
 function updateHud(snapshot, combatSnapshot) {
-  hudAttack.textContent = `Attack: ${snapshot.direction?.toUpperCase() || selectedDirection.toUpperCase()} · ${snapshot.phase} · ${selectedMode.toUpperCase()}`;
-  hudContact.textContent = firstContact ? `Contact: YES · radial ${firstContact.radialDistance.toFixed(3)}m · blade ${firstContact.bladeFraction.toFixed(2)}` : 'Contact: —';
-  hudCoupling.textContent = latestCouplingReport ? `Coupling: ${latestCouplingReport.phase} · ${latestCouplingReport.elapsedMs.toFixed(0)}ms · ${latestCouplingReport.complete ? 'RELEASED' : 'B3 HELD'}` : 'Coupling: —';
+  const resolution = latestCombatResult?.resolution || null;
+  const requested = normalizedRequestedOutcome();
+  const actual = resolution?.outcome || '—';
+  const mismatch = actual !== '—' && actual !== requested;
+  const intent = resolution?.guard?.intentAgeMs;
+  const responseClass = resolution?.attacker?.responseClass || '—';
+  const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
+  const continuationSource = postHandoff?.continuation?.source || '—';
+  hudAttack.textContent = `Requested: ${requested.toUpperCase()} · Actual: ${actual.toUpperCase()}${mismatch ? ' ⚠ DOWNGRADED/MISMATCH' : ''} · intent ${intent == null ? '—' : `${intent.toFixed(0)}ms`}`;
+  hudContact.textContent = firstContact ? `Contact: YES · radial ${firstContact.radialDistance.toFixed(3)}m · blade ${firstContact.bladeFraction.toFixed(2)} · response ${responseClass}` : 'Contact: —';
+  hudCoupling.textContent = latestCouplingReport ? `Coupling: ${latestCouplingReport.outcome?.toUpperCase() || '—'} · ${latestCouplingReport.phase} · ${latestCouplingReport.elapsedMs.toFixed(0)}ms · ${latestCouplingReport.complete ? 'RELEASED' : 'B3 HELD'}` : 'Coupling: —';
   hudShield.textContent = latestCouplingReport?.shieldOffset ? `Shield drive: ${(magnitude(latestCouplingReport.shieldOffset) * 100).toFixed(1)}cm` : 'Shield drive: —';
   hudWeapon.textContent = latestCouplingReport?.attackerWeaponOffset ? `Weapon follow: ${(magnitude(latestCouplingReport.attackerWeaponOffset) * 100).toFixed(1)}cm · source=shield` : 'Weapon follow: —';
   const recoil = combatSnapshot.attackerRecoil?.sample;
-  hudRecoil.textContent = couplingRuntime.active ? 'B3 recoil: LOCKED · coupling owns weapon motion' : recoil ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'}` : 'B3 recoil: —';
+  const refresh = latestCombatUpdate?.attackerVisualRefreshApplied === true ? 'REFRESH YES' : 'refresh —';
+  hudRecoil.textContent = couplingRuntime.active
+    ? 'B3 recoil: LOCKED · coupling owns weapon motion'
+    : recoil
+      ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · ${refresh} · continuation ${continuationSource}`
+      : `B3 recoil: — · ${refresh} · continuation ${continuationSource}`;
 }
 function buildReport(combatSnapshot = combat.snapshot) {
   const exchange = combatSnapshot.activeExchange || combatSnapshot.lastExchange;
+  const resolution = latestCombatResult?.resolution || null;
+  const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
+  const requestedOutcome = normalizedRequestedOutcome();
+  const actualOutcome = resolution?.outcome || null;
   const report = {
-    stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
+    stage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
+    baseCouplingStage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
+    integrationAuthorityStage: TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
     pass: ready,
     selectedDirection,
     selectedMode,
+    authorityDebug: {
+      requestedOutcome,
+      actualOutcome,
+      outcomeMatchesRequest: actualOutcome == null ? null : actualOutcome === requestedOutcome,
+      guardIntentAgeMs: resolution?.guard?.intentAgeMs ?? null,
+      responseClass: resolution?.attacker?.responseClass || null,
+      predictiveHandoff: latestPredictiveHandoff ? {
+        requestedGrade: latestPredictiveHandoff.requestedGrade,
+        variant: latestPredictiveHandoff.variant,
+        lockedGuardIntentAgeMs: latestPredictiveHandoff.lockedGuardIntentAgeMs,
+        presentationElapsedMs: latestPredictiveHandoff.presentationElapsedMs,
+        timingAuthority: latestPredictiveHandoff.timingAuthority,
+      } : null,
+      couplingOutcome: latestCouplingReport?.outcome || null,
+      postCouplingStage: postHandoff?.stage || null,
+      continuationSource: postHandoff?.continuation?.source || null,
+      attackerVisualRefreshApplied: latestCombatUpdate?.attackerVisualRefreshApplied === true,
+    },
     contact: firstContact ? { point: firstContact.point, bladeFraction: firstContact.bladeFraction, incomingVelocity: firstContact.incomingVelocity } : null,
     coupling: latestCouplingReport ? {
       outcome: latestCouplingReport.outcome,
@@ -262,6 +309,9 @@ function buildReport(combatSnapshot = combat.snapshot) {
     } : null,
     exchange: exchange ? { outcome: exchange.outcome, responseClass: exchange.responseClass } : null,
     invariants: {
+      rhythmGradeLockedUntilContact: true,
+      actualOutcomeVisibleInHud: true,
+      postAdditiveAttackerAppearanceRefresh: true,
       swordShieldSweptContactAuthority: true,
       frozenAttackerPoseDuringCoupling: true,
       combatUpdateDeltaDuringCoupling: 0,
@@ -273,11 +323,11 @@ function buildReport(combatSnapshot = combat.snapshot) {
     },
   };
   reportNode.textContent = JSON.stringify(report, null, 2);
-  document.documentElement.dataset.g43b5r2 = report.pass ? 'pass' : 'fail'; window.__G43B5R2_RESULT__ = report; return report;
+  document.documentElement.dataset.g43b5r23 = report.pass ? 'pass' : 'fail'; window.__G43B5R23_RESULT__ = report; return report;
 }
 
 async function main() {
-  status.textContent = 'Loading UAL attacks + Skyrim Guard + shield coupling…';
+  status.textContent = 'Loading UAL attacks + Skyrim Guard + B.5R.2.3 authority fixes…';
   const [ual1, ual2, skyrim] = await Promise.all([
     loadUal1AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
     loadUal2AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
@@ -286,11 +336,11 @@ async function main() {
   attacker.registerAnimations(ual1); attacker.registerAnimations(ual2); defender.registerAnimations(skyrim);
   attackerIdleDuration = attacker.getAnimationDuration('UAL1/Sword_Idle') || 1;
   const idle = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle'); const bind = idle?.userData?.weaponBindCalibration;
-  if (!bind?.correctionQuaternion) throw new Error('G4.3B.5R.2 requires Skyrim Guard weapon bind calibration');
+  if (!bind?.correctionQuaternion) throw new Error('G4.3B.5R.2.3 requires Skyrim Guard weapon bind calibration');
   defenderSword = createDebugSword(THREE);
   mountDebugSword(defender, defenderSword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
   enterGuard(); ready = true;
-  status.textContent = 'G4.3B.5R.2 READY · contact → shield drive → weapon follows shield → coupled pose → B3'; status.className = 'good';
+  status.textContent = 'G4.3B.5R.2.3 READY · locked rhythm outcome + post-additive visual refresh + explicit authority HUD'; status.className = 'good';
   buildReport(); startAttack('right');
 }
 document.querySelectorAll('[data-attack]').forEach((button) => button.addEventListener('click', () => startAttack(button.dataset.attack)));
@@ -334,7 +384,21 @@ function frame(timestamp) {
 }
 requestAnimationFrame(frame);
 main().catch((error) => {
-  document.documentElement.dataset.g43b5r2 = 'fail'; status.textContent = `G4.3B.5R.2 FAIL · ${error?.message || error}`; status.className = 'bad';
-  reportNode.textContent = error?.stack || String(error); window.__G43B5R2_RESULT__ = { stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, pass: false, error: error?.stack || String(error) };
+  document.documentElement.dataset.g43b5r23 = 'fail'; status.textContent = `G4.3B.5R.2.3 FAIL · ${error?.message || error}`; status.className = 'bad';
+  reportNode.textContent = error?.stack || String(error); window.__G43B5R23_RESULT__ = { stage: RECOIL_PRESENTATION_AUTHORITY_STAGE, pass: false, error: error?.stack || String(error) };
 });
-window.__G43B5R2_LAB__ = { startAttack, setMode, combat, attackRuntime, guardMachine, couplingRuntime, trackingRuntime, buckler, get latestContact() { return latestContact; }, get latestCouplingReport() { return latestCouplingReport; }, get latestCombatResult() { return latestCombatResult; } };
+window.__G43B5R23_LAB__ = {
+  startAttack,
+  setMode,
+  combat,
+  attackRuntime,
+  guardMachine,
+  couplingRuntime,
+  trackingRuntime,
+  buckler,
+  get latestContact() { return latestContact; },
+  get latestCouplingReport() { return latestCouplingReport; },
+  get latestCombatResult() { return latestCombatResult; },
+  get latestCombatUpdate() { return latestCombatUpdate; },
+  get latestPredictiveHandoff() { return latestPredictiveHandoff; },
+};
