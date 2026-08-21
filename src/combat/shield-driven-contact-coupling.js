@@ -1,4 +1,10 @@
 import { publishPostCouplingRecoilStaggerHandoff } from './post-coupling-recoil-stagger-handoff.js';
+import {
+  IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE,
+  applyImpactAccentBodyPose,
+  captureImpactAccentBasePose,
+  sampleImpactAccentFusion,
+} from './impact-accent-full-body-recoil-fusion.js';
 
 export const SHIELD_DRIVEN_CONTACT_COUPLING_STAGE = 'G4.3B.5R.2';
 
@@ -88,9 +94,15 @@ export function sampleShieldContactCoupling(input = {}) {
   const shieldOffset = add(add(scale(incomingDirection, give), scale(tangent, sweep)), scale(worldUp, lift));
   const follow = scale(shieldOffset, profile.attackerFollowRatio);
   const attackerWeaponOffset = add(follow, scale(tangent, profile.attackerReleaseBiasMeters * release));
+  const impactAccent = sampleImpactAccentFusion({
+    outcome,
+    elapsedMs: rawElapsedMs,
+    attackDirection: String(input.attackDirection || '').toLowerCase(),
+  });
 
   return Object.freeze({
     stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
+    fusionStage: IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE,
     outcome,
     phase,
     elapsedMs: rawElapsedMs,
@@ -102,6 +114,7 @@ export function sampleShieldContactCoupling(input = {}) {
     shieldTangent: freezeVector(tangent),
     shieldOffset: freezeVector(shieldOffset),
     attackerWeaponOffset: freezeVector(attackerWeaponOffset),
+    impactAccent,
     profile,
   });
 }
@@ -145,8 +158,22 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
       contactPoint: vec(input.contactPoint || input.contact?.point),
       incomingVelocity: vec(input.incomingVelocity || input.contact?.incomingVelocity),
       surfaceCenter: vec(surface.center), elapsedMs: 0,
+      attackerImpactBasePose: captureImpactAccentBasePose(attackerRig),
+      defenderImpactBasePose: captureImpactAccentBasePose(defenderRig),
     };
-    lastReport = Object.freeze({ accepted: true, active: true, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, outcome, phase: SHIELD_CONTACT_COUPLING_PHASES.HOLD, elapsedMs: 0, complete: false, releaseAttackerRecoil: false, profile });
+    lastReport = Object.freeze({
+      accepted: true,
+      active: true,
+      stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
+      fusionStage: IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE,
+      outcome,
+      phase: SHIELD_CONTACT_COUPLING_PHASES.HOLD,
+      elapsedMs: 0,
+      complete: false,
+      releaseAttackerRecoil: false,
+      impactAccent: sampleImpactAccentFusion({ outcome, elapsedMs: 0, attackDirection: active.attackDirection }),
+      profile,
+    });
     return lastReport;
   }
 
@@ -158,6 +185,11 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
       contactPoint: active.contactPoint, incomingVelocity: active.incomingVelocity, profile: active.profile,
     });
     const appliedDegrees = { defenderUpperArm: 0, defenderLowerArm: 0, attackerUpperArm: 0, attackerLowerArm: 0 };
+
+    // G4.3B.5R.2.4.2: body accent is sampled from the captured contact pose each frame.
+    // This prevents quaternion accumulation while leaving arm/weapon authority to shield coupling IK.
+    applyImpactAccentBodyPose(THREE, attackerRig, active.attackerImpactBasePose, sample.impactAccent.attacker);
+    applyImpactAccentBodyPose(THREE, defenderRig, active.defenderImpactBasePose, sample.impactAccent.defender);
 
     defenderTarget.set(active.surfaceCenter.x + sample.shieldOffset.x, active.surfaceCenter.y + sample.shieldOffset.y, active.surfaceCenter.z + sample.shieldOffset.z);
     for (let i = 0; i < 2; i += 1) {
@@ -179,13 +211,16 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
     const finalSurface = buckler.getWorldParrySurface();
     const surfaceAtContact = Object.freeze({ center: freezeVector(active.surfaceCenter) });
     lastReport = Object.freeze({
-      active: !sample.complete, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, outcome: active.outcome,
+      active: !sample.complete, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
+      fusionStage: IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE,
+      outcome: active.outcome,
       phase: sample.phase, elapsedMs: active.elapsedMs, complete: sample.complete,
       releaseAttackerRecoil: sample.releaseAttackerRecoil,
       incomingDirection: sample.incomingDirection,
       shieldTangent: sample.shieldTangent,
       shieldOffset: sample.shieldOffset,
       attackerWeaponOffset: sample.attackerWeaponOffset,
+      impactAccent: sample.impactAccent,
       appliedDegrees: Object.freeze(appliedDegrees), finalSurface, profile: active.profile,
     });
     if (sample.complete) {
