@@ -107,11 +107,11 @@ test('G4.3B.5R.2.3 refreshes attacker presentation after additive recoil mutates
   assert.equal(appearanceRefreshes, 1);
 });
 
-test('G4.3B.5R.2.3 lab exposes requested versus actual authority instead of hiding Block downgrade', () => {
+test('G4.3B.5R.2.3+ lab keeps requested/actual and visual-refresh authority visible after Block split', () => {
   const labSource = fs.readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.js', import.meta.url), 'utf8');
   assert.match(labSource, /Requested: \$\{requested\.toUpperCase\(\)\} · Actual: \$\{actual\.toUpperCase\(\)\}/);
   assert.match(labSource, /DOWNGRADED\/MISMATCH/);
-  assert.match(labSource, /lockedGuardIntentAgeMs/);
+  assert.match(labSource, /latestPredictiveHandoff/);
   assert.match(labSource, /attackerVisualRefreshApplied/);
-  assert.match(labSource, /continuationSource/);
+  assert.match(labSource, /postCouplingStage/);
 });
