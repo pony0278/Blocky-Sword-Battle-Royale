@@ -1,3 +1,8 @@
+import {
+  buildPostCouplingRecoilStaggerHandoff,
+  consumePostCouplingRecoilStaggerHandoff,
+} from './post-coupling-recoil-stagger-handoff.js';
+
 export const ATTACKER_RECOIL_PRESENTATION_STAGE = 'G4.3B.3';
 
 export const ATTACKER_RECOIL_PRESENTATION_PHASES = Object.freeze({
@@ -323,12 +328,14 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
   const aimOffset = new THREE.Vector3();
 
   let activePlan = null;
+  let activeProfile = { ...(options.profile || {}) };
   let elapsedMs = 0;
   let lastCompleted = null;
+  let postCouplingHandoff = null;
 
   function snapshot() {
     const sample = activePlan
-      ? sampleAttackerRecoilPresentation(activePlan, elapsedMs, options.profile)
+      ? sampleAttackerRecoilPresentation(activePlan, elapsedMs, activeProfile)
       : null;
     return Object.freeze({
       stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
@@ -336,6 +343,7 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
       elapsedMs,
       plan: activePlan,
       sample,
+      postCouplingHandoff,
       lastCompleted,
     });
   }
@@ -350,9 +358,31 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     if (!ATTACKER_RECOIL_PRESENTATION_PROFILES[plan.responseClass]) {
       return Object.freeze({ accepted: false, reason: 'unsupported-response-class', snapshot: snapshot() });
     }
+    consumePostCouplingRecoilStaggerHandoff(rig);
     activePlan = plan;
+    activeProfile = { ...(options.profile || {}) };
     elapsedMs = 0;
+    postCouplingHandoff = null;
     return Object.freeze({ accepted: true, snapshot: snapshot() });
+  }
+
+  function applyPendingPostCouplingHandoff() {
+    if (!activePlan || postCouplingHandoff) return null;
+    const pending = consumePostCouplingRecoilStaggerHandoff(rig);
+    if (!pending) return null;
+    const baseProfile = resolveProfile(activePlan, activeProfile);
+    const handoff = buildPostCouplingRecoilStaggerHandoff({
+      plan: activePlan,
+      couplingReport: pending.couplingReport,
+      surfaceAtContact: pending.surfaceAtContact,
+      baseProfile,
+    });
+    postCouplingHandoff = handoff;
+    if (!handoff.accepted) return handoff;
+    activePlan = handoff.plan;
+    activeProfile = { ...activeProfile, ...handoff.profileOverrides };
+    elapsedMs = Math.max(elapsedMs, handoff.initialElapsedMs);
+    return handoff;
   }
 
   function applyPose(sample) {
@@ -408,8 +438,9 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
 
   function update(deltaSeconds = 1 / 60) {
     if (!activePlan) return snapshot();
+    const handoff = applyPendingPostCouplingHandoff();
     elapsedMs += Math.max(0, finite(deltaSeconds, 1 / 60)) * 1000;
-    const sample = sampleAttackerRecoilPresentation(activePlan, elapsedMs, options.profile);
+    const sample = sampleAttackerRecoilPresentation(activePlan, elapsedMs, activeProfile);
     const appliedAim = applyPose(sample);
 
     if (sample?.complete) {
@@ -420,15 +451,20 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
         attackDirection: activePlan.attackDirection,
         durationMs: sample.profile?.settleEndMs
           ?? ATTACKER_RECOIL_PRESENTATION_PROFILES[activePlan.responseClass].settleEndMs,
+        postCouplingStage: postCouplingHandoff?.stage || null,
+        couplingMomentum: postCouplingHandoff?.couplingMomentum || null,
         readyForAttackHandoff: true,
       });
       activePlan = null;
+      activeProfile = { ...(options.profile || {}) };
       elapsedMs = 0;
+      postCouplingHandoff = null;
       return Object.freeze({
         ...snapshot(),
         justCompleted: true,
         completed: lastCompleted,
         appliedAim,
+        postCouplingHandoffApplied: handoff?.accepted === true,
       });
     }
 
@@ -437,12 +473,16 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
       sample,
       appliedAim,
       justCompleted: false,
+      postCouplingHandoffApplied: handoff?.accepted === true,
     });
   }
 
   function reset() {
     activePlan = null;
+    activeProfile = { ...(options.profile || {}) };
     elapsedMs = 0;
+    postCouplingHandoff = null;
+    consumePostCouplingRecoilStaggerHandoff(rig);
     return snapshot();
   }
 
