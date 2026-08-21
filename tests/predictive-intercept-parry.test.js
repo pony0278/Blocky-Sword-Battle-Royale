@@ -31,15 +31,17 @@ test('G4.3B.5R grades Parry input by predicted time-to-contact', () => {
   assert.equal(PREDICTIVE_INTERCEPT_PARRY_STAGE, 'G4.3B.5R');
   assert.equal(classifyPredictiveParryTiming(0.30), PREDICTIVE_PARRY_INPUT_GRADES.TOO_EARLY);
   assert.equal(classifyPredictiveParryTiming(0.18), PREDICTIVE_PARRY_INPUT_GRADES.EARLY);
-  assert.equal(classifyPredictiveParryTiming(0.10), PREDICTIVE_PARRY_INPUT_GRADES.PERFECT);
-  assert.equal(classifyPredictiveParryTiming(0.05), PREDICTIVE_PARRY_INPUT_GRADES.LATE);
+  assert.equal(classifyPredictiveParryTiming(0.10), PREDICTIVE_PARRY_INPUT_GRADES.EARLY);
+  assert.equal(classifyPredictiveParryTiming(0.065), PREDICTIVE_PARRY_INPUT_GRADES.PERFECT);
+  assert.equal(classifyPredictiveParryTiming(0.03), PREDICTIVE_PARRY_INPUT_GRADES.LATE);
   assert.equal(classifyPredictiveParryTiming(0.01), PREDICTIVE_PARRY_INPUT_GRADES.TOO_LATE);
 });
 
-test('G4.3B.5R normal Parry begins earlier than Perfect Parry', () => {
+test('G4.3B.5R normal Parry begins earlier than Perfect Parry and Perfect stays inside authoritative 75ms', () => {
   assert.ok(getPredictiveParryTriggerTtcSeconds('parry') > getPredictiveParryTriggerTtcSeconds('perfect'));
   close(getPredictiveParryTriggerTtcSeconds('parry'), 0.135, 1e-9);
   close(getPredictiveParryTriggerTtcSeconds('perfect'), 0.065, 1e-9);
+  assert.ok(getPredictiveParryTriggerTtcSeconds('perfect') < 0.075);
 });
 
 test('G4.3B.5R tracks a future intercept before physical Sword × Buckler contact', () => {
