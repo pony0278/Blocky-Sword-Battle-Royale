@@ -195,7 +195,7 @@ test('G4.3B.5R.2.4 release signal is one-shot per attacker rig', () => {
   assert.equal(second, null);
 });
 
-test('G4.3B.5R.2.4 source contract publishes coupling release and consumes before B3 elapsed advances', () => {
+test('G4.3B.5R.2.4.1 source contract publishes coupling release and injects separation before B3 elapsed advances', () => {
   const couplingSource = fs.readFileSync(new URL('../src/combat/shield-driven-contact-coupling.js', import.meta.url), 'utf8');
   const recoilSource = fs.readFileSync(new URL('../src/combat/attacker-recoil-presentation.js', import.meta.url), 'utf8');
 
@@ -205,5 +205,7 @@ test('G4.3B.5R.2.4 source contract publishes coupling release and consumes befor
   assert.match(recoilSource, /const handoff = applyPendingPostCouplingHandoff\(\);\s*elapsedMs \+=/);
   assert.match(recoilSource, /elapsedMs = Math\.max\(elapsedMs, handoff\.initialElapsedMs\)/);
   assert.match(recoilSource, /activePlan = handoff\.plan/);
-  assert.match(recoilSource, /activeProfile = \{ \.\.\.activeProfile, \.\.\.handoff\.profileOverrides \}/);
+  assert.match(recoilSource, /handoff\.separation\?\.releaseWindowMs/);
+  assert.match(recoilSource, /RELEASE_SEPARATION_DISTANCE_METERS\[activePlan\.responseClass\]/);
+  assert.match(recoilSource, /activeProfile = \{[\s\S]*\.\.\.activeProfile,[\s\S]*\.\.\.handoff\.profileOverrides,[\s\S]*releaseSeparationWindowMs,[\s\S]*releaseSeparationDistanceMeters,[\s\S]*\};/);
 });

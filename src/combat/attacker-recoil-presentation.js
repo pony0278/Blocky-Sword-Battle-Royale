@@ -4,9 +4,11 @@ import {
 } from './post-coupling-recoil-stagger-handoff.js';
 
 export const ATTACKER_RECOIL_PRESENTATION_STAGE = 'G4.3B.3';
+export const CONTACT_RELEASE_SEPARATION_MOTION_STAGE = 'G4.3B.5R.2.4.1';
 
 export const ATTACKER_RECOIL_PRESENTATION_PHASES = Object.freeze({
   CONTACT_HOLD: 'contact-hold',
+  SEPARATION: 'separation',
   IMPULSE: 'impulse',
   RECOIL: 'recoil',
   SETTLE: 'settle',
@@ -41,6 +43,11 @@ export const ATTACKER_RECOIL_PRESENTATION_PROFILES = Object.freeze({
     forearmDeflectScale: 0.54,
     legStrengthScale: 1,
   }),
+});
+
+const RELEASE_SEPARATION_DISTANCE_METERS = Object.freeze({
+  'parry-directional-recoil': 0.065,
+  'perfect-parry-directional-recoil': 0.095,
 });
 
 function finite(value, fallback = 0) {
@@ -88,25 +95,33 @@ function resolveProfile(plan, overrides = {}) {
   const responseClass = String(plan?.responseClass || '');
   const base = ATTACKER_RECOIL_PRESENTATION_PROFILES[responseClass];
   if (!base) return null;
+  const contactHoldMs = clamp(overrides.contactHoldMs ?? base.contactHoldMs, 0, 120);
+  const releaseSeparationWindowMs = clamp(overrides.releaseSeparationWindowMs ?? 0, 0, 120);
+  const releaseSeparationDistanceMeters = clamp(overrides.releaseSeparationDistanceMeters ?? 0, 0, 0.16);
+  const impulseEndMs = clamp(
+    overrides.impulseEndMs ?? base.impulseEndMs,
+    contactHoldMs + releaseSeparationWindowMs + 1,
+    260,
+  );
+  const recoilEndMs = clamp(
+    overrides.recoilEndMs ?? base.recoilEndMs,
+    impulseEndMs + 1,
+    420,
+  );
+  const settleEndMs = clamp(
+    overrides.settleEndMs ?? base.settleEndMs,
+    recoilEndMs + 1,
+    800,
+  );
   return Object.freeze({
     ...base,
     ...overrides,
-    contactHoldMs: clamp(overrides.contactHoldMs ?? base.contactHoldMs, 0, 120),
-    impulseEndMs: clamp(
-      overrides.impulseEndMs ?? base.impulseEndMs,
-      (overrides.contactHoldMs ?? base.contactHoldMs) + 1,
-      260,
-    ),
-    recoilEndMs: clamp(
-      overrides.recoilEndMs ?? base.recoilEndMs,
-      (overrides.impulseEndMs ?? base.impulseEndMs) + 1,
-      420,
-    ),
-    settleEndMs: clamp(
-      overrides.settleEndMs ?? base.settleEndMs,
-      (overrides.recoilEndMs ?? base.recoilEndMs) + 1,
-      800,
-    ),
+    contactHoldMs,
+    releaseSeparationWindowMs,
+    releaseSeparationDistanceMeters,
+    impulseEndMs,
+    recoilEndMs,
+    settleEndMs,
     armDeflectScale: clamp(overrides.armDeflectScale ?? base.armDeflectScale, 0, 1.5),
     forearmDeflectScale: clamp(overrides.forearmDeflectScale ?? base.forearmDeflectScale, 0, 1.5),
     legStrengthScale: clamp(overrides.legStrengthScale ?? base.legStrengthScale, 0, 1.5),
@@ -121,6 +136,7 @@ function sampleWeights(profile, elapsedMs) {
       armWeight: 0,
       torsoWeight: 0,
       legWeight: 0,
+      separationWeight: 0,
       complete: true,
     });
   }
@@ -131,17 +147,47 @@ function sampleWeights(profile, elapsedMs) {
       armWeight: 0,
       torsoWeight: 0,
       legWeight: 0,
+      separationWeight: 0,
+      complete: false,
+    });
+  }
+
+  const separationWindowMs = Math.max(0, finite(profile.releaseSeparationWindowMs));
+  const separationEndMs = profile.contactHoldMs + separationWindowMs;
+  if (separationWindowMs > 0 && elapsed <= separationEndMs) {
+    const t = clamp01((elapsed - profile.contactHoldMs) / separationWindowMs);
+    const separationWeight = smoothstep01(t);
+    return Object.freeze({
+      phase: ATTACKER_RECOIL_PRESENTATION_PHASES.SEPARATION,
+      armWeight: 0.42 * separationWeight,
+      torsoWeight: 0.06 * smoothstep01((t - 0.55) / 0.45),
+      legWeight: 0,
+      separationWeight,
       complete: false,
     });
   }
 
   if (elapsed <= profile.impulseEndMs) {
+    if (separationWindowMs > 0) {
+      const impulseSpan = Math.max(1, profile.impulseEndMs - separationEndMs);
+      const t = clamp01((elapsed - separationEndMs) / impulseSpan);
+      const eased = smoothstep01(t);
+      return Object.freeze({
+        phase: ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE,
+        armWeight: 0.42 + 0.58 * eased,
+        torsoWeight: smoothstep01((t - 0.08) / 0.92),
+        legWeight: smoothstep01((t - 0.35) / 0.65),
+        separationWeight: 1 - eased,
+        complete: false,
+      });
+    }
     const t = clamp01((elapsed - profile.contactHoldMs) / (profile.impulseEndMs - profile.contactHoldMs));
     return Object.freeze({
       phase: ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE,
       armWeight: smoothstep01(t),
       torsoWeight: smoothstep01((t - 0.12) / 0.88),
       legWeight: smoothstep01((t - 0.28) / 0.72),
+      separationWeight: 0,
       complete: false,
     });
   }
@@ -153,6 +199,7 @@ function sampleWeights(profile, elapsedMs) {
       armWeight: 1 - 0.22 * t,
       torsoWeight: 1 - 0.12 * t,
       legWeight: 1 - 0.07 * t,
+      separationWeight: 0,
       complete: false,
     });
   }
@@ -163,6 +210,7 @@ function sampleWeights(profile, elapsedMs) {
     armWeight: 0.78 * (1 - t),
     torsoWeight: 0.88 * (1 - t),
     legWeight: 0.93 * (1 - t),
+    separationWeight: 0,
     complete: false,
   });
 }
@@ -170,6 +218,8 @@ function sampleWeights(profile, elapsedMs) {
 function zeroPose() {
   return Object.freeze({
     weaponAimOffsetMeters: Object.freeze({ x: 0, y: 0, z: 0 }),
+    releaseSeparationOffsetMeters: Object.freeze({ x: 0, y: 0, z: 0 }),
+    releaseSeparationDistanceMeters: 0,
     upperArmAimDegrees: 0,
     lowerArmAimDegrees: 0,
     chestYawDegrees: 0,
@@ -204,6 +254,7 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
   if (weights.complete) {
     return Object.freeze({
       stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
+      motionStage: profile.releaseSeparationWindowMs > 0 ? CONTACT_RELEASE_SEPARATION_MOTION_STAGE : null,
       sequence: plan.sequence ?? null,
       responseClass: plan.responseClass || null,
       attackDirection,
@@ -217,13 +268,22 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
     });
   }
 
-  const aimDistance = (0.055 + 0.13 * weaponStrength) * weights.armWeight;
+  const baseAimDistance = (0.055 + 0.13 * weaponStrength) * weights.armWeight;
+  const separationDistance = profile.releaseSeparationDistanceMeters * (weights.separationWeight || 0);
+  const aimDistance = Math.max(baseAimDistance, separationDistance);
   const aimOffset = aimDistance <= 1e-9
     ? Object.freeze({ x: 0, y: 0, z: 0 })
     : Object.freeze({
         x: weaponDirection.x * aimDistance,
         y: weaponDirection.y * aimDistance,
         z: weaponDirection.z * aimDistance,
+      });
+  const releaseSeparationOffset = separationDistance <= 1e-9
+    ? Object.freeze({ x: 0, y: 0, z: 0 })
+    : Object.freeze({
+        x: weaponDirection.x * separationDistance,
+        y: weaponDirection.y * separationDistance,
+        z: weaponDirection.z * separationDistance,
       });
 
   const topSymmetric = attackDirection === 'top';
@@ -234,6 +294,8 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
 
   const pose = Object.freeze({
     weaponAimOffsetMeters: aimOffset,
+    releaseSeparationOffsetMeters: releaseSeparationOffset,
+    releaseSeparationDistanceMeters: separationDistance,
     upperArmAimDegrees: deflectDegrees * profile.armDeflectScale * weights.armWeight,
     lowerArmAimDegrees: deflectDegrees * profile.forearmDeflectScale * weights.armWeight,
     chestYawDegrees: finite(plan.body?.yawDegrees) * weights.torsoWeight * 0.58,
@@ -253,6 +315,7 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
 
   return Object.freeze({
     stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
+    motionStage: profile.releaseSeparationWindowMs > 0 ? CONTACT_RELEASE_SEPARATION_MOTION_STAGE : null,
     sequence: plan.sequence ?? null,
     responseClass: plan.responseClass || null,
     attackDirection,
@@ -264,7 +327,9 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
     readyForAttackHandoff: false,
     profile,
     basePoseRequirement: 'sample-frozen-contact-pose-before-each-additive-update',
-    authority: 'attacker-recoil-presentation-only',
+    authority: profile.releaseSeparationWindowMs > 0
+      ? 'contact-release-separation-motion-then-attacker-recoil'
+      : 'attacker-recoil-presentation-only',
   });
 }
 
@@ -339,6 +404,7 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
       : null;
     return Object.freeze({
       stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
+      motionStage: sample?.motionStage || null,
       active: Boolean(activePlan),
       elapsedMs,
       plan: activePlan,
@@ -380,7 +446,16 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     postCouplingHandoff = handoff;
     if (!handoff.accepted) return handoff;
     activePlan = handoff.plan;
-    activeProfile = { ...activeProfile, ...handoff.profileOverrides };
+    const releaseSeparationWindowMs = Math.max(0, finite(handoff.separation?.releaseWindowMs));
+    const releaseSeparationDistanceMeters = releaseSeparationWindowMs > 0
+      ? finite(RELEASE_SEPARATION_DISTANCE_METERS[activePlan.responseClass], 0)
+      : 0;
+    activeProfile = {
+      ...activeProfile,
+      ...handoff.profileOverrides,
+      releaseSeparationWindowMs,
+      releaseSeparationDistanceMeters,
+    };
     elapsedMs = Math.max(elapsedMs, handoff.initialElapsedMs);
     return handoff;
   }
@@ -446,6 +521,7 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     if (sample?.complete) {
       lastCompleted = Object.freeze({
         stage: ATTACKER_RECOIL_PRESENTATION_STAGE,
+        motionStage: sample.motionStage || null,
         sequence: activePlan.sequence ?? null,
         responseClass: activePlan.responseClass,
         attackDirection: activePlan.attackDirection,
