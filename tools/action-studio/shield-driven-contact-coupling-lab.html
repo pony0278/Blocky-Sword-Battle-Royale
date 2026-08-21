@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3B.5R.2.4.2 Immediate Block Rebound Parity</title>
+  <title>G4.3B.5R.2.5 Parallel Parry Body Stagger</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 430px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block}
@@ -20,43 +20,41 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3B.5R.2.4.2 · Immediate Block Rebound Parity</b>
+      <b>G4.3B.5R.2.5 · Parallel Parry Body Stagger</b>
       <div id="hudAttack">Requested / Actual: loading…</div>
       <div id="hudContact">Contact: —</div>
       <div id="hudCoupling">Defense ownership: —</div>
       <div id="hudShield">Shield response: —</div>
       <div id="hudWeapon">Weapon authority: —</div>
       <div id="hudSeparation">Release separation: —</div>
-      <div id="hudRecoil">B3 recoil: —</div>
+      <div id="hudRecoil">Body stagger: —</div>
     </div>
-    <div class="legend">Red = authoritative sword × shield contact · Cyan = defender shield response · BLOCK rebound is B2/B3 immediate</div>
+    <div class="legend">Red = authoritative sword × shield contact · Cyan = shield response · PARRY body stagger starts while weapon coupling is still active</div>
   </main>
   <aside>
-    <h1>Immediate Block Rebound Parity</h1>
-    <div class="note">BLOCK 不再共用 Parry 的完整 coupling。命中盾牌後，攻擊方直接使用 predictive-intercept-parry-lab 已驗證的原始 B2/B3 blocked-weapon-bounce；防守盾只做約 3cm defender-only give，兩者同時發生。PARRY / PERFECT 仍維持 shield-driven coupling → separation → stagger。</div>
+    <h1>Parallel Parry Body Stagger</h1>
+    <div class="note">BLOCK 保持 .2.4.2 正確版本。PARRY / PERFECT 的劍與右臂仍由 shield-driven coupling 控制，但攻擊者 chest / spine / hips / legs 不再跟著 B3 一起凍結；接觸後約 30–40ms 就開始浮誇失衡，讓動作更接近 two-actor-combat-integration-lab 的可讀性。</div>
     <h2>Attack direction</h2><div class="row"><button data-attack="top">TOP</button><button data-attack="right" class="active">RIGHT</button><button data-attack="left">LEFT</button></div>
     <h2>Defense</h2><div class="row"><button data-mode="block">BLOCK</button><button data-mode="parry" class="active">PARRY</button><button data-mode="perfect">PERFECT</button></div>
     <div class="metric">
-      <span>BLOCK attacker authority</span><b>original B2/B3 · immediate</b>
-      <span>BLOCK B2 baseline</span><b>0.28 strength · 12°</b>
-      <span>BLOCK B3 timeline</span><b>18 → 82 → 142 → 220 ms</b>
-      <span>BLOCK shield give</span><b>3.0 cm peak · 68 ms</b>
-      <span>BLOCK shield recovery</span><b>150 ms total</b>
-      <span>BLOCK B3 clock</span><b>RUNNING during shield give</b>
-      <span>BLOCK weapon follow</span><b>none</b>
-      <span>BLOCK post-coupling handoff</span><b>none</b>
-      <span>PARRY / PERFECT</span><b>coupling → separation → stagger</b>
+      <span>BLOCK</span><b>unchanged · immediate B2/B3</b>
+      <span>PARRY weapon / right arm</span><b>shield coupling authority</b>
+      <span>PARRY body start</span><b>~30 ms after contact</b>
+      <span>PARRY body near peak</span><b>~92 ms</b>
+      <span>PARRY body handoff end</span><b>~252 ms</b>
+      <span>PARRY exaggeration</span><b>chest 1.45× · spine 1.35× · hips 1.30× · legs 1.20×</b>
+      <span>PERFECT body start</span><b>~24 ms</b>
+      <span>PERFECT exaggeration</span><b>chest 1.65× · spine 1.50× · hips 1.45× · legs 1.30×</b>
+      <span>Weapon channels touched by .2.5</span><b>none</b>
       <span>Root motion</span><b>none</b>
     </div>
     <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat</label>
     <label class="toggle"><input id="showSurface" type="checkbox" checked> Show shield parry surface</label>
-    <h2>Expected BLOCK causality</h2>
-    <div class="metric"><span>1</span><b>Sword hits shield</b><span>2A</span><b>Attacker sword immediately rebounds</b><span>2B</span><b>Shield gives 2–3cm in parallel</b><span>3</span><b>Arm / chest short recoil</b><span>4</span><b>~220ms settle</b></div>
     <h2>Expected PARRY causality</h2>
-    <div class="metric"><span>1</span><b>Rhythm Parry locks grade</b><span>2</span><b>Sword hits shield</b><span>3</span><b>Shield sweeps / weapon follows</b><span>4</span><b>Contact releases</b><span>5</span><b>SEPARATION → stagger</b></div>
+    <div class="metric"><span>1</span><b>Sword hits moving shield</b><span>2</span><b>Shield redirects sword</b><span>3</span><b>~30ms: chest/spine begin stagger</b><span>4</span><b>~90ms: body already reads as unbalanced</b><span>5</span><b>Contact release / separation</b><span>6</span><b>B3 takes over recovery</b></div>
     <h2>Views</h2><div class="row"><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="contact">Contact</button></div>
     <h2>Verification</h2><div id="status" class="warn">Loading…</div><pre id="report">Not run.</pre>
   </aside>
-  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r242"></script>
+  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r25"></script>
 </body>
 </html>
