@@ -26,6 +26,7 @@ import {
 import {
   PREDICTIVE_INTERCEPT_PARRY_STAGE,
   PREDICTIVE_INTERCEPT_PARRY_PROFILE,
+  RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
   analyzePredictiveInterceptParry,
   createPredictiveInterceptParryPresentationRuntime,
 } from '../../src/combat/predictive-intercept-parry.js';
@@ -33,7 +34,7 @@ import { createTwoActorCombatIntegration } from '../../src/combat/two-actor-comb
 
 const THREE = window.THREE;
 if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) {
-  throw new Error('G4.3B.5R requires Three.js r128 + GLTFLoader');
+  throw new Error('G4.3B.5R.1 requires Three.js r128 + GLTFLoader');
 }
 
 const BLOCK_INTENT_AGE_MS = 260;
@@ -86,9 +87,6 @@ const combat = createTwoActorCombatIntegration({
   attackerCharacter: attacker,
   attackRuntime,
   guardMachine,
-  // Contact hands the already-running predictive Parry pose to the authoritative
-  // Guard reaction at the power phase. Attacker recoil may begin immediately
-  // because the defender has already visibly caused the intercept before contact.
   parrySync: {
     presentationOffsetSeconds: 0.35,
     parryAttackerRecoilDelayMs: 0,
@@ -125,6 +123,7 @@ let latestTrackingPlan = null;
 let latestTrackingReport = null;
 let latestPredictiveReport = null;
 let latestHandoff = null;
+let latestParryResult = null;
 let guardReport = null;
 let hudClockMs = HUD_INTERVAL_MS;
 let reportClockMs = REPORT_INTERVAL_MS;
@@ -140,8 +139,8 @@ function marker(name, color, radius = 0.055) {
   return node;
 }
 
-const predictedMarker = marker('G43B5R_PREDICTED_INTERCEPT', 0x6df0a7, 0.048);
-const contactMarker = marker('G43B5R_CONTACT', 0xff625f, 0.062);
+const predictedMarker = marker('G43B5R1_PREDICTED_INTERCEPT', 0x6df0a7, 0.048);
+const contactMarker = marker('G43B5R1_CONTACT', 0xff625f, 0.062);
 
 function resize() {
   const width = Math.max(1, canvas.clientWidth);
@@ -178,9 +177,9 @@ function captureBladePolyline() {
 }
 
 function enterProductionGuard() {
-  guardMachine.send(GUARD_EVENTS.RESET, { stage: PREDICTIVE_INTERCEPT_PARRY_STAGE });
+  guardMachine.send(GUARD_EVENTS.RESET, { stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE });
   guardRuntime.sync(camera);
-  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: PREDICTIVE_INTERCEPT_PARRY_STAGE });
+  guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE });
   guardRuntime.sync(camera);
   guardReport = guardRuntime.update(180, camera);
   if (guardReport.snapshot.state !== GUARD_STATES.HOLD) {
@@ -234,7 +233,7 @@ function sampleAttackerBase(snapshot, deltaMs) {
   attacker.update(0, camera);
 }
 
-function resetPredictiveState({ restoreGuard = false } = {}) {
+function resetPredictiveState({ restoreGuard = false, keepResult = false } = {}) {
   predictivePresentation.reset();
   trackingRuntime.reset();
   latestAnalysis = null;
@@ -242,6 +241,7 @@ function resetPredictiveState({ restoreGuard = false } = {}) {
   latestTrackingReport = null;
   latestPredictiveReport = null;
   latestHandoff = null;
+  if (!keepResult) latestParryResult = null;
   predictedMarker.visible = false;
   if (restoreGuard && guardMachine.state === GUARD_STATES.HOLD) guardRuntime.sync(camera);
 }
@@ -254,6 +254,7 @@ function startAttack(direction = selectedDirection) {
   latestContact = null;
   latestCombatResult = null;
   latestCombatUpdate = null;
+  latestParryResult = null;
   contactMarker.visible = false;
   repeatCooldownMs = 0;
   resetPredictiveState({ restoreGuard: true });
@@ -276,7 +277,7 @@ function setMode(mode) {
 }
 
 function updatePredictiveParry(snapshot, currentBlade, deltaSeconds) {
-  if (!previousBlade || !snapshot.action || firstContact || selectedMode === 'block') {
+  if (!snapshot.action || firstContact || selectedMode === 'block') {
     predictedMarker.visible = false;
     return;
   }
@@ -284,6 +285,7 @@ function updatePredictiveParry(snapshot, currentBlade, deltaSeconds) {
 
   const surface = buckler.getWorldParrySurface();
   latestAnalysis = analyzePredictiveInterceptParry({
+    attackSnapshot: snapshot,
     previousBlade,
     currentBlade,
     bucklerSurface: surface,
@@ -303,11 +305,20 @@ function updatePredictiveParry(snapshot, currentBlade, deltaSeconds) {
   }
 
   if (!predictivePresentation.active && latestAnalysis?.shouldTrigger) {
-    predictivePresentation.start({
+    const started = predictivePresentation.start({
       sequence: snapshot.sequence,
       requestedGrade: selectedMode,
       triggerTtcSeconds: latestAnalysis.triggerTtcSeconds,
     });
+    if (started.accepted) {
+      latestParryResult = {
+        state: 'active',
+        reason: 'rhythm-triggered',
+        triggerTtcMs: latestAnalysis.triggerTtcSeconds * 1000,
+        geometryAtTrigger: latestAnalysis.geometryReason || null,
+        reachableAtTrigger: latestAnalysis.trackingPlan?.reachable ?? null,
+      };
+    }
   }
 
   if (!predictivePresentation.active) return;
@@ -326,6 +337,10 @@ function updatePredictiveParry(snapshot, currentBlade, deltaSeconds) {
         bucklerSurface: postPresentationSurface,
       })
     : null;
+
+  // Reach is presentation capacity, never permission to start Parry.
+  // Unreachable plans are deliberately still applied; the runtime clamps to
+  // the 18cm Parry envelope and real contact decides success vs WHIFF.
   latestTrackingReport = trackingRuntime.update(latestTrackingPlan, deltaSeconds);
   defender.update(0, camera);
   defenderSword?.update();
@@ -364,37 +379,68 @@ function updateContact(snapshot, currentBlade, deltaSeconds) {
   latestHandoff = predictivePresentation.active ? predictivePresentation.handoff() : null;
   const predictiveIntentAgeMs = latestHandoff?.accepted ? latestHandoff.guardIntentAgeMs : null;
   const guardIntentAgeMs = predictiveIntentAgeMs ?? BLOCK_INTENT_AGE_MS;
-  latestCombatResult = combat.resolveContact({
-    contact: latestContact,
-    guardIntentAgeMs,
-  });
+  latestCombatResult = combat.resolveContact({ contact: latestContact, guardIntentAgeMs });
 
   if (latestCombatResult.accepted) {
-    // Same render frame authority handoff: sample the authoritative Guard state
-    // immediately so no extra frame of stale HOLD pose appears after contact.
+    latestParryResult = {
+      state: 'contact-confirmed',
+      reason: 'authoritative-swept-contact',
+      outcome: latestCombatResult.resolution?.outcome || null,
+      guardIntentAgeMs,
+    };
     guardReport = guardRuntime.sync(camera);
     trackingRuntime.reset();
     predictedMarker.visible = false;
   }
 }
 
+function registerParryWhiff(snapshot) {
+  if (!predictivePresentation.active || combat.active || firstContact) return false;
+  const report = predictivePresentation.report;
+  latestParryResult = {
+    state: 'whiff',
+    reason: 'attack-ended-without-authoritative-contact',
+    attackDirection: selectedDirection,
+    sourceTimeSeconds: report?.sourceTimeSeconds ?? null,
+    elapsedMs: report?.elapsedMs ?? null,
+    requiredTrackingMeters: latestTrackingPlan?.requiredDistance ?? null,
+    appliedTrackingMeters: latestTrackingPlan?.appliedDistance ?? null,
+    achievedTrackingMeters: latestTrackingReport?.achievedDistance ?? 0,
+    reachable: latestTrackingPlan?.reachable ?? null,
+    lastAttackPhase: snapshot.phase,
+  };
+  resetPredictiveState({ restoreGuard: true, keepResult: true });
+  return true;
+}
+
 function updateHud(snapshot, combatSnapshot) {
   const exchange = combatSnapshot.activeExchange || combatSnapshot.lastExchange;
   const recoilSample = combatSnapshot.attackerRecoil?.sample;
-  const ttcMs = latestAnalysis?.available ? latestAnalysis.timeToContactSeconds * 1000 : null;
+  const rhythmTtcMs = latestAnalysis?.timeToContactSeconds != null
+    ? latestAnalysis.timeToContactSeconds * 1000
+    : null;
+  const predictedTtcMs = latestAnalysis?.predictedTimeToContactSeconds != null
+    ? latestAnalysis.predictedTimeToContactSeconds * 1000
+    : null;
   hudAttack.textContent = `Attack: ${snapshot.direction?.toUpperCase() || selectedDirection.toUpperCase()} · ${snapshot.phase}`;
-  hudThreat.textContent = ttcMs != null
-    ? `Threat: TTC ${ttcMs.toFixed(0)}ms · ${latestAnalysis.timingGrade} · ${latestAnalysis.reason}`
+  hudThreat.textContent = rhythmTtcMs != null
+    ? `Rhythm TTC ${rhythmTtcMs.toFixed(0)}ms · geometry ${predictedTtcMs == null ? '—' : `${predictedTtcMs.toFixed(0)}ms`} · ${latestAnalysis.reason}`
     : 'Threat: —';
   hudParry.textContent = latestPredictiveReport?.active
-    ? `Parry: ACTIVE · source ${latestPredictiveReport.sourceTimeSeconds.toFixed(3)}s · age ${latestPredictiveReport.elapsedMs.toFixed(0)}ms · track ${(latestTrackingReport?.achievedDistance || 0).toFixed(3)}m`
+    ? `Parry: ACTIVE · source ${latestPredictiveReport.sourceTimeSeconds.toFixed(3)}s · track ${(latestTrackingReport?.achievedDistance || 0).toFixed(3)}m · ${latestTrackingPlan?.reachable === false ? 'CLAMPED' : 'tracking'}`
     : `Parry: ${selectedMode.toUpperCase()} waiting`;
   hudContact.textContent = firstContact
     ? `Contact: ACTIVE · radial ${firstContact.radialDistance.toFixed(3)}m · intent age ${(latestHandoff?.guardIntentAgeMs ?? BLOCK_INTENT_AGE_MS).toFixed(0)}ms`
-    : 'Contact: —';
+    : latestParryResult?.state === 'whiff'
+      ? 'Contact: NONE · PARRY WHIFF'
+      : 'Contact: —';
   hudOutcome.textContent = exchange
     ? `Outcome: ${exchange.outcome.toUpperCase()} · ${exchange.responseClass}`
-    : 'Outcome: waiting';
+    : latestParryResult?.state === 'whiff'
+      ? 'Outcome: PARRY WHIFF'
+      : latestParryResult?.state === 'active'
+        ? 'Outcome: active Parry · waiting for real contact'
+        : 'Outcome: waiting';
   hudRecoil.textContent = recoilSample
     ? `Recoil: ${recoilSample.phase} · arm ${recoilSample.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoilSample.weights?.torsoWeight?.toFixed(2) ?? '—'}`
     : 'Recoil: —';
@@ -403,20 +449,27 @@ function updateHud(snapshot, combatSnapshot) {
 function buildReport(combatSnapshot = combat.snapshot) {
   const exchange = combatSnapshot.activeExchange || combatSnapshot.lastExchange;
   const report = {
-    stage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
+    stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+    baseStage: PREDICTIVE_INTERCEPT_PARRY_STAGE,
     pass: ready,
     selectedDirection,
     selectedMode,
     attackPhase: attackRuntime.snapshot.phase,
     defenderState: guardMachine.state,
-    predictive: latestAnalysis ? {
-      available: latestAnalysis.available,
-      reason: latestAnalysis.reason,
-      timingGrade: latestAnalysis.timingGrade,
-      timeToContactMs: latestAnalysis.timeToContactSeconds * 1000,
+    rhythm: latestAnalysis ? {
+      timeToContactMs: latestAnalysis.timeToContactSeconds == null ? null : latestAnalysis.timeToContactSeconds * 1000,
       triggerTtcMs: latestAnalysis.triggerTtcSeconds * 1000,
-      interceptable: latestAnalysis.interceptable,
+      timingGrade: latestAnalysis.timingGrade,
       shouldTrigger: latestAnalysis.shouldTrigger,
+      reason: latestAnalysis.rhythm?.reason || latestAnalysis.reason,
+    } : null,
+    predictiveGeometry: latestAnalysis ? {
+      geometryReason: latestAnalysis.geometryReason || null,
+      predictedTimeToContactMs: latestAnalysis.predictedTimeToContactSeconds == null
+        ? null
+        : latestAnalysis.predictedTimeToContactSeconds * 1000,
+      planeCapturable: latestAnalysis.planeCapturable,
+      interceptable: latestAnalysis.interceptable,
       requiredTrackingMeters: latestAnalysis.trackingPlan?.requiredDistance ?? null,
       maxTrackingMeters: latestAnalysis.parryTrackingProfile?.maxCorrectionMeters ?? null,
     } : null,
@@ -432,12 +485,14 @@ function buildReport(combatSnapshot = combat.snapshot) {
       appliedDistance: latestTrackingPlan.appliedDistance,
       reachable: latestTrackingPlan.reachable,
       achievedDistance: latestTrackingReport?.achievedDistance || 0,
+      clampedButStillActive: latestTrackingPlan.reachable === false && Boolean(latestPredictiveReport?.active),
     } : null,
     contact: firstContact ? {
       radialDistance: firstContact.radialDistance,
       bladeFraction: firstContact.bladeFraction,
       incomingVelocity: firstContact.incomingVelocity,
     } : null,
+    parryResult: latestParryResult,
     handoff: latestHandoff,
     outcome: exchange ? {
       outcome: exchange.outcome,
@@ -446,22 +501,23 @@ function buildReport(combatSnapshot = combat.snapshot) {
       attackerRecoilDelayMs: exchange.attackerRecoilDelayMs,
     } : null,
     invariants: {
-      predictiveAuthorityBeforeContactOnly: true,
+      rhythmTriggerUsesCanonicalAttackTtc: true,
+      reachNeverGatesParryStart: true,
+      unreachableTrackingStillClampsAndRuns: true,
       authoritativeOutcomeRequiresRealContact: true,
       parryTrackingMaxMeters: 0.18,
-      defenderMotionStartsBeforeAttackerRecoil: true,
       sameFrameGuardAuthorityHandoff: true,
       rootTeleport: false,
     },
   };
   reportNode.textContent = JSON.stringify(report, null, 2);
-  document.documentElement.dataset.g43b5r = report.pass ? 'pass' : 'fail';
-  window.__G43B5R_RESULT__ = report;
+  document.documentElement.dataset.g43b5r1 = report.pass ? 'pass' : 'fail';
+  window.__G43B5R1_RESULT__ = report;
   return report;
 }
 
 async function main() {
-  status.textContent = 'Loading UAL attacks + Skyrim Guard + predictive Parry…';
+  status.textContent = 'Loading UAL attacks + Skyrim Guard + rhythm-triggered active Parry…';
   const [ual1, ual2, skyrim] = await Promise.all([
     loadUal1AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
     loadUal2AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
@@ -474,7 +530,7 @@ async function main() {
 
   const idle = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle');
   const bind = idle?.userData?.weaponBindCalibration;
-  if (!bind?.correctionQuaternion) throw new Error('G4.3B.5R requires Skyrim Guard weapon bind calibration');
+  if (!bind?.correctionQuaternion) throw new Error('G4.3B.5R.1 requires Skyrim Guard weapon bind calibration');
   defenderSword = createDebugSword(THREE);
   mountDebugSword(
     defender,
@@ -484,7 +540,7 @@ async function main() {
 
   enterProductionGuard();
   ready = true;
-  status.textContent = 'G4.3B.5R READY · predictive TTC → active intercept → authoritative contact';
+  status.textContent = 'G4.3B.5R.1 READY · canonical rhythm TTC → active Parry → geometry-guided tracking → real contact / WHIFF';
   status.className = 'good';
   buildReport();
   startAttack('right');
@@ -531,7 +587,7 @@ function frame(timestamp) {
     previousBlade = currentBlade;
 
     if (!snapshot.action && predictivePresentation.active && !combat.active) {
-      resetPredictiveState({ restoreGuard: true });
+      registerParryWhiff(snapshot);
     }
 
     const combatSnapshot = combat.snapshot;
@@ -562,14 +618,18 @@ function frame(timestamp) {
 
 requestAnimationFrame(frame);
 main().catch((error) => {
-  document.documentElement.dataset.g43b5r = 'fail';
-  status.textContent = `G4.3B.5R FAIL · ${error?.message || error}`;
+  document.documentElement.dataset.g43b5r1 = 'fail';
+  status.textContent = `G4.3B.5R.1 FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G43B5R_RESULT__ = { stage: PREDICTIVE_INTERCEPT_PARRY_STAGE, pass: false, error: error?.stack || String(error) };
+  window.__G43B5R1_RESULT__ = {
+    stage: RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE,
+    pass: false,
+    error: error?.stack || String(error),
+  };
 });
 
-window.__G43B5R_LAB__ = {
+window.__G43B5R1_LAB__ = {
   startAttack,
   setMode,
   combat,
@@ -583,6 +643,7 @@ window.__G43B5R_LAB__ = {
   get latestTrackingPlan() { return latestTrackingPlan; },
   get latestTrackingReport() { return latestTrackingReport; },
   get latestPredictiveReport() { return latestPredictiveReport; },
+  get latestParryResult() { return latestParryResult; },
   get latestContact() { return latestContact; },
   get latestCombatResult() { return latestCombatResult; },
 };
