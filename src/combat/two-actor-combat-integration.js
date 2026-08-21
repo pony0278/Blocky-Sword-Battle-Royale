@@ -9,6 +9,8 @@ export const TWO_ACTOR_PARRY_SYNC_STAGE = 'G4.3B.5';
 
 export const TWO_ACTOR_PARRY_SYNC_PROFILE = Object.freeze({
   presentationOffsetSeconds: 0.205,
+  parryAttackerRecoilDelayMs: 20,
+  perfectParryAttackerRecoilDelayMs: 14,
 });
 
 export const TWO_ACTOR_COMBAT_PHASES = Object.freeze({
@@ -28,6 +30,27 @@ function finite(value, fallback = 0) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, finite(value, min)));
+}
+
+export function getAttackerRecoilDelayMs(outcome, overrides = {}) {
+  const value = String(outcome || '');
+  if (value === 'perfect-parry') {
+    return clamp(
+      overrides.perfectParryAttackerRecoilDelayMs
+        ?? TWO_ACTOR_PARRY_SYNC_PROFILE.perfectParryAttackerRecoilDelayMs,
+      0,
+      80,
+    );
+  }
+  if (value === 'parry') {
+    return clamp(
+      overrides.parryAttackerRecoilDelayMs
+        ?? TWO_ACTOR_PARRY_SYNC_PROFILE.parryAttackerRecoilDelayMs,
+      0,
+      80,
+    );
+  }
+  return 0;
 }
 
 export function buildSynchronizedDefenderPayload(resolution, overrides = {}) {
@@ -99,6 +122,7 @@ export function createTwoActorCombatIntegration(options = {}) {
   let activeExchange = null;
   let lastExchange = null;
   let lastFailure = null;
+  let exchangeElapsedMs = 0;
 
   function phase() {
     if (activeExchange) return TWO_ACTOR_COMBAT_PHASES.RECOIL;
@@ -115,6 +139,7 @@ export function createTwoActorCombatIntegration(options = {}) {
       defenderGuard: guardMachine.snapshot,
       attackerRecoil: attackerRecoil.snapshot || null,
       activeExchange,
+      exchangeElapsedMs,
       lastExchange,
       lastFailure,
       authority: 'two-actor-combat-orchestration',
@@ -135,6 +160,7 @@ export function createTwoActorCombatIntegration(options = {}) {
     attackerRecoil.reset();
     if (attackRuntime.interrupted) attackRuntime.releaseInterruption();
     outcomeGate.reset(sequence);
+    exchangeElapsedMs = 0;
   }
 
   function startAttack(direction, startOptions = {}) {
@@ -279,6 +305,8 @@ export function createTwoActorCombatIntegration(options = {}) {
       });
     }
 
+    const attackerRecoilDelayMs = getAttackerRecoilDelayMs(resolution.outcome, parrySync);
+    exchangeElapsedMs = 0;
     activeExchange = freeze({
       stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
       presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
@@ -292,6 +320,7 @@ export function createTwoActorCombatIntegration(options = {}) {
       defenderEvent: resolution.defender.event,
       defenderReactionVariant: resolution.defender.reactionVariant,
       defenderPresentationOffsetSeconds: defenderPayload.presentationOffsetSeconds || 0,
+      attackerRecoilDelayMs,
       enterBridgeApplied: Boolean(enterBridge?.accepted),
     });
     lastFailure = null;
@@ -333,7 +362,21 @@ export function createTwoActorCombatIntegration(options = {}) {
     if (!activeExchange) return snapshot({ updated: false });
 
     const sampledFrozenPose = sampleFrozenPose(context);
-    const recoilUpdate = attackerRecoil.update(deltaSeconds);
+    const deltaMs = Math.max(0, finite(deltaSeconds, 1 / 60)) * 1000;
+    const previousElapsedMs = exchangeElapsedMs;
+    exchangeElapsedMs += deltaMs;
+    const delayMs = activeExchange.attackerRecoilDelayMs || 0;
+    const previousRecoilMs = Math.max(0, previousElapsedMs - delayMs);
+    const currentRecoilMs = Math.max(0, exchangeElapsedMs - delayMs);
+    const recoilDeltaSeconds = Math.max(0, currentRecoilMs - previousRecoilMs) / 1000;
+    const recoilUpdate = recoilDeltaSeconds > 0
+      ? attackerRecoil.update(recoilDeltaSeconds)
+      : freeze({
+          justCompleted: false,
+          delayedByContactSync: true,
+          remainingDelayMs: Math.max(0, delayMs - exchangeElapsedMs),
+          snapshot: attackerRecoil.snapshot || null,
+        });
     const completed = recoilUpdate?.justCompleted === true
       || recoilUpdate?.completed?.readyForAttackHandoff === true;
 
@@ -349,11 +392,13 @@ export function createTwoActorCombatIntegration(options = {}) {
     const released = attackRuntime.releaseInterruption();
     lastExchange = freeze({
       ...completedExchange,
+      exchangeDurationMs: exchangeElapsedMs,
       completed: released.accepted === true,
       attackerHandoffReleased: released.accepted === true,
       defenderStateAtAttackerHandoff: guardMachine.state,
     });
     activeExchange = null;
+    exchangeElapsedMs = 0;
 
     if (!released.accepted) {
       rememberFailure(released.reason || 'attack-interruption-release-failed', {
@@ -375,6 +420,7 @@ export function createTwoActorCombatIntegration(options = {}) {
     attackRuntime.reset();
     outcomeGate.reset();
     activeExchange = null;
+    exchangeElapsedMs = 0;
     lastExchange = null;
     lastFailure = null;
     if (resetGuard) guardMachine.send(GUARD_EVENTS.RESET, { stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE });
