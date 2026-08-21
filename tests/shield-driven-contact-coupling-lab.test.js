@@ -11,47 +11,44 @@ test('G4.3B.5R.2 Lab uses real swept Sword × Buckler contact as the authority g
   assert.match(source, /combat\.resolveContact\(\{ contact: latestContact, guardIntentAgeMs \}\)/);
 });
 
-test('G4.3B.5R.2.5 Parry coupling owns weapon contact while B3 weapon recoil receives zero delta', () => {
+test('G4.3B.5R.2.6 Parry freezes weapon B3 but advances backward body before coupling constraint', () => {
   assert.match(source, /const parryCouplingOwnsWeapon = couplingRuntime\.active;/);
-  assert.match(source, /latestCombatUpdate = combat\.update\(0, \{ camera \}\);/);
-  assert.match(source, /latestCouplingReport = couplingRuntime\.update\(deltaSeconds\);/);
-  assert.ok(
-    source.indexOf('latestCombatUpdate = combat.update(0, { camera });')
-      < source.indexOf('latestCouplingReport = couplingRuntime.update(deltaSeconds);'),
-    'frozen attacker weapon base must be sampled before shield-driven Parry coupling is applied',
-  );
+  const couplingBody = source.slice(source.indexOf('function updateCoupling('), source.indexOf('function updateBlockGive('));
+  assert.match(couplingBody, /latestCombatUpdate = combat\.update\(0, \{ camera \}\);/);
+  assert.match(couplingBody, /balanceBreakRuntime\.update\(deltaSeconds\)/);
+  assert.match(couplingBody, /couplingRuntime\.update\(deltaSeconds\)/);
+  assert.ok(couplingBody.indexOf('balanceBreakRuntime.update(deltaSeconds)') < couplingBody.indexOf('couplingRuntime.update(deltaSeconds)'));
 });
 
-test('G4.3B.5R.2.4.2 Block remains outside Parry coupling', () => {
+test('G4.3B.5R.2.4.2 Block remains outside Parry coupling and balance break', () => {
   const branchStart = source.indexOf("if (outcome === 'block')");
   const branchEnd = source.indexOf('} else {', branchStart);
   const blockBranch = source.slice(branchStart, branchEnd);
   assert.match(blockBranch, /blockGiveRuntime\.start/);
   assert.doesNotMatch(blockBranch, /couplingRuntime\.start/);
-  assert.doesNotMatch(blockBranch, /parallelBodyRuntime\.start/);
+  assert.doesNotMatch(blockBranch, /balanceBreakRuntime\.start/);
   assert.match(source, /blockShieldGiveRunsParallelToAttackerBounce: true/);
   assert.match(source, /blockB3ClockFrozen: false/);
 });
 
 test('G4.3B.5R.2 does not reset pre-contact tracking at authoritative contact', () => {
   const contactStart = source.indexOf('function resolveContact(');
-  const couplingStart = source.indexOf('function updateCoupling(');
+  const couplingStart = source.indexOf('function rebuildNeutralCouplingReleaseBase(');
   const resolveBody = source.slice(contactStart, couplingStart);
   assert.doesNotMatch(resolveBody, /trackingRuntime\.reset\(\)/);
   assert.match(source.slice(couplingStart), /if \(latestCouplingReport\?\.complete\)[\s\S]*trackingRuntime\.reset\(\)/);
 });
 
-test('G4.3B.5R.2.5 captures terminal weapon-coupled pose before parallel body application', () => {
-  assert.match(source, /let couplingReleasePose = null;/);
-  assert.match(source, /couplingReleasePose = captureRigPose\(attacker\.rig\);/);
-  assert.match(source, /if \(couplingReleasePose\)[\s\S]*applyRigPose\(attacker\.rig, couplingReleasePose\)/);
-  assert.match(source, /couplingReleasePoseCapturedBeforeParallelBodyApplication: true/);
+test('G4.3B.5R.2.6 preserves terminal hand constraint while neutralizing release torso base', () => {
+  assert.match(source, /rebuildNeutralCouplingReleaseBase/);
+  assert.match(source, /reapplyAttackerConstraint/);
+  assert.match(source, /couplingReleasePose = captureRigPose\(attacker\.rig\)/);
+  assert.match(source, /terminalHandConstraintReappliedForNeutralB3Base: true/);
 });
 
-test('G4.3B.5R.2.5 lab exposes separate Block, Parry weapon, and Parry body ownership', () => {
-  assert.match(html, /PARRY weapon \/ right arm/);
-  assert.match(html, /PARRY body start/);
-  assert.match(source, /Weapon authority: original B2\/B3/);
-  assert.match(source, /B3 weapon: LOCKED · Parallel body/);
-  assert.match(source, /parryBodyStaggerRunsDuringCoupling: true/);
+test('G4.3B.5R.2.6 Lab exposes backward pitch dominant Parry contract', () => {
+  assert.match(html, /PARRY chest backward/);
+  assert.match(html, /BODY FIRST → CONTACT CONSTRAINT LAST/);
+  assert.match(source, /Backward break:/);
+  assert.match(source, /backwardPitchDominatesLateralTwist: true/);
 });
