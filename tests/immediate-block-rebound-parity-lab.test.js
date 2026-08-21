@@ -23,14 +23,15 @@ test('G4.3B.5R.2.4.2 lets B3 advance while Block shield give runs in parallel', 
   assert.match(source, /B3 RUNNING IN PARALLEL/);
 });
 
-test('G4.3B.5R.2.6 keeps Parry weapon coupling frozen while backward body has separate authority', () => {
+test('G4.3B.5R.2.7 keeps Parry weapon coupling frozen until release power frame', () => {
   assert.match(source, /function updateCoupling\(deltaSeconds\)[\s\S]*combat\.update\(0, \{ camera \}\)/);
-  assert.match(source, /Backward break:/);
+  assert.match(source, /backward PRELOAD/);
   assert.match(source, /balanceBreakRuntime\.update\(deltaSeconds\)/);
+  assert.match(source, /WHOLE-BODY BURST: ACTIVE/);
 });
 
-test('G4.3B.5R.2.6 keeps the accepted Block parity contract visible', () => {
+test('G4.3B.5R.2.7 keeps the accepted Block parity contract visible', () => {
   assert.match(html, /BLOCK<\/span><b>unchanged · immediate B2\/B3<\/b>/);
-  assert.match(html, /PARRY chest backward/);
-  assert.match(html, /v=g43b5r26/);
+  assert.match(html, /PARRY contact phase/);
+  assert.match(html, /v=g43b5r27/);
 });
