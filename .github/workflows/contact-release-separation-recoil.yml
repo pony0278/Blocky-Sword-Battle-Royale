@@ -1,4 +1,4 @@
-name: G4.3B.5R.2.7 Two-Actor Whole-Body Recoil Burst
+name: G4.3B.5R.2.8 Legacy Two-Actor Recoil Passthrough
 
 on:
   pull_request:
@@ -14,6 +14,7 @@ on:
       - 'src/combat/directional-recoil-planner.js'
       - 'tools/action-studio/shield-driven-contact-coupling-lab.html'
       - 'tools/action-studio/shield-driven-contact-coupling-lab.js'
+      - 'tests/legacy-two-actor-recoil-passthrough.test.js'
       - 'tests/post-coupling-recoil-stagger-handoff.test.js'
       - 'tests/attacker-recoil-presentation.test.js'
       - 'tests/contact-release-separation-motion.test.js'
@@ -32,13 +33,13 @@ on:
       - '.github/workflows/contact-release-separation-recoil.yml'
   push:
     branches:
-      - 'g4.3b.5r.2.7-two-actor-whole-body-recoil-burst'
+      - 'g43b5r28-legacy-two-actor-recoil-passthrough'
 
 permissions:
   contents: read
 
 jobs:
-  whole-body-recoil-burst-regression:
+  legacy-two-actor-recoil-passthrough-regression:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -62,9 +63,10 @@ jobs:
           && node --check src/combat/attacker-recoil-presentation.js
           && node --check tools/action-studio/shield-driven-contact-coupling-lab.js
 
-      - name: Run Block parity and whole-body Parry burst regressions
+      - name: Run Block parity, historical burst, and legacy passthrough regressions
         run: >-
           node --test
+          tests/legacy-two-actor-recoil-passthrough.test.js
           tests/post-coupling-recoil-stagger-handoff.test.js
           tests/attacker-recoil-presentation.test.js
           tests/contact-release-separation-motion.test.js
