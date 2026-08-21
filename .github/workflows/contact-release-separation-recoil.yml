@@ -13,6 +13,7 @@ on:
       - 'tests/post-coupling-recoil-stagger-handoff.test.js'
       - 'tests/attacker-recoil-presentation.test.js'
       - 'tests/contact-release-separation-motion.test.js'
+      - 'tests/contact-release-separation-motion-lab-contract.test.js'
       - 'tests/directional-recoil-planner.test.js'
       - '.github/workflows/contact-release-separation-recoil.yml'
   push:
@@ -48,4 +49,5 @@ jobs:
           tests/post-coupling-recoil-stagger-handoff.test.js
           tests/attacker-recoil-presentation.test.js
           tests/contact-release-separation-motion.test.js
+          tests/contact-release-separation-motion-lab-contract.test.js
           tests/directional-recoil-planner.test.js
