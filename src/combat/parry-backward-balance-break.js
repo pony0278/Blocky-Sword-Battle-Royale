@@ -29,7 +29,7 @@ export const PARRY_BACKWARD_BALANCE_BREAK_PROFILES = Object.freeze({
     outcome: 'perfect-parry',
     startMs: 18,
     riseEndMs: 66,
-    peakEndMs: 80,
+    peakEndMs: 100,
     completeMs: 104,
     minimumChestBackwardDegrees: 15,
     pitchAmplification: 2.10,
