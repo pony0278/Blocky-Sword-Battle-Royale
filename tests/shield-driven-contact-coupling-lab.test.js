@@ -11,7 +11,7 @@ test('G4.3B.5R.2 Lab uses real swept Sword × Buckler contact as the authority g
   assert.match(source, /combat\.resolveContact\(\{ contact: latestContact, guardIntentAgeMs \}\)/);
 });
 
-test('G4.3B.5R.2.6 Parry freezes weapon B3 but advances backward body before coupling constraint', () => {
+test('G4.3B.5R.2.7 Parry freezes weapon B3 during shield redirect while backward preload advances first', () => {
   assert.match(source, /const parryCouplingOwnsWeapon = couplingRuntime\.active;/);
   const couplingBody = source.slice(source.indexOf('function updateCoupling('), source.indexOf('function updateBlockGive('));
   assert.match(couplingBody, /latestCombatUpdate = combat\.update\(0, \{ camera \}\);/);
@@ -20,7 +20,7 @@ test('G4.3B.5R.2.6 Parry freezes weapon B3 but advances backward body before cou
   assert.ok(couplingBody.indexOf('balanceBreakRuntime.update(deltaSeconds)') < couplingBody.indexOf('couplingRuntime.update(deltaSeconds)'));
 });
 
-test('G4.3B.5R.2.4.2 Block remains outside Parry coupling and balance break', () => {
+test('G4.3B.5R.2.4.2 Block remains outside Parry coupling and preload', () => {
   const branchStart = source.indexOf("if (outcome === 'block')");
   const branchEnd = source.indexOf('} else {', branchStart);
   const blockBranch = source.slice(branchStart, branchEnd);
@@ -39,16 +39,17 @@ test('G4.3B.5R.2 does not reset pre-contact tracking at authoritative contact', 
   assert.match(source.slice(couplingStart), /if \(latestCouplingReport\?\.complete\)[\s\S]*trackingRuntime\.reset\(\)/);
 });
 
-test('G4.3B.5R.2.6 preserves terminal hand constraint while neutralizing release torso base', () => {
+test('G4.3B.5R.2.7 preserves terminal hand constraint and neutral release base before whole-body burst', () => {
   assert.match(source, /rebuildNeutralCouplingReleaseBase/);
   assert.match(source, /reapplyAttackerConstraint/);
   assert.match(source, /couplingReleasePose = captureRigPose\(attacker\.rig\)/);
   assert.match(source, /terminalHandConstraintReappliedForNeutralB3Base: true/);
 });
 
-test('G4.3B.5R.2.6 Lab exposes backward pitch dominant Parry contract', () => {
-  assert.match(html, /PARRY chest backward/);
-  assert.match(html, /BODY FIRST → CONTACT CONSTRAINT LAST/);
-  assert.match(source, /Backward break:/);
-  assert.match(source, /backwardPitchDominatesLateralTwist: true/);
+test('G4.3B.5R.2.7 Lab exposes shield redirect then unified old Two-Actor whole-body burst', () => {
+  assert.match(html, /Two-Actor Whole-Body Recoil Burst/);
+  assert.match(html, /PARRY release separation<\/span><b>BYPASSED · 0 ms/);
+  assert.match(source, /WHOLE-BODY BURST: ACTIVE/);
+  assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
+  assert.match(source, /weaponShouldersTorsoHipsLegsShareBurstClock: true/);
 });
