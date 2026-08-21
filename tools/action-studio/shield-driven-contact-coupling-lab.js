@@ -20,17 +20,18 @@ import {
   analyzePredictiveInterceptParry,
   createPredictiveInterceptParryPresentationRuntime,
   RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r241';
+} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r242';
 import {
   createTwoActorCombatIntegration,
   TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r241';
+} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r242';
 import {
   SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
   createShieldDrivenContactCouplingRuntime,
-} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r241';
+} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r242';
+import { IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE } from '../../src/combat/impact-accent-full-body-recoil-fusion.js?v=g43b5r242';
 
-const LAB_STAGE = 'G4.3B.5R.2.4.1';
+const LAB_STAGE = 'G4.3B.5R.2.4.2';
 const THREE = window.THREE;
 if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error(`${LAB_STAGE} requires Three.js r128 + GLTFLoader`);
 
@@ -110,6 +111,7 @@ const combat = createTwoActorCombatIntegration({
 
 const hudAttack = document.getElementById('hudAttack');
 const hudContact = document.getElementById('hudContact');
+const hudImpact = document.getElementById('hudImpact');
 const hudCoupling = document.getElementById('hudCoupling');
 const hudShield = document.getElementById('hudShield');
 const hudWeapon = document.getElementById('hudWeapon');
@@ -156,9 +158,9 @@ function marker(name, color, radius) {
   return node;
 }
 
-const predictedMarker = marker('G43B5R241_PREDICTED', 0x6df0a7, 0.048);
-const contactMarker = marker('G43B5R241_CONTACT', 0xff625f, 0.062);
-const driveMarker = marker('G43B5R241_SHIELD_DRIVE', 0x59d9ff, 0.042);
+const predictedMarker = marker('G43B5R242_PREDICTED', 0x6df0a7, 0.048);
+const contactMarker = marker('G43B5R242_CONTACT', 0xff625f, 0.062);
+const driveMarker = marker('G43B5R242_SHIELD_DRIVE', 0x59d9ff, 0.042);
 const bladeNodes = [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip];
 const bladeScratch = bladeNodes.map(() => new THREE.Vector3());
 const bladeBuffers = [0, 1].map(() => bladeNodes.map(() => ({ x: 0, y: 0, z: 0 })));
@@ -418,6 +420,10 @@ function magnitude(v) {
   return v ? Math.hypot(v.x || 0, v.y || 0, v.z || 0) : 0;
 }
 
+function fmtWeight(value) {
+  return Number.isFinite(value) ? value.toFixed(2) : '—';
+}
+
 function updateHud(snapshot, combatSnapshot) {
   const resolution = latestCombatResult?.resolution || null;
   const requested = normalizedRequestedOutcome();
@@ -428,6 +434,7 @@ function updateHud(snapshot, combatSnapshot) {
   const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
   const separationSource = postHandoff?.separation?.source || '—';
   const recoil = combatSnapshot.attackerRecoil?.sample;
+  const impact = latestCouplingReport?.impactAccent || null;
   const targetDistance = recoil?.profile?.releaseSeparationDistanceMeters || 0;
   const targetWindow = recoil?.profile?.releaseSeparationWindowMs || postHandoff?.separation?.releaseWindowMs || 0;
   const refresh = latestCombatUpdate?.attackerVisualRefreshApplied === true ? 'REFRESH YES' : 'refresh —';
@@ -436,6 +443,9 @@ function updateHud(snapshot, combatSnapshot) {
   hudContact.textContent = firstContact
     ? `Contact: YES · radial ${firstContact.radialDistance.toFixed(3)}m · blade ${firstContact.bladeFraction.toFixed(2)} · response ${responseClass}`
     : 'Contact: —';
+  hudImpact.textContent = impact
+    ? `Impact accent: ${impact.phase} · scale ${impact.scale.toFixed(2)} · attacker chest ${impact.attacker.chestPitchDegrees.toFixed(1)}° · defender chest ${impact.defender.chestPitchDegrees.toFixed(1)}°`
+    : 'Impact accent: —';
   hudCoupling.textContent = latestCouplingReport
     ? `Coupling: ${latestCouplingReport.outcome?.toUpperCase() || '—'} · ${latestCouplingReport.phase} · ${latestCouplingReport.elapsedMs.toFixed(0)}ms · ${latestCouplingReport.complete ? 'RELEASED' : 'B3 HELD'}`
     : 'Coupling: —';
@@ -449,10 +459,10 @@ function updateHud(snapshot, combatSnapshot) {
     ? `Release separation: phase ${recoil?.phase || '—'} · target ${(targetDistance * 100).toFixed(1)}cm / ${targetWindow.toFixed(0)}ms · tip observed ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm`
     : 'Release separation: —';
   hudRecoil.textContent = couplingRuntime.active
-    ? 'B3 recoil: LOCKED · coupling owns weapon motion'
+    ? 'Full-body recoil: B3 LOCKED · impact accent + coupling own contact phase'
     : recoil
-      ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · ${refresh} · separation ${separationSource}`
-      : `B3 recoil: — · ${refresh} · separation ${separationSource}`;
+      ? `Full-body recoil: ${recoil.phase} · arm ${fmtWeight(recoil.weights?.armWeight)} · chest ${fmtWeight(recoil.weights?.chestWeight)} · spine ${fmtWeight(recoil.weights?.spineWeight)} · hips ${fmtWeight(recoil.weights?.hipsWeight)} · legs ${fmtWeight(recoil.weights?.legWeight)} · ${refresh} · ${separationSource}`
+      : `Full-body recoil: — · ${refresh} · ${separationSource}`;
 }
 
 function buildReport(combatSnapshot = combat.snapshot) {
@@ -460,11 +470,13 @@ function buildReport(combatSnapshot = combat.snapshot) {
   const resolution = latestCombatResult?.resolution || null;
   const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
   const recoil = combatSnapshot.attackerRecoil?.sample || null;
+  const impact = latestCouplingReport?.impactAccent || null;
   const requestedOutcome = normalizedRequestedOutcome();
   const actualOutcome = resolution?.outcome || null;
   const targetDistance = recoil?.profile?.releaseSeparationDistanceMeters || 0;
   const report = {
     stage: LAB_STAGE,
+    fusionStage: IMPACT_ACCENT_FULL_BODY_RECOIL_FUSION_STAGE,
     predictiveAuthorityStage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
     baseCouplingStage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
     integrationAuthorityStage: TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
@@ -477,19 +489,20 @@ function buildReport(combatSnapshot = combat.snapshot) {
       outcomeMatchesRequest: actualOutcome == null ? null : actualOutcome === requestedOutcome,
       guardIntentAgeMs: resolution?.guard?.intentAgeMs ?? null,
       responseClass: resolution?.attacker?.responseClass || null,
-      predictiveHandoff: latestPredictiveHandoff ? {
-        requestedGrade: latestPredictiveHandoff.requestedGrade,
-        variant: latestPredictiveHandoff.variant,
-        lockedGuardIntentAgeMs: latestPredictiveHandoff.lockedGuardIntentAgeMs,
-        presentationElapsedMs: latestPredictiveHandoff.presentationElapsedMs,
-        timingAuthority: latestPredictiveHandoff.timingAuthority,
-      } : null,
       couplingOutcome: latestCouplingReport?.outcome || null,
       postCouplingStage: postHandoff?.stage || null,
       separationSource: postHandoff?.separation?.source || null,
       separationMotionStage: recoil?.motionStage || null,
+      fullBodyFusionStage: recoil?.fusionStage || null,
       attackerVisualRefreshApplied: latestCombatUpdate?.attackerVisualRefreshApplied === true,
     },
+    impactAccent: impact ? {
+      phase: impact.phase,
+      scale: impact.scale,
+      attacker: impact.attacker,
+      defender: impact.defender,
+      authority: impact.authority,
+    } : null,
     contact: firstContact ? {
       point: firstContact.point,
       bladeFraction: firstContact.bladeFraction,
@@ -512,30 +525,39 @@ function buildReport(combatSnapshot = combat.snapshot) {
       sampledOffsetMeters: recoil?.pose?.releaseSeparationDistanceMeters || 0,
       observedTipDisplacementMeters: maxReleaseTipDisplacementMeters,
       releaseTipCaptured,
+      fullBodyRecoilScale: recoil?.profile?.fullBodyRecoilScale || 1,
+      forceChain: recoil?.forceChain || null,
+      weights: recoil?.weights ? {
+        arm: recoil.weights.armWeight,
+        chest: recoil.weights.chestWeight,
+        spine: recoil.weights.spineWeight,
+        hips: recoil.weights.hipsWeight,
+        legs: recoil.weights.legWeight,
+      } : null,
     },
     exchange: exchange ? { outcome: exchange.outcome, responseClass: exchange.responseClass } : null,
     invariants: {
       rhythmGradeLockedUntilContact: true,
       swordShieldSweptContactAuthority: true,
-      frozenAttackerPoseDuringCoupling: true,
-      combatUpdateDeltaDuringCoupling: 0,
+      impactAccentSamplesFromCapturedContactPose: true,
+      impactAccentOwnsBodyOnly: true,
+      shieldCouplingRetainsArmAndWeaponAuthority: true,
+      frozenB3ClockDuringCoupling: true,
       coupledTerminalPoseBecomesB3BasePose: true,
       explicitSeparationPhaseAfterRelease: true,
-      separationTargetsRightArmBeforeBody: true,
+      fullBodyForceWaveAfterRelease: true,
       actualSwordTipDisplacementMeasured: true,
-      postAdditiveAttackerAppearanceRefresh: true,
-      trackingResetAfterCouplingRelease: true,
       rootMotion: false,
     },
   };
   reportNode.textContent = JSON.stringify(report, null, 2);
-  document.documentElement.dataset.g43b5r241 = report.pass ? 'pass' : 'fail';
-  window.__G43B5R241_RESULT__ = report;
+  document.documentElement.dataset.g43b5r242 = report.pass ? 'pass' : 'fail';
+  window.__G43B5R242_RESULT__ = report;
   return report;
 }
 
 async function main() {
-  status.textContent = `Loading UAL attacks + Skyrim Guard + ${LAB_STAGE} separation motion…`;
+  status.textContent = `Loading UAL attacks + Skyrim Guard + ${LAB_STAGE} fusion…`;
   const [ual1, ual2, skyrim] = await Promise.all([
     loadUal1AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
     loadUal2AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
@@ -556,7 +578,7 @@ async function main() {
   );
   enterGuard();
   ready = true;
-  status.textContent = `${LAB_STAGE} READY · coupling → explicit SEPARATION → B3 force chain`;
+  status.textContent = `${LAB_STAGE} READY · impact accent → coupling → separation → full-body recoil wave`;
   status.className = 'good';
   buildReport();
   startAttack('right');
@@ -623,14 +645,14 @@ function frame(timestamp) {
 
 requestAnimationFrame(frame);
 main().catch((error) => {
-  document.documentElement.dataset.g43b5r241 = 'fail';
+  document.documentElement.dataset.g43b5r242 = 'fail';
   status.textContent = `${LAB_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G43B5R241_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
+  window.__G43B5R242_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
 });
 
-window.__G43B5R241_LAB__ = {
+window.__G43B5R242_LAB__ = {
   startAttack,
   setMode,
   combat,
