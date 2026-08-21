@@ -20,16 +20,11 @@ on:
       - 'tests/post-coupling-recoil-stagger-handoff.test.js'
       - 'tests/attacker-recoil-presentation.test.js'
       - 'tests/contact-release-separation-motion.test.js'
-      - 'tests/contact-release-separation-motion-lab-contract.test.js'
       - 'tests/immediate-block-rebound-parity.test.js'
-      - 'tests/immediate-block-rebound-parity-lab.test.js'
       - 'tests/parallel-parry-body-stagger.test.js'
-      - 'tests/parallel-parry-body-stagger-lab.test.js'
       - 'tests/parry-backward-balance-break.test.js'
-      - 'tests/parry-backward-balance-break-lab.test.js'
       - 'tests/two-actor-whole-body-recoil-burst.test.js'
-      - 'tests/two-actor-whole-body-recoil-burst-lab.test.js'
-      - 'tests/shield-driven-contact-coupling-lab.test.js'
+      - 'tests/shield-driven-contact-coupling.test.js'
       - 'tests/recoil-presentation-authority.test.js'
       - 'tests/directional-recoil-planner.test.js'
       - '.github/workflows/contact-release-separation-recoil.yml'
@@ -55,7 +50,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Verify runtime and lab syntax
+      - name: Verify runtime and active lab syntax
         run: >-
           node --check src/combat/immediate-block-rebound-parity.js
           && node --check src/combat/parry-backward-balance-break.js
@@ -63,10 +58,9 @@ jobs:
           && node --check src/combat/post-coupling-recoil-stagger-handoff.js
           && node --check src/combat/shield-driven-contact-coupling.js
           && node --check src/combat/attacker-recoil-presentation.js
-          && node --check tools/action-studio/shield-driven-contact-coupling-lab.js
           && node --check tools/action-studio/shield-driven-contact-coupling-lab-r28.js
 
-      - name: Run Block parity, historical burst, legacy passthrough, and visual-base regressions
+      - name: Run historical runtime compatibility and active .2.8 visual regressions
         run: >-
           node --test
           tests/legacy-two-actor-recoil-passthrough.test.js
@@ -74,15 +68,10 @@ jobs:
           tests/post-coupling-recoil-stagger-handoff.test.js
           tests/attacker-recoil-presentation.test.js
           tests/contact-release-separation-motion.test.js
-          tests/contact-release-separation-motion-lab-contract.test.js
           tests/immediate-block-rebound-parity.test.js
-          tests/immediate-block-rebound-parity-lab.test.js
           tests/parallel-parry-body-stagger.test.js
-          tests/parallel-parry-body-stagger-lab.test.js
           tests/parry-backward-balance-break.test.js
-          tests/parry-backward-balance-break-lab.test.js
           tests/two-actor-whole-body-recoil-burst.test.js
-          tests/two-actor-whole-body-recoil-burst-lab.test.js
-          tests/shield-driven-contact-coupling-lab.test.js
+          tests/shield-driven-contact-coupling.test.js
           tests/recoil-presentation-authority.test.js
           tests/directional-recoil-planner.test.js
