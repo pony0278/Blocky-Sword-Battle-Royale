@@ -6,6 +6,7 @@ import { createAttackerRecoilPresentationRuntime } from './attacker-recoil-prese
 
 export const TWO_ACTOR_COMBAT_INTEGRATION_STAGE = 'G4.3B.4';
 export const TWO_ACTOR_PARRY_SYNC_STAGE = 'G4.3B.5';
+export const TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';
 
 export const TWO_ACTOR_PARRY_SYNC_PROFILE = Object.freeze({
   presentationOffsetSeconds: 0.205,
@@ -134,6 +135,7 @@ export function createTwoActorCombatIntegration(options = {}) {
     return freeze({
       stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
       presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
+      recoilPresentationAuthorityStage: TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
       phase: phase(),
       attack: attackRuntime.snapshot,
       defenderGuard: guardMachine.snapshot,
@@ -310,6 +312,7 @@ export function createTwoActorCombatIntegration(options = {}) {
     activeExchange = freeze({
       stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
       presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
+      recoilPresentationAuthorityStage: TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
       sequence: resolution.attackSequence,
       attackDirection: resolution.attackDirection,
       outcome: resolution.outcome,
@@ -358,6 +361,12 @@ export function createTwoActorCombatIntegration(options = {}) {
     return true;
   }
 
+  function refreshAttackerPresentationAfterRecoil(recoilDeltaSeconds, context = {}) {
+    if (recoilDeltaSeconds <= 0 || typeof attackerCharacter?.update !== 'function') return false;
+    attackerCharacter.update(0, context.camera || options.camera);
+    return true;
+  }
+
   function update(deltaSeconds = 1 / 60, context = {}) {
     if (!activeExchange) return snapshot({ updated: false });
 
@@ -377,6 +386,7 @@ export function createTwoActorCombatIntegration(options = {}) {
           remainingDelayMs: Math.max(0, delayMs - exchangeElapsedMs),
           snapshot: attackerRecoil.snapshot || null,
         });
+    const attackerVisualRefreshApplied = refreshAttackerPresentationAfterRecoil(recoilDeltaSeconds, context);
     const completed = recoilUpdate?.justCompleted === true
       || recoilUpdate?.completed?.readyForAttackHandoff === true;
 
@@ -385,6 +395,7 @@ export function createTwoActorCombatIntegration(options = {}) {
         updated: true,
         sampledFrozenPose,
         recoilUpdate,
+        attackerVisualRefreshApplied,
       });
     }
 
@@ -410,6 +421,7 @@ export function createTwoActorCombatIntegration(options = {}) {
       updated: true,
       sampledFrozenPose,
       recoilUpdate,
+      attackerVisualRefreshApplied,
       justCompleted: true,
       released,
     });
