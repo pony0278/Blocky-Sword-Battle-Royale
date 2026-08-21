@@ -45,17 +45,18 @@ test('G4.3B.5R.2.7 enters old Two-Actor late impulse immediately after Parry rel
   assert.equal(result.powerFrame.oldTwoActorArmAuthorityRestored, true);
   assert.equal(result.plan.weapon.deflectDegrees, 30);
   assert.ok(result.plan.body.pitchDegrees <= -25);
-  assert.ok(Math.abs(result.plan.body.yawDegrees) >= 9.9, 'old Two-Actor yaw/open-shoulder channel must be restored');
+  assert.ok(Math.abs(result.plan.body.yawDegrees) >= 10.7, 'open-shoulder yaw channel should be slightly stronger than old Two-Actor');
+  assert.ok(Math.abs(result.plan.body.rollDegrees) >= 3.0, 'roll channel should help widen the two-shoulder silhouette');
   const next30FpsFrameMs = result.initialElapsedMs + 1000 / 30;
   assert.ok(next30FpsFrameMs > 95 && next30FpsFrameMs < result.profileOverrides.impulseEndMs);
 });
 
-test('G4.3B.5R.2.7 preserves backward almost-fall bias while restoring whole-body channels', () => {
+test('G4.3B.5R.2.7 preserves backward almost-fall bias and owns the release legs outright', () => {
   const result = buildTwoActorWholeBodyRecoilBurst({
     plan: parryPlan(), outcome: 'parry', momentum: 1.05, weaponMomentum: 1,
   });
   assert.ok(Math.abs(result.plan.body.pitchDegrees) * 0.46 >= 11.5);
-  assert.ok(result.profileOverrides.legStrengthScale >= 1.2);
+  assert.equal(result.profileOverrides.legStrengthScale, 1.45);
   assert.equal(result.powerFrame.parentChainFreeArmMotion, true);
   assert.equal(result.rootMotion, false);
 });
@@ -65,6 +66,8 @@ test('G4.3B.5R.2.7 Perfect is stronger and longer than normal Parry', () => {
   const perfect = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_PROFILES['perfect-parry'];
   assert.ok(perfect.minimumPlanBackwardPitchDegrees > normal.minimumPlanBackwardPitchDegrees);
   assert.ok(perfect.legStrengthScale > normal.legStrengthScale);
+  assert.ok(perfect.yawScale > normal.yawScale);
+  assert.ok(perfect.rollScale > normal.rollScale);
   assert.ok(perfect.settleEndMs > normal.settleEndMs);
   assert.ok(perfect.initialElapsedMs > normal.initialElapsedMs);
 });
@@ -79,7 +82,7 @@ test('G4.3B.5R.2.7 does not apply to Block', () => {
   assert.equal(result.reason, 'non-parry-outcome');
 });
 
-test('post-coupling Parry handoff bypasses explicit separation and publishes .2.7 burst', () => {
+test('post-coupling Parry handoff bypasses explicit separation and keeps absolute .2.7 leg authority', () => {
   const handoff = buildPostCouplingRecoilStaggerHandoff({
     plan: parryPlan(),
     couplingReport: {
@@ -97,6 +100,7 @@ test('post-coupling Parry handoff bypasses explicit separation and publishes .2.
   assert.equal(handoff.initialElapsedMs, 68);
   assert.equal(handoff.separation.releaseWindowMs, 0);
   assert.equal(handoff.separation.bypassedForWholeBodyBurst, true);
+  assert.equal(handoff.profileOverrides.legStrengthScale, 1.45, 'historical 0.78 leg scale must not attenuate .2.7');
   assert.equal(handoff.wholeBodyBurst.powerFrame.oldTwoActorArmAuthorityRestored, true);
   assert.equal(handoff.channelIntent.freeArm, 'parent-chain-motion-no-explicit-flail');
 });
