@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>G4.3B.5R.2.5 Parallel Parry Body Stagger</title>
+  <title>G4.3B.5R.2.6 Parry Backward Balance-Break</title>
   <style>
     *{box-sizing:border-box}html,body{margin:0;height:100%;background:#090e16;color:#e9f0fb;font:14px/1.45 system-ui,sans-serif}
     body{display:grid;grid-template-columns:minmax(0,1fr) 430px;overflow:hidden}main{position:relative;min-width:0;min-height:0}canvas{width:100%;height:100%;display:block}
@@ -20,41 +20,44 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="hud">
-      <b>G4.3B.5R.2.5 · Parallel Parry Body Stagger</b>
+      <b>G4.3B.5R.2.6 · Parry Backward Balance-Break</b>
       <div id="hudAttack">Requested / Actual: loading…</div>
       <div id="hudContact">Contact: —</div>
       <div id="hudCoupling">Defense ownership: —</div>
       <div id="hudShield">Shield response: —</div>
       <div id="hudWeapon">Weapon authority: —</div>
       <div id="hudSeparation">Release separation: —</div>
-      <div id="hudRecoil">Body stagger: —</div>
+      <div id="hudRecoil">Backward balance break: —</div>
     </div>
-    <div class="legend">Red = authoritative sword × shield contact · Cyan = shield response · PARRY body stagger starts while weapon coupling is still active</div>
+    <div class="legend">Red = sword × shield contact · Cyan = shield drive · PARRY body should lean backward while the hand stays constrained to the shield-driven path</div>
   </main>
   <aside>
-    <h1>Parallel Parry Body Stagger</h1>
-    <div class="note">BLOCK 保持 .2.4.2 正確版本。PARRY / PERFECT 的劍與右臂仍由 shield-driven coupling 控制，但攻擊者 chest / spine / hips / legs 不再跟著 B3 一起凍結；接觸後約 30–40ms 就開始浮誇失衡，讓動作更接近 two-actor-combat-integration-lab 的可讀性。</div>
+    <h1>Parry Backward Balance-Break</h1>
+    <div class="note">BLOCK 保持 .2.4.2 正確版本。PARRY / PERFECT 不再只放大 lateral twist；攻擊者胸口改成 backward pitch 主導，骨盆與膝蓋補償，製造「差一點往後倒」的 silhouette。Frame ownership 改為 body first → shield/weapon contact constraint last，避免 torso 父骨和右手 IK 互相打架。</div>
     <h2>Attack direction</h2><div class="row"><button data-attack="top">TOP</button><button data-attack="right" class="active">RIGHT</button><button data-attack="left">LEFT</button></div>
     <h2>Defense</h2><div class="row"><button data-mode="block">BLOCK</button><button data-mode="parry" class="active">PARRY</button><button data-mode="perfect">PERFECT</button></div>
     <div class="metric">
       <span>BLOCK</span><b>unchanged · immediate B2/B3</b>
-      <span>PARRY weapon / right arm</span><b>shield coupling authority</b>
-      <span>PARRY body start</span><b>~30 ms after contact</b>
-      <span>PARRY body near peak</span><b>~92 ms</b>
-      <span>PARRY body handoff end</span><b>~252 ms</b>
-      <span>PARRY exaggeration</span><b>chest 1.45× · spine 1.35× · hips 1.30× · legs 1.20×</b>
-      <span>PERFECT body start</span><b>~24 ms</b>
-      <span>PERFECT exaggeration</span><b>chest 1.65× · spine 1.50× · hips 1.45× · legs 1.30×</b>
-      <span>Weapon channels touched by .2.5</span><b>none</b>
-      <span>Root motion</span><b>none</b>
+      <span>PARRY chest backward</span><b>≥ 11.5° peak</b>
+      <span>PARRY body start</span><b>24 ms</b>
+      <span>PARRY near peak</span><b>88 ms</b>
+      <span>PARRY knee compensation</span><b>≥ 8° loaded knee</b>
+      <span>PARRY lateral yaw</span><b>~52% of prior body yaw channel</b>
+      <span>PERFECT chest backward</span><b>≥ 15° peak</b>
+      <span>PERFECT body start</span><b>18 ms</b>
+      <span>Frame ownership</span><b>BODY FIRST → CONTACT CONSTRAINT LAST</b>
+      <span>B3 release base</span><b>neutral torso + terminal hand constraint</b>
+      <span>Root translation</span><b>none</b>
     </div>
     <label class="toggle"><input id="autoRepeat" type="checkbox"> Auto repeat</label>
     <label class="toggle"><input id="showSurface" type="checkbox" checked> Show shield parry surface</label>
     <h2>Expected PARRY causality</h2>
-    <div class="metric"><span>1</span><b>Sword hits moving shield</b><span>2</span><b>Shield redirects sword</b><span>3</span><b>~30ms: chest/spine begin stagger</b><span>4</span><b>~90ms: body already reads as unbalanced</b><span>5</span><b>Contact release / separation</b><span>6</span><b>B3 takes over recovery</b></div>
+    <div class="metric"><span>1</span><b>Sword hits moving shield</b><span>2</span><b>Chest begins backward break almost immediately</b><span>3</span><b>Shield redirects sword sideways/up</b><span>4</span><b>Contact IK is applied last so hand stays on path</b><span>5</span><b>Hips/knees visibly catch balance</b><span>6</span><b>Release → B3 recoil without pose pop</b></div>
+    <h2>30fps acceptance</h2>
+    <div class="metric"><span>Frame 1–2</span><b>chest already moving backward</b><span>Frame 2–3</span><b>weapon visibly redirected by shield</b><span>Peak</span><b>attacker reads as almost falling backward</b><span>Recovery</span><b>feet planted, no root drift / spin / pose pop</b></div>
     <h2>Views</h2><div class="row"><button data-view="three">3/4</button><button data-view="side">Side</button><button data-view="contact">Contact</button></div>
     <h2>Verification</h2><div id="status" class="warn">Loading…</div><pre id="report">Not run.</pre>
   </aside>
-  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r25"></script>
+  <script type="module" src="./shield-driven-contact-coupling-lab.js?v=g43b5r26"></script>
 </body>
 </html>
