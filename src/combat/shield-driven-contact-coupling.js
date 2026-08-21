@@ -150,6 +150,42 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
     return lastReport;
   }
 
+  function reapplyAttackerConstraint(report = lastReport) {
+    const profile = report?.profile;
+    const offset = report?.attackerWeaponOffset;
+    if (!profile || !offset) {
+      return Object.freeze({ applied: false, reason: 'missing-coupling-terminal-report' });
+    }
+    const appliedDegrees = { attackerUpperArm: 0, attackerLowerArm: 0 };
+    attackerTarget.set(attackerBaseHand.x + offset.x, attackerBaseHand.y + offset.y, attackerBaseHand.z + offset.z);
+    attackerRig.root?.updateMatrixWorld?.(true);
+    attackerRig.bones['hand.r'].getWorldPosition(attackerEffector);
+    appliedDegrees.attackerLowerArm = aimEffectorWithBone(
+      THREE,
+      attackerRig.bones['lowerarm.r'],
+      attackerEffector,
+      attackerTarget,
+      profile.attackerLowerArmMaxDegrees,
+    );
+    attackerRig.root?.updateMatrixWorld?.(true);
+    attackerRig.bones['hand.r'].getWorldPosition(attackerEffector);
+    appliedDegrees.attackerUpperArm = aimEffectorWithBone(
+      THREE,
+      attackerRig.bones['upperarm.r'],
+      attackerEffector,
+      attackerTarget,
+      profile.attackerUpperArmMaxDegrees,
+    );
+    attackerRig.root?.updateMatrixWorld?.(true);
+    return Object.freeze({
+      applied: true,
+      stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
+      reason: 'terminal-attacker-contact-constraint-reapplied',
+      appliedDegrees: Object.freeze(appliedDegrees),
+      attackerWeaponOffset: offset,
+    });
+  }
+
   function update(deltaSeconds = 1 / 60) {
     if (!active) return Object.freeze({ active: false, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, report: lastReport });
     active.elapsedMs += Math.max(0, finite(deltaSeconds, 1 / 60)) * 1000;
@@ -198,5 +234,12 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
     return lastReport;
   }
 
-  return Object.freeze({ start, update, reset, get active() { return Boolean(active); }, get report() { return lastReport; } });
+  return Object.freeze({
+    start,
+    update,
+    reset,
+    reapplyAttackerConstraint,
+    get active() { return Boolean(active); },
+    get report() { return lastReport; },
+  });
 }
