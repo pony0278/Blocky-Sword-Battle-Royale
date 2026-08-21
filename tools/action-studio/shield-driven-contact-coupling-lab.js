@@ -20,25 +20,28 @@ import {
   analyzePredictiveInterceptParry,
   createPredictiveInterceptParryPresentationRuntime,
   RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r26';
+} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r27';
 import {
   createTwoActorCombatIntegration,
   TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
-} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r26';
+} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r27';
 import {
   SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
   createShieldDrivenContactCouplingRuntime,
-} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r26';
+} from '../../src/combat/shield-driven-contact-coupling.js?v=g43b5r27';
 import {
   IMMEDIATE_BLOCK_REBOUND_PARITY_STAGE,
   createImmediateBlockShieldGiveRuntime,
-} from '../../src/combat/immediate-block-rebound-parity.js?v=g43b5r26';
+} from '../../src/combat/immediate-block-rebound-parity.js?v=g43b5r27';
 import {
   PARRY_BACKWARD_BALANCE_BREAK_STAGE,
   createParryBackwardBalanceBreakRuntime,
-} from '../../src/combat/parry-backward-balance-break.js?v=g43b5r26';
+} from '../../src/combat/parry-backward-balance-break.js?v=g43b5r27';
+import {
+  TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE,
+} from '../../src/combat/two-actor-whole-body-recoil-burst.js?v=g43b5r27';
 
-const LAB_STAGE = PARRY_BACKWARD_BALANCE_BREAK_STAGE;
+const LAB_STAGE = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE;
 const THREE = window.THREE;
 if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error(`${LAB_STAGE} requires Three.js r128 + GLTFLoader`);
 
@@ -170,9 +173,9 @@ function marker(name, color, radius) {
   scene.add(node);
   return node;
 }
-const predictedMarker = marker('G43B5R26_PREDICTED', 0x6df0a7, 0.048);
-const contactMarker = marker('G43B5R26_CONTACT', 0xff625f, 0.062);
-const driveMarker = marker('G43B5R26_SHIELD_DRIVE', 0x59d9ff, 0.042);
+const predictedMarker = marker('G43B5R27_PREDICTED', 0x6df0a7, 0.048);
+const contactMarker = marker('G43B5R27_CONTACT', 0xff625f, 0.062);
+const driveMarker = marker('G43B5R27_SHIELD_DRIVE', 0x59d9ff, 0.042);
 const bladeNodes = [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip];
 const bladeScratch = bladeNodes.map(() => new THREE.Vector3());
 const bladeBuffers = [0, 1].map(() => bladeNodes.map(() => ({ x: 0, y: 0, z: 0 })));
@@ -347,10 +350,6 @@ function restoreVisibleBalanceBreakAtRelease() {
 
 function updateCoupling(deltaSeconds) {
   if (!couplingRuntime.active) return false;
-
-  // G4.3B.5R.2.6 ownership: frozen contact base -> backward body break ->
-  // shield/weapon contact constraint LAST. This prevents chest parent motion
-  // from fighting the right-arm IK on the same visible frame.
   latestCombatUpdate = combat.update(0, { camera });
   if (balanceBreakRuntime.active) latestBalanceBreakReport = balanceBreakRuntime.update(deltaSeconds);
   latestCouplingReport = couplingRuntime.update(deltaSeconds);
@@ -361,9 +360,6 @@ function updateCoupling(deltaSeconds) {
     driveMarker.position.set(p.x, p.y, p.z); driveMarker.visible = true;
   }
   if (latestCouplingReport?.complete) {
-    // Store a neutral-torso B3 base while preserving the exact terminal hand
-    // constraint. Then reconstruct the visible backward-break pose for this
-    // render frame. The body lean therefore cannot become a permanent base.
     rebuildNeutralCouplingReleaseBase();
     restoreVisibleBalanceBreakAtRelease();
     trackingRuntime.reset();
@@ -398,7 +394,7 @@ function updateBalanceBreak(deltaSeconds) {
 function updateReleaseSeparationProbe(combatSnapshot) {
   if (!releaseTipCaptured || couplingRuntime.active) return;
   const sample = combatSnapshot.attackerRecoil?.sample;
-  if (!sample || !['separation', 'impulse'].includes(sample.phase)) return;
+  if (!sample || !['separation', 'impulse', 'recoil'].includes(sample.phase)) return;
   attackerSword.tip.getWorldPosition(currentTipPosition);
   maxReleaseTipDisplacementMeters = Math.max(maxReleaseTipDisplacementMeters, currentTipPosition.distanceTo(releaseTipPosition));
 }
@@ -419,6 +415,7 @@ function updateHud(snapshot, combatSnapshot) {
   const postHandoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
   const refresh = latestCombatUpdate?.attackerVisualRefreshApplied === true ? 'REFRESH YES' : 'refresh —';
   const balance = latestBalanceBreakReport;
+  const burst = postHandoff?.wholeBodyBurst || null;
   hudAttack.textContent = `Requested: ${requested.toUpperCase()} · Actual: ${actual.toUpperCase()}${mismatch ? ' ⚠ DOWNGRADED/MISMATCH' : ''} · intent ${intent == null ? '—' : `${intent.toFixed(0)}ms`}`;
   hudContact.textContent = firstContact ? `Contact: YES · radial ${firstContact.radialDistance.toFixed(3)}m · blade ${firstContact.bladeFraction.toFixed(2)} · response ${responseClass}` : 'Contact: —';
 
@@ -427,23 +424,31 @@ function updateHud(snapshot, combatSnapshot) {
     hudShield.textContent = `Shield give: ${(magnitude(latestBlockGiveReport.shieldOffset) * 100).toFixed(1)}cm · defender-only`;
     hudWeapon.textContent = 'Weapon authority: original B2/B3 · NO shield follow · NO post-coupling handoff';
   } else {
-    hudCoupling.textContent = latestCouplingReport
-      ? `PARRY coupling: ${latestCouplingReport.phase} ${latestCouplingReport.elapsedMs.toFixed(0)}ms · BODY FIRST → CONTACT LAST`
-      : 'Coupling: —';
+    hudCoupling.textContent = couplingRuntime.active
+      ? `PARRY coupling: ${latestCouplingReport?.phase || '—'} ${latestCouplingReport?.elapsedMs?.toFixed?.(0) || '0'}ms · backward PRELOAD · weapon constrained`
+      : burst
+        ? `WHOLE-BODY BURST: ACTIVE · B3 entry ${burst.initialElapsedMs.toFixed(0)}ms · old Two-Actor impulse clock`
+        : 'Coupling: —';
     hudShield.textContent = latestCouplingReport?.shieldOffset ? `Shield drive: ${(magnitude(latestCouplingReport.shieldOffset) * 100).toFixed(1)}cm` : 'Shield drive: —';
-    hudWeapon.textContent = latestCouplingReport?.attackerWeaponOffset ? `Weapon follow: ${(magnitude(latestCouplingReport.attackerWeaponOffset) * 100).toFixed(1)}cm · terminal constraint ${latestConstraintReapply?.applied ? 'READY' : '—'}` : 'Weapon follow: —';
+    hudWeapon.textContent = burst
+      ? `Weapon burst: direct arm authority restored · separation BYPASSED · free arm via parent chain`
+      : latestCouplingReport?.attackerWeaponOffset
+        ? `Weapon follow: ${(magnitude(latestCouplingReport.attackerWeaponOffset) * 100).toFixed(1)}cm · terminal constraint ${latestConstraintReapply?.applied ? 'READY' : '—'}`
+        : 'Weapon follow: —';
   }
 
   const targetDistance = recoil?.profile?.releaseSeparationDistanceMeters || 0;
   const targetWindow = recoil?.profile?.releaseSeparationWindowMs || postHandoff?.separation?.releaseWindowMs || 0;
-  hudSeparation.textContent = targetDistance > 0 || maxReleaseTipDisplacementMeters > 0
-    ? `Release separation: ${recoil?.phase || '—'} · ${(targetDistance * 100).toFixed(1)}cm / ${targetWindow.toFixed(0)}ms · tip ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm`
-    : 'Release separation: BLOCK immediate / PARRY after coupling';
+  hudSeparation.textContent = postHandoff?.separation?.bypassedForWholeBodyBurst
+    ? `Release separation: BYPASSED · B3 power frame entry ${postHandoff.initialElapsedMs.toFixed(0)}ms · tip ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm`
+    : targetDistance > 0 || maxReleaseTipDisplacementMeters > 0
+      ? `Release separation: ${recoil?.phase || '—'} · ${(targetDistance * 100).toFixed(1)}cm / ${targetWindow.toFixed(0)}ms · tip ${(maxReleaseTipDisplacementMeters * 100).toFixed(1)}cm`
+      : 'Release separation: BLOCK immediate / PARRY waiting for release';
   hudRecoil.textContent = couplingRuntime.active
-    ? `Backward break: ${balance?.phase || 'wait'} ${(balance?.weight ?? 0).toFixed(2)} · chest-back ${(balance?.chestBackwardDegrees ?? 0).toFixed(1)}° · weapon B3 LOCKED`
+    ? `Preload: ${balance?.phase || 'wait'} ${(balance?.weight ?? 0).toFixed(2)} · chest-back ${(balance?.chestBackwardDegrees ?? 0).toFixed(1)}° · weapon B3 LOCKED`
     : recoil
-      ? `B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · backward ${(balance?.chestBackwardDegrees ?? 0).toFixed(1)}° · ${refresh}`
-      : `B3 recoil: — · backward ${(balance?.chestBackwardDegrees ?? 0).toFixed(1)}° · ${refresh}`;
+      ? `WHOLE-BODY B3: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · legs ${recoil.weights?.legWeight?.toFixed(2) ?? '—'} · ${refresh}`
+      : `B3 recoil: — · preload ${(balance?.weight ?? 0).toFixed(2)} · ${refresh}`;
 }
 
 function buildReport(combatSnapshot = combat.snapshot) {
@@ -456,6 +461,7 @@ function buildReport(combatSnapshot = combat.snapshot) {
   const report = {
     stage: LAB_STAGE,
     previousBlockStage: IMMEDIATE_BLOCK_REBOUND_PARITY_STAGE,
+    preloadStage: PARRY_BACKWARD_BALANCE_BREAK_STAGE,
     predictiveAuthorityStage: RECOIL_PRESENTATION_AUTHORITY_STAGE,
     baseCouplingStage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
     integrationAuthorityStage: TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE,
@@ -467,8 +473,8 @@ function buildReport(combatSnapshot = combat.snapshot) {
       actualOutcome,
       responseClass: resolution?.attacker?.responseClass || null,
       blockReboundAuthority: block ? 'original-B2-B3-immediate' : null,
-      parryWeaponAuthority: !block && actualOutcome ? 'shield-driven-coupling-contact-constraint-last' : null,
-      parryBodyAuthority: !block && actualOutcome ? PARRY_BACKWARD_BALANCE_BREAK_STAGE : null,
+      parryWeaponAuthority: !block && actualOutcome ? 'shield-redirect-then-old-two-actor-direct-arm-burst' : null,
+      parryBodyAuthority: !block && actualOutcome ? TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE : null,
       postCouplingStage: postHandoff?.stage || null,
       terminalConstraintReapply: latestConstraintReapply?.applied === true,
       attackerVisualRefreshApplied: latestCombatUpdate?.attackerVisualRefreshApplied === true,
@@ -479,9 +485,16 @@ function buildReport(combatSnapshot = combat.snapshot) {
       elapsedMs: latestBalanceBreakReport.elapsedMs,
       weight: latestBalanceBreakReport.weight,
       chestBackwardDegrees: latestBalanceBreakReport.chestBackwardDegrees,
-      bodyFirst: latestBalanceBreakReport.bodyFirst,
-      contactConstraintLast: latestBalanceBreakReport.contactConstraintLast,
+      handoffTarget: latestBalanceBreakReport.handoffTarget || null,
       rootMotion: latestBalanceBreakReport.rootMotion,
+    } : null,
+    wholeBodyBurst: postHandoff?.wholeBodyBurst ? {
+      stage: postHandoff.wholeBodyBurst.stage,
+      initialElapsedMs: postHandoff.wholeBodyBurst.initialElapsedMs,
+      separationBypassed: postHandoff.wholeBodyBurst.powerFrame?.separationBypassed === true,
+      oldTwoActorArmAuthorityRestored: postHandoff.wholeBodyBurst.powerFrame?.oldTwoActorArmAuthorityRestored === true,
+      parentChainFreeArmMotion: postHandoff.wholeBodyBurst.powerFrame?.parentChainFreeArmMotion === true,
+      minimumChestBackwardDegreesAtFullTorsoWeight: postHandoff.wholeBodyBurst.powerFrame?.minimumChestBackwardDegreesAtFullTorsoWeight ?? null,
     } : null,
     blockGive: latestBlockGiveReport ? {
       phase: latestBlockGiveReport.phase,
@@ -503,6 +516,7 @@ function buildReport(combatSnapshot = combat.snapshot) {
       phase: recoil.phase,
       armWeight: recoil.weights?.armWeight ?? null,
       torsoWeight: recoil.weights?.torsoWeight ?? null,
+      legWeight: recoil.weights?.legWeight ?? null,
       responseClass: exchange?.responseClass || null,
     } : null,
     invariants: {
@@ -511,17 +525,19 @@ function buildReport(combatSnapshot = combat.snapshot) {
       blockB3ClockFrozen: false,
       blockShieldGiveRunsParallelToAttackerBounce: true,
       parryWeaponB3ClockFrozenDuringCoupling: true,
-      parryBackwardBalanceBreakRunsDuringCoupling: true,
-      backwardPitchDominatesLateralTwist: true,
-      bodyAppliedBeforeContactConstraint: true,
+      backwardPreloadFadesIntoReleaseBurst: true,
+      parryExplicitSeparationBypassed: true,
+      oldTwoActorWholeBodyB3ClockRestoredAtRelease: true,
+      weaponShouldersTorsoHipsLegsShareBurstClock: true,
+      freeArmUsesParentHierarchyRatherThanExplicitFlail: true,
       terminalHandConstraintReappliedForNeutralB3Base: true,
       plantedRootNoTranslation: true,
       postAdditiveAttackerAppearanceRefresh: true,
     },
   };
   reportNode.textContent = JSON.stringify(report, null, 2);
-  document.documentElement.dataset.g43b5r26 = report.pass ? 'pass' : 'fail';
-  window.__G43B5R26_RESULT__ = report;
+  document.documentElement.dataset.g43b5r27 = report.pass ? 'pass' : 'fail';
+  window.__G43B5R27_RESULT__ = report;
   return report;
 }
 
@@ -541,7 +557,7 @@ async function main() {
   mountDebugSword(defender, defenderSword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
   enterGuard();
   ready = true;
-  status.textContent = `${LAB_STAGE} READY · BLOCK unchanged · PARRY = backward balance-break → shield constraint → recoil`;
+  status.textContent = `${LAB_STAGE} READY · BLOCK unchanged · PARRY = shield redirect → old Two-Actor whole-body release burst`;
   status.className = 'good';
   buildReport(); startAttack('right');
 }
@@ -600,13 +616,13 @@ function frame(timestamp) {
 }
 requestAnimationFrame(frame);
 main().catch((error) => {
-  document.documentElement.dataset.g43b5r26 = 'fail';
+  document.documentElement.dataset.g43b5r27 = 'fail';
   status.textContent = `${LAB_STAGE} FAIL · ${error?.message || error}`;
   status.className = 'bad';
   reportNode.textContent = error?.stack || String(error);
-  window.__G43B5R26_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
+  window.__G43B5R27_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
 });
-window.__G43B5R26_LAB__ = {
+window.__G43B5R27_LAB__ = {
   startAttack, setMode, combat, attackRuntime, guardMachine, couplingRuntime, blockGiveRuntime, balanceBreakRuntime, trackingRuntime, buckler,
   get latestContact() { return latestContact; },
   get latestCouplingReport() { return latestCouplingReport; },
