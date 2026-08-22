@@ -14,10 +14,10 @@
   <canvas id="canvas"></canvas>
   <div class="hud"><b>G4.3B.5R.2.9.2R1.1.1 · Contact Inspector</b><div id="hudPlayback">Playback: —</div><div id="hudContact">Contact: waiting…</div><div id="hudSurface">Surface: —</div><div id="hudPersistence">Persistence: —</div><div id="hudImpulse">Coupled impulse: —</div><div id="hudShield">Shield reaction: —</div><div id="hudArm">Arm response: —</div><div id="hudServo">Servo: —</div></div>
   <div class="legend">Orange disc = shield contact patch · Magenta = blade witness · Yellow = normal · Green = tangent · White = relative velocity</div>
-  <div class="cameraHelp">Mouse L: orbit · Wheel: zoom · Mouse R: pan<br>首次接觸可自動 Pause，再用 +1 physics step 檢查 4.17ms</div>
+  <div class="cameraHelp">Mouse L: orbit · Wheel: zoom · Mouse R: pan<br>首次接觸自動 Pause；每次 +1 physics step = 4.17ms</div>
 </main>
 <aside>
-<h1>Bidirectional Contact Inspector</h1><div class="note">這個頁面不改 R1.1.1 solver，只改驗證方式。建議流程：Strong bidirectional → 首次接觸自動 Pause → Contact close-up / Blade side → 用滑鼠 Orbit → 連續按 +1 physics step 檢查盾面是否持續帶著劍身滑開。盾面 contact patch、劍身 witness、gap line 與 normal/tangent/relative-velocity 會直接顯示接觸幾何。</div>
+<h1>Bidirectional Contact Inspector</h1><div class="note">建議測法：Strong bidirectional → 等首次接觸自動 Pause → 切 Contact close-up 或 Blade side → 用滑鼠自由 Orbit → 連續按 +1 physics step。橘色圓片是盾面接觸 patch，洋紅點是同一 bladeFraction 在劍身上的 witness；兩者之間的洋紅線就是可直接觀察的 gap。</div>
 <h2>Playback / Physics</h2><div class="row"><button id="restart">Restart</button><button id="togglePause">Pause</button><button id="stepPhysics">+1 physics step</button><select id="timeScale"><option value="1">1.00×</option><option value="0.25" selected>0.25×</option><option value="0.1">0.10×</option></select></div>
 <label class="check"><input id="autoPauseContact" type="checkbox" checked> Auto pause on first contact</label>
 <h2>Camera</h2><div class="row"><button id="viewOverview">Overview</button><button id="viewContact">Contact close-up</button><button id="viewBladeSide">Blade side</button><button id="viewShieldFace">Shield face</button></div>
