@@ -6,7 +6,9 @@ import {
 export const POST_COUPLING_RECOIL_STAGGER_BASE_STAGE = 'G4.3B.5R.2.1';
 export const COUPLED_MOMENTUM_CONTINUATION_STAGE = 'G4.3B.5R.2.2';
 export const CONTACT_RELEASE_SEPARATION_RECOIL_STAGE = 'G4.3B.5R.2.4';
-// Compatibility export follows the latest post-coupling presentation authority.
+export const LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE = 'G4.3B.5R.2.8';
+export const LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE = 'legacy-two-actor-passthrough';
+// Compatibility export follows the historical .2.7 post-coupling presentation authority.
 export const POST_COUPLING_RECOIL_STAGGER_STAGE = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE;
 
 export const POST_COUPLING_RECOIL_STAGGER_PROFILES = Object.freeze({
@@ -110,6 +112,12 @@ function resolveOutcome(value, responseClass = '') {
   return 'block';
 }
 
+function resolveHandoffMode(couplingReport = {}) {
+  return couplingReport.recoilHandoffMode
+    || couplingReport.profile?.recoilHandoffMode
+    || null;
+}
+
 export function publishPostCouplingRecoilStaggerHandoff(attackerRig, payload = {}) {
   if (!attackerRig || (typeof attackerRig !== 'object' && typeof attackerRig !== 'function')) return false;
   pendingByRig.set(attackerRig, Object.freeze({
@@ -118,7 +126,7 @@ export function publishPostCouplingRecoilStaggerHandoff(attackerRig, payload = {
     baseStage: POST_COUPLING_RECOIL_STAGGER_BASE_STAGE,
     couplingReport: payload.couplingReport || payload.report || payload,
     surfaceAtContact: payload.surfaceAtContact || null,
-    authority: 'shield-coupling-release-to-two-actor-whole-body-recoil-burst',
+    authority: 'shield-coupling-release-to-post-coupling-recoil-authority',
   }));
   return true;
 }
@@ -221,6 +229,68 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
   const speedRatio = clamp(driveSpeedMps / Math.max(0.01, referenceSpeedMps), 0, 1.8);
   const rawMomentum = 0.58 + driveRatio * 0.24 + followRatio * 0.10 + speedRatio * 0.18;
   const momentum = clamp(rawMomentum, profile.minimumMomentum, profile.maximumMomentum);
+  const couplingMomentum = Object.freeze({
+    plannedDriveMeters,
+    achievedDriveMeters,
+    driveMeters,
+    weaponFollowMeters,
+    driveSpeedMps,
+    weaponFollowSpeedMps,
+    momentum,
+  });
+
+  const handoffMode = resolveHandoffMode(couplingReport);
+  if (outcome !== 'block' && handoffMode === LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE) {
+    const b2Direction = normalize(plan.weapon?.direction);
+    return Object.freeze({
+      stage: LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE,
+      previousStage: COUPLED_MOMENTUM_CONTINUATION_STAGE,
+      baseStage: POST_COUPLING_RECOIL_STAGGER_BASE_STAGE,
+      accepted: true,
+      reason: 'legacy-two-actor-recoil-passthrough-ready',
+      outcome,
+      initialElapsedMs: 0,
+      plan,
+      profileOverrides: Object.freeze({}),
+      separation: Object.freeze({
+        direction: b2Direction,
+        source: 'original-b2-recoil-direction',
+        b2Direction,
+        couplingDirection: null,
+        couplingSource: null,
+        b2Alignment: 1,
+        couplingAlignment: null,
+        releaseWindowMs: 0,
+        weaponMomentum: 1,
+        bypassedForWholeBodyBurst: false,
+        bypassedForLegacyPassthrough: true,
+      }),
+      continuation: Object.freeze({
+        direction: b2Direction,
+        source: 'original-two-actor-b3-plan',
+        weaponMomentum: 1,
+      }),
+      wholeBodyBurst: null,
+      couplingMomentum,
+      channelIntent: Object.freeze({
+        weapon: 'original-two-actor-b3-arm-deflect',
+        shoulder: 'original-two-actor-parent-chain-response',
+        torso: 'original-two-actor-b3-yaw-pitch-roll',
+        hipsAndLegs: 'original-two-actor-b3-balance-response',
+        freeArm: 'parent-chain-motion-no-explicit-flail',
+      }),
+      timelineIntent: Object.freeze({
+        releaseSeparationWindowMs: 0,
+        b3EntryElapsedMs: 0,
+        contactHoldMs: finite(baseProfile.contactHoldMs),
+        impulseEndMs: finite(baseProfile.impulseEndMs),
+        recoilEndMs: finite(baseProfile.recoilEndMs),
+        settleEndMs: finite(baseProfile.settleEndMs),
+      }),
+      authority: 'shield-release-to-original-two-actor-b3-plan',
+    });
+  }
+
   const separation = resolveContactReleaseSeparationDirection(outcome, couplingReport, plan, profile);
   const weaponMomentum = profile.separationFromCoupling
     ? clamp(0.92 + momentum * 0.10, 0.98, 1.08)
@@ -317,15 +387,7 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
       weaponMomentum,
     }),
     wholeBodyBurst: wholeBodyBurst?.accepted ? wholeBodyBurst : null,
-    couplingMomentum: Object.freeze({
-      plannedDriveMeters,
-      achievedDriveMeters,
-      driveMeters,
-      weaponFollowMeters,
-      driveSpeedMps,
-      weaponFollowSpeedMps,
-      momentum,
-    }),
+    couplingMomentum,
     channelIntent: wholeBodyBurst?.accepted
       ? Object.freeze({
           weapon: 'old-two-actor-direct-arm-deflect-at-release-power-frame',

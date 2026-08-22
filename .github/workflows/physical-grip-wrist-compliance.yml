@@ -1,0 +1,50 @@
+name: G4.3B.5R.2.9.2 Physical Grip Wrist Compliance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/combat/physical-grip-wrist-compliance.js'
+      - 'src/combat/physical-shield-sword-impulse.js'
+      - 'src/combat/swept-blade-shield-physical-contact.js'
+      - 'tools/action-studio/physical-grip-wrist-compliance-lab-r292.html'
+      - 'tools/action-studio/physical-grip-wrist-compliance-lab-r292.js'
+      - 'tests/physical-grip-wrist-compliance.test.js'
+      - 'tests/physical-grip-wrist-compliance-lab.test.js'
+      - '.github/workflows/physical-grip-wrist-compliance.yml'
+  push:
+    branches:
+      - 'g43b5r28-legacy-two-actor-recoil-passthrough'
+
+permissions:
+  contents: read
+
+jobs:
+  physical-grip-wrist-compliance-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify physical compliance runtime and lab syntax
+        run: >-
+          node --check src/combat/physical-grip-wrist-compliance.js
+          && node --check src/combat/physical-shield-sword-impulse.js
+          && node --check src/combat/swept-blade-shield-physical-contact.js
+          && node --check tools/action-studio/physical-grip-wrist-compliance-lab-r292.js
+
+      - name: Run grip wrist and physical contact regressions
+        run: >-
+          node --test
+          tests/physical-grip-wrist-compliance.test.js
+          tests/physical-grip-wrist-compliance-lab.test.js
+          tests/physical-shield-sword-impulse.test.js
+          tests/swept-blade-shield-physical-contact.test.js

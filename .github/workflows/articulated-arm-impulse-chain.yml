@@ -1,0 +1,50 @@
+name: G4.3B.5R.2.9.2R1 Articulated Arm Impulse Chain
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/combat/articulated-arm-impulse-chain.js'
+      - 'src/combat/swept-blade-shield-physical-contact.js'
+      - 'src/combat/swept-sword-buckler-contact.js'
+      - 'src/combat/physical-shield-sword-impulse.js'
+      - 'tools/action-studio/articulated-arm-impulse-chain-lab-r292r1.html'
+      - 'tools/action-studio/articulated-arm-impulse-chain-lab-r292r1.js'
+      - 'tests/articulated-arm-impulse-chain.test.js'
+      - 'tests/articulated-arm-impulse-chain-lab.test.js'
+      - 'tests/swept-blade-shield-physical-contact.test.js'
+      - '.github/workflows/articulated-arm-impulse-chain.yml'
+  push:
+    branches:
+      - 'g43b5r28-legacy-two-actor-recoil-passthrough'
+
+permissions:
+  contents: read
+
+jobs:
+  articulated-arm-impulse-chain-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify articulated runtime and lab syntax
+        run: >-
+          node --check src/combat/articulated-arm-impulse-chain.js
+          && node --check src/combat/swept-blade-shield-physical-contact.js
+          && node --check tools/action-studio/articulated-arm-impulse-chain-lab-r292r1.js
+
+      - name: Run articulated arm and swept-contact regressions
+        run: >-
+          node --test
+          tests/articulated-arm-impulse-chain.test.js
+          tests/articulated-arm-impulse-chain-lab.test.js
+          tests/swept-blade-shield-physical-contact.test.js

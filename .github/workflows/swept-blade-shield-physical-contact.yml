@@ -1,0 +1,52 @@
+name: G4.3B.5R.2.9.1 Swept Blade-Shield Physical Contact
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/combat/swept-blade-shield-physical-contact.js'
+      - 'src/combat/swept-sword-buckler-contact.js'
+      - 'src/combat/physical-shield-sword-impulse.js'
+      - 'tools/action-studio/swept-blade-shield-physical-contact-lab-r291.html'
+      - 'tools/action-studio/swept-blade-shield-physical-contact-lab-r291.js'
+      - 'tests/swept-blade-shield-physical-contact.test.js'
+      - 'tests/swept-blade-shield-physical-contact-lab.test.js'
+      - 'tests/swept-sword-buckler-contact.test.js'
+      - 'tests/physical-shield-sword-impulse.test.js'
+      - '.github/workflows/swept-blade-shield-physical-contact.yml'
+  push:
+    branches:
+      - 'g43b5r28-legacy-two-actor-recoil-passthrough'
+
+permissions:
+  contents: read
+
+jobs:
+  swept-blade-shield-contact-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify CCD, impulse solver, and lab syntax
+        run: >-
+          node --check src/combat/swept-blade-shield-physical-contact.js
+          && node --check src/combat/swept-sword-buckler-contact.js
+          && node --check src/combat/physical-shield-sword-impulse.js
+          && node --check tools/action-studio/swept-blade-shield-physical-contact-lab-r291.js
+
+      - name: Run swept contact and physical authority regressions
+        run: >-
+          node --test
+          tests/swept-blade-shield-physical-contact.test.js
+          tests/swept-blade-shield-physical-contact-lab.test.js
+          tests/swept-sword-buckler-contact.test.js
+          tests/physical-shield-sword-impulse.test.js

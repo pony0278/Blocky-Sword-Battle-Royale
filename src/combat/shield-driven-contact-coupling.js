@@ -1,4 +1,7 @@
-import { publishPostCouplingRecoilStaggerHandoff } from './post-coupling-recoil-stagger-handoff.js';
+import {
+  LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE,
+  publishPostCouplingRecoilStaggerHandoff,
+} from './post-coupling-recoil-stagger-handoff.js';
 
 export const SHIELD_DRIVEN_CONTACT_COUPLING_STAGE = 'G4.3B.5R.2';
 
@@ -23,6 +26,7 @@ export const SHIELD_CONTACT_COUPLING_PROFILES = Object.freeze({
     attackerFollowRatio: 0.88, attackerReleaseBiasMeters: 0.018,
     defenderUpperArmMaxDegrees: 16, defenderLowerArmMaxDegrees: 22,
     attackerUpperArmMaxDegrees: 14, attackerLowerArmMaxDegrees: 20,
+    recoilHandoffMode: LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE,
   }),
   'perfect-parry': Object.freeze({
     outcome: 'perfect-parry', durationMs: 104, holdMs: 10, driveEndMs: 76,
@@ -30,6 +34,7 @@ export const SHIELD_CONTACT_COUPLING_PROFILES = Object.freeze({
     attackerFollowRatio: 0.92, attackerReleaseBiasMeters: 0.024,
     defenderUpperArmMaxDegrees: 18, defenderLowerArmMaxDegrees: 25,
     attackerUpperArmMaxDegrees: 16, attackerLowerArmMaxDegrees: 23,
+    recoilHandoffMode: LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE,
   }),
 });
 
@@ -96,6 +101,7 @@ export function sampleShieldContactCoupling(input = {}) {
     elapsedMs: rawElapsedMs,
     complete,
     releaseAttackerRecoil: complete,
+    recoilHandoffMode: profile.recoilHandoffMode || null,
     driveProgress: drive,
     releaseProgress: release,
     incomingDirection: freezeVector(incomingDirection),
@@ -146,7 +152,18 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
       incomingVelocity: vec(input.incomingVelocity || input.contact?.incomingVelocity),
       surfaceCenter: vec(surface.center), elapsedMs: 0,
     };
-    lastReport = Object.freeze({ accepted: true, active: true, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, outcome, phase: SHIELD_CONTACT_COUPLING_PHASES.HOLD, elapsedMs: 0, complete: false, releaseAttackerRecoil: false, profile });
+    lastReport = Object.freeze({
+      accepted: true,
+      active: true,
+      stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE,
+      outcome,
+      phase: SHIELD_CONTACT_COUPLING_PHASES.HOLD,
+      elapsedMs: 0,
+      complete: false,
+      releaseAttackerRecoil: false,
+      recoilHandoffMode: profile.recoilHandoffMode || null,
+      profile,
+    });
     return lastReport;
   }
 
@@ -218,6 +235,7 @@ export function createShieldDrivenContactCouplingRuntime(THREE, options = {}) {
       active: !sample.complete, stage: SHIELD_DRIVEN_CONTACT_COUPLING_STAGE, outcome: active.outcome,
       phase: sample.phase, elapsedMs: active.elapsedMs, complete: sample.complete,
       releaseAttackerRecoil: sample.releaseAttackerRecoil,
+      recoilHandoffMode: sample.recoilHandoffMode,
       incomingDirection: sample.incomingDirection,
       shieldTangent: sample.shieldTangent,
       shieldOffset: sample.shieldOffset,
