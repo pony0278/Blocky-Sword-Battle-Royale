@@ -263,3 +263,15 @@ test('Step 3A has no scheduled deflection curve, recruits only lowerarm.r, and k
   assert.doesNotMatch(source, /bones\?\.\['upperarm\.r'\]/);
   assert.doesNotMatch(source, /smoothstep|driveDurationMs|minimumHandDegrees|targetHandDegrees/);
 });
+
+test('live grip stages update transforms without rebuilding weapon buffers', () => {
+  const source = readFileSync(
+    new URL('../src/combat/live-shield-sword-grip-contact-constraint.js', import.meta.url),
+    'utf8',
+  );
+  const runtimeStart = source.indexOf('export function createLiveShieldSwordGripContactRuntime');
+  const runtime = source.slice(runtimeStart);
+
+  assert.ok(!runtime.includes('attackerSword.update'));
+  assert.ok(runtime.includes('attackerSword.object3d.updateMatrixWorld(true)'));
+});

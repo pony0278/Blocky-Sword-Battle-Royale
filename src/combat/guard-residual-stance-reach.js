@@ -25,6 +25,12 @@ export const GUARD_RESIDUAL_STANCE_REACH_PROFILE = Object.freeze({
   footPlantIterations: 2,
   footPlantToleranceMeters: 0.012,
 });
+const SKIPPED_FOOT_PLANT = Object.freeze({
+  appliedDegrees: Object.freeze({ upper: 0, lower: 0 }),
+  driftMeters: 0,
+  skipped: true,
+});
+const SKIPPED_FOOT_PLANT_PAIR = Object.freeze({ l: SKIPPED_FOOT_PLANT, r: SKIPPED_FOOT_PLANT });
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -570,10 +576,15 @@ export function createGuardResidualStanceReachRuntime(THREE, options = {}) {
     );
     crouchMeters = clamp(crouchMeters, 0, profile.maxCrouchMeters);
 
-    const footBefore = { l: captureFoot('l'), r: captureFoot('r') };
+    const stanceNeedsPlanting = stanceEngaged || crouchMeters > 1e-6;
+    const footBefore = stanceNeedsPlanting
+      ? { l: captureFoot('l'), r: captureFoot('r') }
+      : null;
     const stanceSurfaceBefore = buckler.getWorldParrySurface();
-    rig.bones.hips.position.y -= crouchMeters;
-    rig.root?.updateMatrixWorld?.(true);
+    if (stanceNeedsPlanting) {
+      rig.bones.hips.position.y -= crouchMeters;
+      rig.root?.updateMatrixWorld?.(true);
+    }
 
     let hipsAppliedDegrees = 0;
     if (stanceConfirmed && postureClosestApproach?.point) {
@@ -600,11 +611,11 @@ export function createGuardResidualStanceReachRuntime(THREE, options = {}) {
       }
     }
 
-    const footPlant = {
+    const footPlant = stanceNeedsPlanting ? {
       l: plantFoot('l', footBefore.l, profile),
       r: plantFoot('r', footBefore.r, profile),
-    };
-    const finalSurface = buckler.getWorldParrySurface();
+    } : SKIPPED_FOOT_PLANT_PAIR;
+    const finalSurface = stanceNeedsPlanting ? buckler.getWorldParrySurface() : stanceSurfaceBefore;
     const achieved = new THREE.Vector3(
       finalSurface.center.x - stanceSurfaceBefore.center.x,
       finalSurface.center.y - stanceSurfaceBefore.center.y,
@@ -643,6 +654,7 @@ export function createGuardResidualStanceReachRuntime(THREE, options = {}) {
       crouchMeters,
       hipsAppliedDegrees,
       footPlant: Object.freeze(footPlant),
+      footPlantSkipped: !stanceNeedsPlanting,
       feetPlanted,
       achievedOffset: freezeVector(achieved),
       achievedDistance: achieved.length(),

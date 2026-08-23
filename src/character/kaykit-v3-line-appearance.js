@@ -153,14 +153,34 @@ export function createKayKitV3LineAppearance(THREE, rig, inputStyle = {}) {
   const headCenterLocal = new THREE.Vector3();
   const rightWorld = new THREE.Vector3();
   const upWorld = new THREE.Vector3();
-  const polygonWorld = new THREE.Vector3();
+  const polygonFirstWorld = new THREE.Vector3();
+  const polygonSecondWorld = new THREE.Vector3();
+  const shoulderL = new THREE.Vector3();
+  const shoulderR = new THREE.Vector3();
+  const chestUpper = new THREE.Vector3();
+  const chestLower = new THREE.Vector3();
+  const spineBase = new THREE.Vector3();
+  const pelvisL = new THREE.Vector3();
+  const pelvisR = new THREE.Vector3();
+  const localPointEntries = Object.entries(localPoints);
+  const contourSegments = [
+    [shoulderL, shoulderR],
+    [shoulderL, chestUpper],
+    [chestUpper, shoulderR],
+    [shoulderL, chestLower],
+    [chestLower, shoulderR],
+    [pelvisL, pelvisR],
+    [pelvisL, spineBase],
+    [spineBase, pelvisR],
+    [chestLower, spineBase],
+  ];
 
   let nodesVisible = true;
   let glowVisible = true;
 
   function updateLocalBonePoints() {
     rig.root.updateMatrixWorld(true);
-    Object.entries(localPoints).forEach(([boneId, point]) => {
+    localPointEntries.forEach(([boneId, point]) => {
       rig.bones[boneId].getWorldPosition(point);
       rig.motionRoot.worldToLocal(point);
     });
@@ -185,30 +205,19 @@ export function createKayKitV3LineAppearance(THREE, rig, inputStyle = {}) {
     const chest = localPoints.chest;
     const spine = localPoints.spine;
     const hips = localPoints.hips;
-    const shoulderL = localPoints['upperarm.l'].clone().sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
-    const shoulderR = localPoints['upperarm.r'].clone().sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
+    shoulderL.copy(localPoints['upperarm.l']).sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
+    shoulderR.copy(localPoints['upperarm.r']).sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
     shoulderL.x -= style.armOutset;
     shoulderR.x += style.armOutset;
-    const chestUpper = chest.clone().lerp(localPoints.head, 0.12);
-    const chestLower = spine.clone().lerp(chest, 0.22);
-    const spineBase = hips.clone().lerp(spine, 0.20);
-    const pelvisL = localPoints['upperleg.l'].clone().sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
-    const pelvisR = localPoints['upperleg.r'].clone().sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
+    chestUpper.copy(chest).lerp(localPoints.head, 0.12);
+    chestLower.copy(spine).lerp(chest, 0.22);
+    spineBase.copy(hips).lerp(spine, 0.20);
+    pelvisL.copy(localPoints['upperleg.l']).sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
+    pelvisR.copy(localPoints['upperleg.r']).sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
     pelvisL.x -= style.legOutset;
     pelvisR.x += style.legOutset;
-    const segments = [
-      [shoulderL, shoulderR],
-      [shoulderL, chestUpper],
-      [chestUpper, shoulderR],
-      [shoulderL, chestLower],
-      [chestLower, shoulderR],
-      [pelvisL, pelvisR],
-      [pelvisL, spineBase],
-      [spineBase, pelvisR],
-      [chestLower, spineBase],
-    ];
     const position = contourLine.geometry.attributes.position;
-    segments.forEach(([start, end], index) => {
+    contourSegments.forEach(([start, end], index) => {
       setPoint(position, index * 2, start);
       setPoint(position, index * 2 + 1, end);
     });
@@ -233,14 +242,12 @@ export function createKayKitV3LineAppearance(THREE, rig, inputStyle = {}) {
       if (index < sides) {
         const firstAngle = (index / sides) * Math.PI * 2;
         const secondAngle = ((index + 1) / sides) * Math.PI * 2;
-        const first = polygonWorld.copy(headCenterWorld)
+        const first = polygonFirstWorld.copy(headCenterWorld)
           .addScaledVector(rightWorld, Math.cos(firstAngle) * radius)
-          .addScaledVector(upWorld, Math.sin(firstAngle) * radius)
-          .clone();
-        const second = polygonWorld.copy(headCenterWorld)
+          .addScaledVector(upWorld, Math.sin(firstAngle) * radius);
+        const second = polygonSecondWorld.copy(headCenterWorld)
           .addScaledVector(rightWorld, Math.cos(secondAngle) * radius)
-          .addScaledVector(upWorld, Math.sin(secondAngle) * radius)
-          .clone();
+          .addScaledVector(upWorld, Math.sin(secondAngle) * radius);
         rig.motionRoot.worldToLocal(first);
         rig.motionRoot.worldToLocal(second);
         setPoint(headPosition, index * 2, first);

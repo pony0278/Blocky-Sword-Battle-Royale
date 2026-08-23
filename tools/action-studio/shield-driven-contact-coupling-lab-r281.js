@@ -128,6 +128,7 @@ const contactTravelLine = new THREE.Line(
 liveTargetMarker.renderOrder = 20;
 actualSwordContactMarker.renderOrder = 20;
 contactTravelLine.renderOrder = 19;
+contactTravelLine.frustumCulled = false;
 liveTargetMarker.visible = false;
 actualSwordContactMarker.visible = false;
 contactTravelLine.visible = false;
@@ -136,6 +137,7 @@ function createInspectionLine(color) {
   const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
   const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, depthTest: false }));
   line.visible = false;
+  line.frustumCulled = false;
   line.renderOrder = 21;
   scene.add(line);
   return line;
@@ -355,7 +357,6 @@ function setInspectionLine(line, start, end) {
   positions.setXYZ(0, start.x, start.y, start.z);
   positions.setXYZ(1, end.x, end.y, end.z);
   positions.needsUpdate = true;
-  line.geometry.computeBoundingSphere();
 }
 
 function updateLiveContactMarkers(report) {
@@ -379,7 +380,6 @@ function updateLiveContactMarkers(report) {
     positions.setXYZ(0, origin.x, origin.y, origin.z);
     positions.setXYZ(1, target.x, target.y, target.z);
     positions.needsUpdate = true;
-    contactTravelGeometry.computeBoundingSphere();
   }
   if (!lineVisible) return;
   setInspectionLine(originalAttackAxisLine, report.initialSwordBasePoint, report.initialSwordTipPoint);
@@ -839,7 +839,6 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
     const trackingSurfaceBefore = cloneSurface(buckler.getWorldParrySurface());
     latestFineTracking = fineTrackingRuntime.update(latestFinePlan, deltaSeconds);
     const residualCarryBeforeMeters = magnitude(latestFineTracking?.carriedResidualOffset);
-    defender.update(0, camera); defenderSword?.update();
     const primaryTrackingSurfaceAfter = cloneSurface(buckler.getWorldParrySurface());
     const residualBeforeRefinement = measureSweptSwordBucklerClosestApproach({
       previousBlade,
@@ -867,9 +866,6 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
           iterations: 2,
         })
       : null;
-    if (residualRefinement) {
-      defender.update(0, camera); defenderSword?.update();
-    }
     const residualAfterArmRefinement = measureSweptSwordBucklerClosestApproach({
       previousBlade,
       currentBlade,
@@ -879,9 +875,6 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
       mode: 'parry',
       closestApproach: residualAfterArmRefinement,
     }, deltaSeconds);
-    if (residualBodyReach.active) {
-      defender.update(0, camera); defenderSword?.update();
-    }
     const residualAfterBodyReach = measureSweptSwordBucklerClosestApproach({
       previousBlade,
       currentBlade,
@@ -903,9 +896,9 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
         edgeGapAfterMeters: residualAfterArmRefinement.radialGapMeters,
       },
     }, deltaSeconds);
-    if (residualStanceReach.active) {
-      defender.update(0, camera); defenderSword?.update();
-    }
+    // Rebuild dynamic line geometry once after all pose solvers have finished.
+    defender.update(0, camera);
+    defenderSword?.update();
     const trackingSurfaceAfter = cloneSurface(buckler.getWorldParrySurface());
     const residualAfterRefinement = measureSweptSwordBucklerClosestApproach({
       previousBlade,
@@ -1368,7 +1361,18 @@ function formatWhiffDiagnostic(whiff) {
   return Object.freeze({ label, detail: parts.join(' · ') });
 }
 
+let parryCueState = null;
+let parryCueMainText = null;
+let parryCueDetailText = null;
 function showParryCue(state, main, detail) {
+  if (
+    state === parryCueState
+    && main === parryCueMainText
+    && detail === parryCueDetailText
+  ) return;
+  parryCueState = state;
+  parryCueMainText = main;
+  parryCueDetailText = detail;
   parryCue.className = `parry-cue ${state}`;
   parryCueMain.textContent = main;
   parryCueDetail.textContent = detail;

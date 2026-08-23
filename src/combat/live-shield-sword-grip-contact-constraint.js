@@ -770,7 +770,6 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       });
     }
     attackerRig.root?.updateMatrixWorld?.(true);
-    attackerSword.update?.();
     attackerSword.object3d.updateMatrixWorld(true);
 
     const wristWorld = new THREE.Vector3();
@@ -907,7 +906,6 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
     lowerarmBone.quaternion.copy(active.baseLowerarmQuaternion);
     wristBone.quaternion.copy(active.baseWristQuaternion);
     attackerRig.root?.updateMatrixWorld?.(true);
-    attackerSword.update?.();
     attackerSword.object3d.updateMatrixWorld(true);
 
     const contactTargetOffset = active.peakTarget.clone().sub(active.initialContactWorld);
@@ -941,7 +939,6 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
           forearmConstraint.appliedRadians,
         );
         attackerRig.root?.updateMatrixWorld?.(true);
-        attackerSword.update?.();
         attackerSword.object3d.updateMatrixWorld(true);
       }
     }
@@ -965,7 +962,6 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       constraint.appliedRadians,
     );
     attackerRig.root?.updateMatrixWorld?.(true);
-    attackerSword.update?.();
     attackerSword.object3d.updateMatrixWorld(true);
 
     const preTwistWristWorld = new THREE.Vector3();
@@ -999,7 +995,6 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       : 0;
     const appliedWristDegrees = appliedWristContactDegrees + Math.abs(appliedWristTwistDegrees);
     attackerRig.root?.updateMatrixWorld?.(true);
-    attackerSword.update?.();
     attackerSword.object3d.updateMatrixWorld(true);
     active.heldLowerarmQuaternion.copy(lowerarmBone.quaternion);
     active.heldWristQuaternion.copy(wristBone.quaternion);
@@ -1115,7 +1110,6 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
     lowerarmBone.quaternion.copy(active.baseLowerarmQuaternion).slerp(active.heldLowerarmQuaternion, poseWeight);
     wristBone.quaternion.copy(active.baseWristQuaternion).slerp(active.heldWristQuaternion, poseWeight);
     attackerRig.root?.updateMatrixWorld?.(true);
-    attackerSword.update?.();
     attackerSword.object3d.updateMatrixWorld(true);
     return true;
   }

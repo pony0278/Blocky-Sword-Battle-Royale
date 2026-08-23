@@ -252,3 +252,18 @@ test('R18D is Parry-only, latches low stance, and plants feet without root trans
   assert.match(runtime, /feetStepped: false/);
   assert.match(runtime, /held-until-contact-or-reset-real-swept-contact-remains-success-authority/);
 });
+
+test('inactive residual stance skips both feet IK while preserving active planting', async () => {
+  const source = await readFile(new URL('../src/combat/guard-residual-stance-reach.js', import.meta.url), 'utf8');
+  const runtimeStart = source.indexOf('export function createGuardResidualStanceReachRuntime');
+  const runtime = source.slice(runtimeStart);
+  const skipGate = runtime.indexOf('const stanceNeedsPlanting = stanceEngaged || crouchMeters > 1e-6');
+  const captureGate = runtime.indexOf('const footBefore = stanceNeedsPlanting', skipGate);
+  const plantGate = runtime.indexOf('const footPlant = stanceNeedsPlanting', captureGate);
+
+  assert.ok(skipGate >= 0 && captureGate > skipGate && plantGate > captureGate);
+  assert.ok(runtime.includes("captureFoot('l')") && runtime.includes(': null;'));
+  assert.ok(runtime.includes("plantFoot('l'") && runtime.includes(': SKIPPED_FOOT_PLANT_PAIR;'));
+  assert.ok(runtime.includes('footPlantSkipped: !stanceNeedsPlanting'));
+  assert.ok(runtime.includes('const finalSurface = stanceNeedsPlanting ?'));
+});

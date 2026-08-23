@@ -246,3 +246,26 @@ test('armed Parry recruits predicted or measured low stance, holds it, and prese
   assert.doesNotMatch(block, /residualBodyReachRuntime\.update/);
   assert.doesNotMatch(block, /residualStanceReachRuntime\.update/);
 });
+
+test('F review batches presentation rebuilds and avoids dynamic debug bounds work', () => {
+  const update = functionBody('updateParryPreContact', 'updatePreContact');
+  const defenderUpdateCount = update.split('defender.update(0, camera)').length - 1;
+  const swordUpdateCount = update.split('defenderSword?.update()').length - 1;
+  const stanceSolve = update.indexOf('residualStanceReachRuntime.update');
+  const presentationUpdate = update.indexOf('defender.update(0, camera)', stanceSolve);
+
+  assert.equal(defenderUpdateCount, 1);
+  assert.equal(swordUpdateCount, 1);
+  assert.ok(stanceSolve >= 0 && presentationUpdate > stanceSolve);
+
+  const markerSetter = functionBody('setInspectionLine', 'updateLiveContactMarkers');
+  const markerUpdate = functionBody('updateLiveContactMarkers', 'resize');
+  assert.ok(!markerSetter.includes('computeBoundingSphere'));
+  assert.ok(!markerUpdate.includes('computeBoundingSphere'));
+  assert.ok(source.includes('contactTravelLine.frustumCulled = false'));
+  assert.ok(source.includes('line.frustumCulled = false'));
+
+  const cue = functionBody('showParryCue', 'updateParryCue');
+  assert.ok(cue.includes('state === parryCueState'));
+  assert.ok(cue.includes(') return;'));
+});

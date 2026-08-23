@@ -6,11 +6,12 @@ import {
   createKayKitV3LineStyle,
 } from '../src/character/kaykit-v3-line-appearance.js';
 
+let vectorCloneCount = 0;
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
   copy(value) { return this.set(value.x, value.y, value.z); }
-  clone() { return new Vector3(this.x, this.y, this.z); }
+  clone() { vectorCloneCount += 1; return new Vector3(this.x, this.y, this.z); }
   add(value) { return this.set(this.x + value.x, this.y + value.y, this.z + value.z); }
   sub(value) { return this.set(this.x - value.x, this.y - value.y, this.z - value.z); }
   multiplyScalar(value) { return this.set(this.x * value, this.y * value, this.z * value); }
@@ -101,4 +102,12 @@ test('v3 appearance only toggles nodes and glow; no Block or Hybrid render style
   assert.equal(appearance.lines.glow.visible, false);
   assert.equal('headGlow' in appearance.lines, false);
   assert.equal(createKayKitV3LineStyle({ renderStyle: 'block' }).renderStyle, 'v3-rig-line');
+});
+
+test('v3 appearance reuses scratch vectors during repeated frame updates', () => {
+  const appearance = createKayKitV3LineAppearance(THREE, fakeRig());
+  vectorCloneCount = 0;
+  appearance.update();
+  appearance.update();
+  assert.equal(vectorCloneCount, 0);
 });

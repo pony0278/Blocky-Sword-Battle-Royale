@@ -215,6 +215,7 @@ export function createProceduralV3Longsword(THREE, options = {}) {
   object3d.add(outlineLine, skeletonLine, glowLine);
   const jointNodes = JOINT_NODE_IDS.map((nodeId) => createJointNode(THREE, bones[nodeId], style));
   const localPoints = Object.fromEntries(V3_LONGSWORD_REQUIRED_NODE_IDS.map((nodeId) => [nodeId, new THREE.Vector3()]));
+  const skeletonSegments = SKELETON_LINKS.map(([startId, endId]) => [localPoints[startId], localPoints[endId]]);
   let nodesVisible = true;
   let glowVisible = true;
 
@@ -227,9 +228,8 @@ export function createProceduralV3Longsword(THREE, options = {}) {
   }
 
   function updateSkeleton() {
-    const segments = SKELETON_LINKS.map(([startId, endId]) => [localPoints[startId], localPoints[endId]]);
-    writeSegments(skeletonLine, segments);
-    writeSegments(glowLine, segments);
+    writeSegments(skeletonLine, skeletonSegments);
+    writeSegments(glowLine, skeletonSegments);
   }
 
   function update() {
