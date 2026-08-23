@@ -46,9 +46,10 @@ test('G4.3B.5R.2.7 preserves terminal hand constraint and neutral release base b
   assert.match(source, /terminalHandConstraintReappliedForNeutralB3Base: true/);
 });
 
-test('historical .2.7 source remains covered while current Lab isolates live wrist-grip transfer', () => {
+test('historical .2.7 source remains covered while current Lab releases verified TOP/RIGHT live contact', () => {
   assert.match(html, /Success authority<\/span><b>real swept Sword × Shield contact<\/b>/);
-  assert.match(html, /After success<\/span><b>live-contact inspection hold<\/b>/);
+  assert.match(html, /After success<\/span><b>live-contact inspection hold.*TOP\/RIGHT 7\/7.*OLD B3<\/b>/);
+  assert.match(html, /shoulder off.*LEFT deferred/);
   assert.match(source, /WHOLE-BODY BURST: ACTIVE/);
   assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
   assert.match(source, /weaponShouldersTorsoHipsLegsShareBurstClock: true/);

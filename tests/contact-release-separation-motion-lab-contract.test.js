@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-test('historical G4.3B.5R.2.7 source keeps release telemetry while current Lab defers it to Step 3', () => {
+test('historical G4.3B.5R.2.7 source keeps release telemetry while current Lab releases TOP/RIGHT only after 7/7', () => {
   const html = fs.readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
   const source = fs.readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.js', import.meta.url), 'utf8');
 
-  assert.match(html, /Step 3 physical propagation/);
-  assert.match(html, /deferred to Step 3/);
+  assert.match(html, /TOP.?RIGHT 7\/7.*OLD B3/);
+  assert.match(html, /LEFT OLD B3 handoff intentionally deferred/);
   assert.match(source, /predictive-intercept-parry\.js\?v=g43b5r27/);
   assert.match(source, /two-actor-combat-integration\.js\?v=g43b5r27/);
   assert.match(source, /shield-driven-contact-coupling\.js\?v=g43b5r27/);

@@ -63,6 +63,8 @@ test('R18E exposes URL-gated low-stance tuning without changing real-contact aut
   assert.match(html, /id="debugArmAttemptCm" type="range"/);
   assert.match(html, /APPLY \+ RETRY/);
   assert.match(source, /DEBUG_QUERY\.get\('debug'\) === '1'/);
+  assert.match(source, /rawQueryValue == null \|\| rawQueryValue\.trim\(\) === ''/);
+  assert.match(source, /\? Number\.NaN/);
   assert.match(source, /query: 'leadMs'/);
   assert.match(source, /query: 'crouchCm'/);
   assert.match(source, /query: 'crouchSpeed'/);
@@ -101,26 +103,31 @@ test('Step 3A starts only after the manual gate confirms eligible real contact',
   assert.doesNotMatch(resolve, /publishPostCouplingRecoilStaggerHandoff/);
 });
 
-test('Step 3A freezes OLD B3, then samples live shield after guard update before solving wrist-grip contact', () => {
+test('Step 3A freezes OLD B3 during live contact, then a passing TOP or RIGHT release resumes it', () => {
   const frameStart = source.indexOf('function frame(');
   const frameEnd = source.indexOf('requestAnimationFrame(frame);', frameStart);
   assert.ok(frameStart >= 0 && frameEnd > frameStart);
   const frame = source.slice(frameStart, frameEnd);
-  const ownership = frame.indexOf('if (step3AContactTransfer && latestParryConfirmation?.accepted)');
+  const ownership = frame.indexOf('if (step3AOwnsLiveContact())');
   const freeze = frame.indexOf('combat.update(0, { camera })', ownership);
   const guardUpdate = frame.indexOf('guardRuntime.update(deltaMs, camera)', freeze);
   const liveUpdate = frame.indexOf('swordGripConstraint.update(deltaSeconds', guardUpdate);
+  const release = frame.indexOf('releaseLiveContactToOldB3()', liveUpdate);
   const swordUpdate = frame.indexOf('attackerSword.update(); defenderSword?.update();', liveUpdate);
 
   assert.ok(ownership >= 0 && freeze > ownership);
-  assert.ok(guardUpdate > freeze && liveUpdate > guardUpdate && swordUpdate > liveUpdate);
+  assert.ok(guardUpdate > freeze && liveUpdate > guardUpdate && release > liveUpdate && swordUpdate > release);
   assert.match(frame, /surfaceAtFrame: buckler\.getWorldParrySurface\(\)/);
-  assert.match(source, /b3ClockFrozenDuringStep3A: Boolean\(step3AContactTransfer && latestParryConfirmation\?\.accepted\)/);
+  assert.match(source, /publishPostCouplingRecoilStaggerHandoff/);
+  assert.match(source, /releasedToOldB3/);
+  assert.match(source, /b3ClockFrozenDuringStep3A: step3AOwnsLiveContact\(\)/);
 });
 
-test('Step 3A uses wrist.r hierarchy travel instead of a scheduled target angle', () => {
+test('Step 3A uses bounded lowerarm plus wrist hierarchy travel instead of a scheduled target angle', () => {
   assert.match(source, /modifiedBone: 'wrist\.r'/);
   assert.match(source, /propagatedBones: Object\.freeze\(\['hand\.r', 'handslot\.r'\]\)/);
+  assert.match(source, /assistBone:[^\n]*'lowerarm\.r'/);
+  assert.match(source, /applyHeldPose/);
   assert.match(source, /noPresetMotionCurve: true/);
   assert.match(source, /actualHandTravelMeters/);
   assert.match(source, /actualGripTravelMeters/);

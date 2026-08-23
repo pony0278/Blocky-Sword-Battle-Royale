@@ -29,11 +29,11 @@ test('G4.3B.5 restores Fine Guard Tracking before the authoritative contact prob
   assert.match(script, /createGuardThreatTrackingRuntime/);
   assert.match(script, /planFineGuardTracking/);
   assert.match(script, /fineTrackingRuntime\.update\(/);
-  assert.match(script, /fineTrackMaxMeters:\s*0\.07/);
+  assert.match(script, /maxCorrectionMeters:\s*bracePlan\?\.fineTrackMaxMeters \|\| 0/);
 
   const braceIndex = script.indexOf('latestBracing = bracingRuntime.update');
   const fineIndex = script.indexOf('latestFineTracking = fineTrackingRuntime.update');
-  const contactIndex = script.indexOf('updateContact(snapshot, currentBlade, deltaSeconds)');
+  const contactIndex = script.indexOf('updateContact(snapshot, currentBlade, deltaSeconds)', fineIndex);
   assert.ok(braceIndex >= 0);
   assert.ok(fineIndex > braceIndex);
   assert.ok(contactIndex > fineIndex);

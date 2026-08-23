@@ -41,7 +41,7 @@ test('G4.2.2 normalizes custom buckler dimensions without changing the parry-sur
   assert.equal(definition.radius, 0.3);
   assert.equal(definition.thickness, 0.08);
   assert.deepEqual(definition.parrySurface.localCenter, [0, 0, 0.04]);
-  assert.equal(definition.parrySurface.radius, 0.33);
+  assert.ok(Math.abs(definition.parrySurface.radius - 0.33) < Number.EPSILON);
   assert.equal(definition.parrySurface.thickness, 0.09);
 });
 

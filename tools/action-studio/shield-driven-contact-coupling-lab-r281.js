@@ -49,7 +49,11 @@ import {
 import {
   LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
   createLiveShieldSwordGripContactRuntime,
-} from '../../src/combat/live-shield-sword-grip-contact-constraint.js?v=g43b5r281-residual-body-reach-r18';
+} from '../../src/combat/live-shield-sword-grip-contact-constraint.js?v=g43b5r281-top-right-forearm-r18e4';
+import {
+  buildLiveParryOldB3Handoff,
+  sampleLiveParryOldB3ReleaseBlend,
+} from '../../src/combat/live-parry-old-b3-handoff.js?v=g43b5r281-top-right-old-b3-r18e';
 
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
 const RECOIL_STAGE = LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE;
@@ -156,6 +160,14 @@ function sampleOriginalContactPose(interruption) {
     rootRotationPolicy: interruption.rootRotationPolicy,
   });
   attacker.update(0, camera);
+  if (step3AReleaseBlend) {
+    const releaseSample = sampleLiveParryOldB3ReleaseBlend(
+      step3AReleaseBlend.elapsedMs,
+      step3AReleaseBlend.durationMs,
+    );
+    swordGripConstraint.applyHeldPose(releaseSample.contactPoseWeight);
+    step3AReleaseBlend.sample = releaseSample;
+  }
 }
 
 const combat = createTwoActorCombatIntegration({
@@ -237,7 +249,10 @@ function initializeDebugStanceControls() {
   if (!DEBUG_MODE) return;
   for (const spec of DEBUG_STANCE_CONTROLS) {
     const input = document.getElementById(spec.id);
-    const queryValue = Number(DEBUG_QUERY.get(spec.query));
+    const rawQueryValue = DEBUG_QUERY.get(spec.query);
+    const queryValue = rawQueryValue == null || rawQueryValue.trim() === ''
+      ? Number.NaN
+      : Number(rawQueryValue);
     input.value = String(Number.isFinite(queryValue)
       ? clampDebugControl(input, queryValue)
       : spec.defaultValue);
@@ -283,6 +298,8 @@ let latestParryOpportunity = null;
 let latestParryConfirmation = null;
 let step3AContactTransfer = null;
 let latestGripConstraintReport = null;
+let latestLiveSurfaceAtContact = null;
+let step3AReleaseBlend = null;
 let latestParryWhiff = null;
 let whiffProbeFrames = 0;
 let closestWhiffApproach = null;
@@ -455,6 +472,8 @@ function resetExchange() {
   latestParryConfirmation = null;
   step3AContactTransfer = null;
   latestGripConstraintReport = null;
+  latestLiveSurfaceAtContact = null;
+  step3AReleaseBlend = null;
   updateLiveContactMarkers(null);
   latestParryWhiff = null;
   whiffProbeFrames = 0;
@@ -485,6 +504,48 @@ function diagnosticCouplingReport(direction) {
     profile: Object.freeze({ durationMs: 96, recoilHandoffMode: LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE }),
     authority: 'step1-direct-old-b3-diagnostic-no-coupling-runtime',
   });
+}
+
+function step3AOwnsLiveContact() {
+  return Boolean(
+    step3AContactTransfer?.accepted
+    && latestParryConfirmation?.accepted
+    && step3AContactTransfer.releasedToOldB3 !== true,
+  );
+}
+
+function releaseLiveContactToOldB3() {
+  if (!step3AOwnsLiveContact()) {
+    return Object.freeze({ accepted: false, reason: 'live-contact-no-longer-owns-presentation' });
+  }
+  const handoff = buildLiveParryOldB3Handoff({
+    attackDirection: selectedDirection,
+    contactReport: latestGripConstraintReport,
+    surfaceAtContact: latestLiveSurfaceAtContact,
+  });
+  if (!handoff.accepted) return handoff;
+
+  const handoffPublished = publishPostCouplingRecoilStaggerHandoff(attacker.rig, {
+    couplingReport: handoff.couplingReport,
+    surfaceAtContact: handoff.surfaceAtContact,
+  });
+  if (!handoffPublished) {
+    return Object.freeze({ ...handoff, accepted: false, reason: 'old-b3-handoff-publish-failed' });
+  }
+
+  step3AReleaseBlend = {
+    elapsedMs: 0,
+    durationMs: handoff.releaseBlendMs,
+    sample: sampleLiveParryOldB3ReleaseBlend(0, handoff.releaseBlendMs),
+  };
+  step3AContactTransfer = Object.freeze({
+    ...step3AContactTransfer,
+    releasedToOldB3: true,
+    releaseHandoff: handoff,
+    handoffPublished: true,
+    b3ClockFrozen: false,
+  });
+  return Object.freeze({ ...handoff, handoffPublished: true });
 }
 
 
@@ -1008,6 +1069,7 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
 
   firstContact = latestContact;
   const surfaceAtContact = buckler.getWorldParrySurface();
+  latestLiveSurfaceAtContact = surfaceAtContact;
   latestPredictiveHandoff = predictivePresentation.active ? predictivePresentation.handoff() : null;
   latestParryConfirmation = selectedMode === 'parry'
     ? parryGate.confirm({ attackSnapshot: snapshot, contact: latestContact })
@@ -1030,6 +1092,7 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
       contact: latestContact,
       surfaceAtContact,
       shieldLeadMotion: latestShieldLeadMotion,
+      attackDirection: selectedDirection,
     });
     latestLeadHandoff = Object.freeze({
       stage: COMMITTED_PARRY_CONTACT_GATE_STAGE,
@@ -1039,8 +1102,9 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
       realSweptContact: true,
       shieldSwordGripStage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
       modifiedBone: 'wrist.r',
+      assistBone: selectedDirection === 'top' || selectedDirection === 'right' ? 'lowerarm.r' : null,
       propagatedBones: Object.freeze(['hand.r', 'handslot.r']),
-      elbowPropagationActive: false,
+      elbowPropagationActive: selectedDirection === 'top' || selectedDirection === 'right',
       shoulderPropagationActive: false,
       b3ClockFrozen: true,
       noPresetMotionCurve: true,
@@ -1061,7 +1125,7 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
     residualBodyReachRuntime.reset();
     residualStanceReachRuntime.reset();
     status.textContent = step3AContactTransfer.accepted
-      ? 'STEP 3A ACTIVE · live shield surface is constraining sword contact through wrist.r → hand.r → grip · elbow/shoulder OFF · OLD B3 frozen'
+      ? `STEP 3A ACTIVE · live shield surface is constraining sword contact through ${selectedDirection === 'left' ? 'wrist.r' : 'lowerarm.r → wrist.r'} → hand.r → grip · shoulder OFF · OLD B3 frozen until 7/7`
       : `STEP 3A FAIL · ${step3AContactTransfer.reason || 'live grip contact constraint rejected'}`;
     status.className = step3AContactTransfer.accepted ? 'good' : 'bad';
   } else if (selectedMode === 'parry') {
@@ -1341,7 +1405,13 @@ function updateParryCue(snapshot = attackRuntime.snapshot) {
         );
       }
     } else {
-      showParryCue('confirmed', 'LIVE SHIELD × SWORD CONSTRAINT', '每幀由盾面接觸錨點解算 wrist.r；不是固定角度動畫');
+      showParryCue(
+        'confirmed',
+        'LIVE SHIELD × SWORD CONSTRAINT',
+        selectedDirection === 'left'
+          ? '每幀由盾面接觸錨點解算 wrist.r；LEFT 手臂交棒仍待校準'
+          : '每幀由盾面接觸錨點解算 lowerarm.r → wrist.r；7/7 後交棒 OLD B3',
+      );
     }
     return;
   }
@@ -1462,17 +1532,17 @@ function updateHud(snapshot, combatSnapshot) {
     ? latestGripConstraintReport.inspectionPassed ? 'PASS' : 'FAIL'
     : 'LIVE';
   hudWeapon.textContent = step3AContactTransfer?.accepted
-    ? `LIVE Shield → Sword → Grip: wrist ${latestGripConstraintReport?.appliedWristDegrees?.toFixed(1) ?? '0.0'}° · offline target ${centimeters(latestGripConstraintReport?.peakOfflineTravelMeters)}cm · sword ${centimeters(latestGripConstraintReport?.actualContactTravelMeters)}cm · hand ${centimeters(latestGripConstraintReport?.actualHandTravelMeters)}cm · hilt ${centimeters(latestGripConstraintReport?.actualGripTravelMeters)}cm`
+    ? `LIVE Shield → Sword → Arm: forearm ${latestGripConstraintReport?.appliedForearmDegrees?.toFixed(1) ?? '0.0'}° · wrist ${latestGripConstraintReport?.appliedWristDegrees?.toFixed(1) ?? '0.0'}° · offline target ${centimeters(latestGripConstraintReport?.peakOfflineTravelMeters)}cm · sword ${centimeters(latestGripConstraintReport?.actualContactTravelMeters)}cm · hand ${centimeters(latestGripConstraintReport?.actualHandTravelMeters)}cm · hilt ${centimeters(latestGripConstraintReport?.actualGripTravelMeters)}cm`
     : 'LIVE Shield → Sword → Grip: locked until valid manual timing and real contact pass';
   hudSeparation.textContent = step3AContactTransfer?.accepted
-    ? `Step 3A: ${inspection} · contact error ${centimeters(latestGripConstraintReport?.liveContactErrorMeters)}cm · direction ${agreement} · hold ${formatTerminalState(latestGripConstraintReport?.terminalReason)} · wrist.r active → hand.r + handslot.r follow · elbow OFF · shoulder OFF`
-    : 'Step 3A: waiting · wrist/grip only; elbow and shoulder intentionally deferred';
+    ? `Step 3A: ${inspection} · contact error ${centimeters(latestGripConstraintReport?.liveContactErrorMeters)}cm · direction ${agreement} · hold ${formatTerminalState(latestGripConstraintReport?.terminalReason)} · ${latestGripConstraintReport?.elbowPropagationActive ? 'lowerarm.r assist → ' : ''}wrist.r → hand.r + handslot.r · shoulder OFF`
+    : 'Step 3A: waiting · TOP/RIGHT lowerarm assist + wrist/grip; LEFT remains wrist-only';
   const lineClearance = latestGripConstraintReport?.attackLineClearance || null;
   const lineGate = (passed) => passed ? 'PASS' : 'FAIL';
   hudLineClearance.textContent = lineClearance
     ? `LINE CLEAR ${lineGate(lineClearance.pass)} · sword axis ${lineGate(lineClearance.swordAxisPassed)} ${lineClearance.swordAxisClearanceDegrees.toFixed(1)}° / ${lineClearance.minimumSwordAxisClearanceDegrees.toFixed(1)}° · hilt ${lineGate(lineClearance.hiltOfflinePassed)} ${(lineClearance.hiltOfflineTravelMeters * 100).toFixed(1)}cm / ${(lineClearance.minimumHiltOfflineTravelMeters * 100).toFixed(1)}cm · wrist→grip ${lineGate(lineClearance.wristGripLinePassed)} ${lineClearance.wristGripClearanceDegrees.toFixed(1)}° / ${lineClearance.minimumWristGripClearanceDegrees.toFixed(1)}°`
     : 'LINE CLEAR: waiting for live contact · red original axis / green current axis / purple wrist→grip';
-  hudRecoil.textContent = step3AContactTransfer && latestParryConfirmation?.accepted
+  hudRecoil.textContent = step3AOwnsLiveContact()
     ? 'OLD B3 recoil: FROZEN AT CONTACT · Step 3A owns the sword/hand inspection pose'
     : recoil
       ? `OLD B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · legs ${recoil.weights?.legWeight?.toFixed(2) ?? '—'}`
@@ -1564,9 +1634,11 @@ function buildReport(combatSnapshot = combat.snapshot) {
       liveShieldSurfaceSampledAfterGuardUpdate: latestGripConstraintReport?.mappedSurfaceTarget?.authority === 'current-world-shield-surface',
       noPresetMotionCurve: step3AContactTransfer?.noPresetMotionCurve ?? true,
       swordRemainsRigidlyMountedToHand: latestGripConstraintReport?.rigidSwordGrip ?? null,
-      onlyWristBoneModified: latestGripConstraintReport?.modifiedBone === 'wrist.r',
+      boundedForearmThenWristForTopRight: ['top', 'right'].includes(selectedDirection)
+        ? latestGripConstraintReport?.assistBone === 'lowerarm.r'
+        : true,
       handAndSocketFollowWristHierarchy: latestGripConstraintReport?.propagatedBones?.join(',') === 'hand.r,handslot.r',
-      elbowPropagationDeferred: latestGripConstraintReport?.elbowPropagationActive === false || !step3AContactTransfer,
+      elbowPropagationMatchesDirectionPolicy: latestGripConstraintReport?.elbowPropagationActive === ['top', 'right'].includes(selectedDirection) || !step3AContactTransfer,
       shoulderPropagationDeferred: latestGripConstraintReport?.shoulderPropagationActive === false || !step3AContactTransfer,
       liveContactInspectionPassed: latestGripConstraintReport?.holding
         ? latestGripConstraintReport.inspectionPassed === true
@@ -1574,7 +1646,10 @@ function buildReport(combatSnapshot = combat.snapshot) {
       attackLineClearanceRequired: true,
       attackLineClearancePassed: latestGripConstraintReport?.attackLineClearance?.pass ?? null,
       freeInspectionCameraDoesNotMutateCombat: true,
-      b3ClockFrozenDuringStep3A: Boolean(step3AContactTransfer && latestParryConfirmation?.accepted),
+      b3ClockFrozenDuringStep3A: step3AOwnsLiveContact(),
+      oldB3ReleasedOnlyAfterSevenOfSeven: step3AContactTransfer?.releasedToOldB3
+        ? latestGripConstraintReport?.inspectionPassed === true
+        : true,
       oldB3CoreModulesUnchanged: true,
       blockPathPreserved: true,
       noRootTranslation: true,
@@ -1662,11 +1737,12 @@ function frame(timestamp) {
 
     let step3ALiveConstraintNeedsUpdate = false;
     if (combat.active) {
-      if (step3AContactTransfer && latestParryConfirmation?.accepted) {
+      if (step3AOwnsLiveContact()) {
         latestCombatUpdate = combat.update(0, { camera });
         step3ALiveConstraintNeedsUpdate = swordGripConstraint.active;
       } else {
         latestCombatUpdate = combat.update(deltaSeconds, { camera });
+        if (step3AReleaseBlend) step3AReleaseBlend.elapsedMs += deltaMs;
         if (latestCombatUpdate?.justCompleted && !attackerRecovery) beginAttackRecovery(selectedDirection);
       }
     } else {
@@ -1682,10 +1758,13 @@ function frame(timestamp) {
       updateLiveContactMarkers(latestGripConstraintReport);
       if (!wasHolding && latestGripConstraintReport?.holding) {
         const passed = latestGripConstraintReport.inspectionPassed === true;
-        status.textContent = passed
-          ? `STEP 3A HOLD · LIVE CONTACT VERIFIED · 7/7 gates PASS · ${formatTerminalState(latestGripConstraintReport.terminalReason)} · wrist.r only · elbow/shoulder OFF · OLD B3 frozen`
-          : `STEP 3A HOLD · ${formatInspectionFailureSummary(latestGripConstraintReport)}`;
-        status.className = passed ? 'good' : 'bad';
+        const release = passed ? releaseLiveContactToOldB3() : null;
+        status.textContent = release?.accepted
+          ? `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} lowerarm/wrist push complete → OLD B3 released`
+          : passed
+            ? `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} OLD B3 handoff deferred while TOP/RIGHT are calibrated first`
+            : `STEP 3A HOLD · ${formatInspectionFailureSummary(latestGripConstraintReport)}`;
+        status.className = release?.accepted || passed ? 'good' : 'bad';
       }
     }
     attackerSword.update(); defenderSword?.update();

@@ -15,7 +15,7 @@ function functionBody(name, nextName) {
 
 test('current R281 HTML runs the Step 3A shield to sword to hand entry', () => {
   assert.match(html, /Step 3A · Live Shield → Sword → Wrist-Grip Constraint/);
-  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-debug-low-stance-controls-r18e/);
+  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-top-right-old-b3-r18e/);
   assert.match(html, /PARRY NOW \(F\)/);
   assert.doesNotMatch(html, /data-mode="perfect"/);
 });
@@ -38,6 +38,14 @@ test('current R281 confirms Parry through real swept contact before live wrist-g
   assert.match(contact, /swordGripConstraint\.start/);
   assert.ok(contact.indexOf('parryGate.confirm') < contact.indexOf('swordGripConstraint.start'));
   assert.doesNotMatch(contact, /publishPostCouplingRecoilStaggerHandoff/);
+});
+
+test('current R281 releases a verified TOP or RIGHT live-contact pose into OLD B3', () => {
+  assert.match(source, /buildLiveParryOldB3Handoff/);
+  assert.match(source, /function releaseLiveContactToOldB3/);
+  assert.match(source, /publishPostCouplingRecoilStaggerHandoff/);
+  assert.match(source, /sampleLiveParryOldB3ReleaseBlend/);
+  assert.match(source, /releasedToOldB3/);
 });
 
 test('current R281 keeps the verified legacy Two-Actor B3 plan unchanged behind the direct diagnostic', () => {

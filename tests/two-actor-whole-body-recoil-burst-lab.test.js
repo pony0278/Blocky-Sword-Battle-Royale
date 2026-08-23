@@ -5,9 +5,9 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 
-test('historical G4.3B.5R.2.7 source stays covered after current Lab advances to Step 3A', () => {
-  assert.match(html, /Step 3A · Live Shield → Sword → Wrist-Grip Constraint/);
-  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-debug-low-stance-controls-r18e/);
+test('historical G4.3B.5R.2.7 source stays covered after current Lab advances to TOP/RIGHT OLD B3 handoff', () => {
+  assert.match(html, /Step 3A · Live Shield → Sword → Arm → OLD B3/);
+  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-top-right-old-b3-r18e/);
   assert.match(source, /two-actor-whole-body-recoil-burst\.js\?v=g43b5r27/);
   assert.match(source, /const LAB_STAGE = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
   assert.match(source, /window\.__G43B5R27_LAB__/);
@@ -31,10 +31,10 @@ test('G4.3B.5R.2.7 lab exposes release power frame instead of separation phase',
   assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
 });
 
-test('historical .2.7 keeps one shared clock while current Lab isolates hand and freezes B3', () => {
+test('historical .2.7 keeps one shared clock while current Lab freezes B3 until TOP/RIGHT pass 7/7', () => {
   assert.match(source, /backward PRELOAD/);
   assert.match(source, /weaponShouldersTorsoHipsLegsShareBurstClock: true/);
   assert.match(source, /freeArmUsesParentHierarchyRatherThanExplicitFlail: true/);
-  assert.match(html, /Inspection hold; elbow \/ shoulder \/ OLD B3 remain off/);
-  assert.match(html, /Physical arm chain<\/span><b>wrist\.r active → hand \/ socket \/ hilt follow · elbow \/ shoulder deferred<\/b>/);
+  assert.match(html, /live-contact inspection hold.*TOP\/RIGHT 7\/7.*OLD B3/);
+  assert.match(html, /Physical arm chain<\/span><b>TOP \/ RIGHT: bounded lowerarm\.r.*wrist\.r re-solve.*shoulder off.*LEFT deferred<\/b>/);
 });

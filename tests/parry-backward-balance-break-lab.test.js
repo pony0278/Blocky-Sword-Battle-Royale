@@ -29,9 +29,9 @@ test('G4.3B.5R.2.6 neutral torso release base remains the .2.7 whole-body burst 
 });
 
 test('historical .2.6 preload source remains while current Lab isolates hand propagation', () => {
-  assert.match(html, /Step 3A · Live Shield → Sword → Wrist-Grip/);
-  assert.match(html, /Physical arm chain<\/span><b>wrist\.r active → hand \/ socket \/ hilt follow · elbow \/ shoulder deferred<\/b>/);
-  assert.match(html, /g43b5r281-debug-low-stance-controls-r18e/);
+  assert.match(html, /Step 3A · Live Shield → Sword → Arm → OLD B3/);
+  assert.match(html, /Physical arm chain<\/span><b>TOP \/ RIGHT: bounded lowerarm\.r.*wrist\.r re-solve.*shoulder off.*LEFT deferred<\/b>/);
+  assert.match(html, /g43b5r281-top-right-old-b3-r18e/);
   assert.match(source, /parry-backward-balance-break\.js\?v=g43b5r27/);
   assert.match(source, /window\.__G43B5R27_LAB__/);
 });

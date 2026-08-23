@@ -7,8 +7,15 @@ import {
   evaluateAttackLineClearance,
   evaluateLiveContactInspection,
   mapLiveShieldContactTarget,
+  planLiveForearmHiltAssist,
+  planLiveWristAttackLineTwist,
   solveLiveSwordContactConstraint,
 } from '../src/combat/live-shield-sword-grip-contact-constraint.js';
+import {
+  LIVE_PARRY_OLD_B3_HANDOFF_STAGE,
+  buildLiveParryOldB3Handoff,
+  sampleLiveParryOldB3ReleaseBlend,
+} from '../src/combat/live-parry-old-b3-handoff.js';
 
 const surface = Object.freeze({
   center: Object.freeze({ x: 0, y: 1.1, z: 0 }),
@@ -86,8 +93,18 @@ test('Step 3A position constraint turns the sword contact toward the live target
   assert.ok(solved.constraintErrorMeters < 0.01);
 });
 
-test('Step 3A modifies wrist.r so hand, socket, hilt, and sword follow while B3 stays frozen', () => {
+test('TOP and RIGHT recruit a bounded lowerarm assist before the wrist contact solve', () => {
   const plan = planForShieldTranslation();
+  const assistInput = {
+    forearmPivotPoint: { x: 0, y: -0.3, z: 0 },
+    initialGripPoint: { x: 0, y: 0, z: 0 },
+    initialSwordBasePoint: { x: 0, y: 0, z: 0 },
+    initialSwordTipPoint: { x: 0, y: 0, z: 1 },
+    contactTargetOffset: { x: 0.075, y: 0, z: 0 },
+  };
+  const top = planLiveForearmHiltAssist({ ...assistInput, attackDirection: 'top' });
+  const right = planLiveForearmHiltAssist({ ...assistInput, attackDirection: 'right' });
+  const left = planLiveForearmHiltAssist({ ...assistInput, attackDirection: 'left' });
 
   assert.equal(plan.gripChainOnly, true);
   assert.equal(plan.modifiedBone, 'wrist.r');
@@ -95,6 +112,50 @@ test('Step 3A modifies wrist.r so hand, socket, hilt, and sword follow while B3 
   assert.equal(plan.elbowPropagationActive, false);
   assert.equal(plan.shoulderPropagationActive, false);
   assert.equal(plan.b3ClockFrozen, true);
+  assert.equal(top.accepted, true);
+  assert.equal(right.accepted, true);
+  assert.ok(top.targetHiltOfflineTravelMeters > 0.03);
+  assert.ok(right.targetHiltOfflineTravelMeters > 0.03);
+  assert.ok(top.estimatedOfflineTravelMeters >= 0.025);
+  assert.ok(top.appliedDegrees <= 8);
+  assert.ok(top.targetGripPoint.x > 0.024);
+  assert.equal(left.accepted, false);
+  assert.equal(left.reason, 'attack-direction-deferred');
+});
+
+test('TOP and RIGHT can clear the sword axis by twisting around the wrist-to-contact axis', () => {
+  const radians = 6 * Math.PI / 180;
+  const twist = planLiveWristAttackLineTwist({
+    initialSwordAxis: { x: 1, y: 0, z: 0 },
+    currentSwordAxis: { x: Math.cos(radians), y: Math.sin(radians), z: 0 },
+    initialWristGripAxis: { x: 1, y: 0, z: 0 },
+    currentWristGripAxis: { x: Math.cos(radians), y: Math.sin(radians), z: 0 },
+    wristPoint: { x: 0, y: 0, z: 0 },
+    contactPoint: { x: 0, y: 0, z: 1 },
+  });
+
+  assert.equal(twist.accepted, true);
+  assert.equal(twist.reason, 'bounded-wrist-attack-line-twist-ready');
+  assert.ok(Math.abs(twist.appliedDegrees) <= 6);
+  assert.ok(twist.predictedClearanceDegrees >= 7);
+  assert.ok(twist.predictedWristGripClearanceDegrees >= 7);
+});
+
+test('TOP contact-axis twist can preserve a clear sword while correcting only the wrist-grip line', () => {
+  const swordRadians = 12 * Math.PI / 180;
+  const wristRadians = 5 * Math.PI / 180;
+  const twist = planLiveWristAttackLineTwist({
+    initialSwordAxis: { x: 1, y: 0, z: 0 },
+    currentSwordAxis: { x: Math.cos(swordRadians), y: Math.sin(swordRadians), z: 0 },
+    initialWristGripAxis: { x: 1, y: 0, z: 0 },
+    currentWristGripAxis: { x: Math.cos(wristRadians), y: Math.sin(wristRadians), z: 0 },
+    wristPoint: { x: 0, y: 0, z: 0 },
+    contactPoint: { x: 0, y: 0, z: 1 },
+  });
+
+  assert.equal(twist.reason, 'bounded-wrist-attack-line-twist-ready');
+  assert.ok(twist.predictedClearanceDegrees >= 7);
+  assert.ok(twist.predictedWristGripClearanceDegrees >= 7);
 });
 
 test('Step 3A LINE CLEAR requires sword axis, hilt, and wrist-grip line to all leave the original attack line', () => {
@@ -153,7 +214,44 @@ test('Step 3A inspection diagnostic separates failed gates from a normal post-pe
   assert.equal(assessment.gates.swordAxisClearance.minimum, 7);
 });
 
-test('Step 3A source has no scheduled deflection curve and never writes elbow or shoulder bones', () => {
+test('TOP and RIGHT publish measured 7/7 contact release into OLD B3 while LEFT stays deferred', () => {
+  const contactReport = {
+    accepted: true,
+    holding: true,
+    inspectionPassed: true,
+    elapsedMs: 128,
+    actualContactOffset: { x: 0.08, y: 0.015, z: 0.005 },
+    actualGripOffset: { x: 0.026, y: 0.004, z: 0.002 },
+    targetContactPoint: { x: 0.18, y: 1.2, z: 0.1 },
+    plan: {
+      contactPoint: { x: 0.1, y: 1.185, z: 0.095 },
+      initialSurfaceCenter: { x: 0, y: 1.1, z: 0 },
+      initialSurfaceNormal: { x: 0, y: 0, z: -1 },
+    },
+    inspectionAssessment: { pass: true, failedGateCount: 0 },
+  };
+
+  for (const direction of ['top', 'right']) {
+    const handoff = buildLiveParryOldB3Handoff({ attackDirection: direction, contactReport });
+    assert.equal(handoff.accepted, true);
+    assert.equal(handoff.stage, LIVE_PARRY_OLD_B3_HANDOFF_STAGE);
+    assert.equal(handoff.couplingReport.complete, true);
+    assert.equal(handoff.couplingReport.releaseAttackerRecoil, true);
+    assert.equal(handoff.couplingReport.recoilHandoffMode, 'legacy-two-actor-passthrough');
+    assert.deepEqual(handoff.couplingReport.attackerWeaponOffset, contactReport.actualContactOffset);
+    assert.equal(handoff.couplingReport.inspectionGateCount, 7);
+  }
+
+  const deferred = buildLiveParryOldB3Handoff({ attackDirection: 'left', contactReport });
+  assert.equal(deferred.accepted, false);
+  assert.equal(deferred.reason, 'attack-direction-deferred');
+
+  assert.equal(sampleLiveParryOldB3ReleaseBlend(0, 120).contactPoseWeight, 1);
+  assert.equal(sampleLiveParryOldB3ReleaseBlend(60, 120).contactPoseWeight, 0.5);
+  assert.equal(sampleLiveParryOldB3ReleaseBlend(120, 120).contactPoseWeight, 0);
+});
+
+test('Step 3A has no scheduled deflection curve, recruits only lowerarm.r, and keeps shoulder off', () => {
   const source = readFileSync(
     new URL('../src/combat/live-shield-sword-grip-contact-constraint.js', import.meta.url),
     'utf8',
@@ -161,7 +259,7 @@ test('Step 3A source has no scheduled deflection curve and never writes elbow or
 
   assert.match(source, /bones\?\.\['wrist\.r'\]/);
   assert.match(source, /propagatedBones: Object\.freeze\(\['hand\.r', 'handslot\.r'\]\)/);
-  assert.doesNotMatch(source, /bones\?\.\['lowerarm\.r'\]/);
+  assert.match(source, /bones\?\.\['lowerarm\.r'\]/);
   assert.doesNotMatch(source, /bones\?\.\['upperarm\.r'\]/);
-  assert.doesNotMatch(source, /smoothstep|driveDurationMs|minimumHandDegrees|targetHandDegrees|attackDirection/);
+  assert.doesNotMatch(source, /smoothstep|driveDurationMs|minimumHandDegrees|targetHandDegrees/);
 });
