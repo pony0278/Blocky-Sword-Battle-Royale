@@ -1,4 +1,5 @@
 export const GUARD_THREAT_TRACKING_STAGE = 'G4.3A.1';
+export const GUARD_THREAT_RESIDUAL_REFINEMENT_STAGE = 'G4.3B.5R.3.5';
 export const GUARD_THREAT_TRACKING_MODES = Object.freeze(['off', 'guard', 'parry']);
 
 export const GUARD_THREAT_TRACKING_PROFILES = Object.freeze({
@@ -205,10 +206,32 @@ export function createGuardThreatTrackingRuntime(THREE, options = {}) {
   if (!rig?.bones?.['upperarm.l'] || !rig?.bones?.['lowerarm.l']) throw new Error('G4.3A.1 requires left-arm rig bones');
   if (!buckler?.getWorldParrySurface) throw new Error('G4.3A.1 requires Buckler parry surface');
   const currentOffset = new THREE.Vector3();
+  const residualOffset = new THREE.Vector3();
+  const combinedOffset = new THREE.Vector3();
   const desiredOffset = new THREE.Vector3();
   const deltaOffset = new THREE.Vector3();
+  const residualBeforeOffset = new THREE.Vector3();
+  const residualDeltaOffset = new THREE.Vector3();
   const targetCenter = new THREE.Vector3();
   const effector = new THREE.Vector3();
+
+  function constrainResidualOffset(profile, maxResidualMeters = 0.06) {
+    const residualLimit = Math.min(
+      Math.max(0, finite(maxResidualMeters, 0.06)),
+      Math.max(0, profile.maxCorrectionMeters),
+    );
+    if (residualOffset.length() > residualLimit) residualOffset.setLength(residualLimit);
+    combinedOffset.copy(currentOffset).add(residualOffset);
+    if (combinedOffset.length() > profile.maxCorrectionMeters && profile.maxCorrectionMeters > 0) {
+      combinedOffset.setLength(profile.maxCorrectionMeters);
+      residualOffset.copy(combinedOffset).sub(currentOffset);
+    }
+    if (!(profile.maxCorrectionMeters > 0)) {
+      residualOffset.set(0, 0, 0);
+      combinedOffset.copy(currentOffset);
+    }
+    return residualLimit;
+  }
 
   function update(plan, deltaSeconds = 1 / 60) {
     const mode = plan?.mode || 'off';
@@ -222,12 +245,14 @@ export function createGuardThreatTrackingRuntime(THREE, options = {}) {
     const maxStep = Math.max(0, speed) * dt;
     if (deltaOffset.length() > maxStep && maxStep > 0) deltaOffset.setLength(maxStep);
     currentOffset.add(deltaOffset);
+    if (mode !== 'parry') residualOffset.set(0, 0, 0);
+    constrainResidualOffset(profile);
 
     const baselineSurface = buckler.getWorldParrySurface();
-    targetCenter.set(baselineSurface.center.x, baselineSurface.center.y, baselineSurface.center.z).add(currentOffset);
+    targetCenter.set(baselineSurface.center.x, baselineSurface.center.y, baselineSurface.center.z).add(combinedOffset);
     const appliedDegrees = { 'upperarm.l': 0, 'lowerarm.l': 0 };
 
-    if (currentOffset.lengthSq() > 1e-10) {
+    if (combinedOffset.lengthSq() > 1e-10) {
       for (let iteration = 0; iteration < 2; iteration += 1) {
         const surface = buckler.getWorldParrySurface();
         effector.set(surface.center.x, surface.center.y, surface.center.z);
@@ -256,6 +281,8 @@ export function createGuardThreatTrackingRuntime(THREE, options = {}) {
       stage: GUARD_THREAT_TRACKING_STAGE,
       mode,
       requestedOffset: freezeVector({ x: currentOffset.x, y: currentOffset.y, z: currentOffset.z }),
+      carriedResidualOffset: freezeVector({ x: residualOffset.x, y: residualOffset.y, z: residualOffset.z }),
+      combinedRequestedOffset: freezeVector({ x: combinedOffset.x, y: combinedOffset.y, z: combinedOffset.z }),
       achievedOffset: freezeVector({ x: achieved.x, y: achieved.y, z: achieved.z }),
       achievedDistance: achieved.length(),
       appliedDegrees: Object.freeze({ ...appliedDegrees }),
@@ -263,6 +290,108 @@ export function createGuardThreatTrackingRuntime(THREE, options = {}) {
     });
   }
 
-  function reset() { currentOffset.set(0, 0, 0); }
-  return Object.freeze({ update, reset, get offset() { return currentOffset.clone(); } });
+  function refineMeasuredContact(plan, deltaSeconds = 1 / 60, refinementOptions = {}) {
+    const mode = plan?.mode || 'off';
+    const profile = getGuardThreatTrackingProfile(mode);
+    const dt = Math.max(1e-5, finite(deltaSeconds, 1 / 60));
+    const speedScale = Math.max(0, finite(refinementOptions.speedScale, 1));
+    const jointBudgetScale = clamp(finite(refinementOptions.jointBudgetScale, 0.35), 0, 1);
+    const iterations = Math.max(1, Math.min(4, Math.round(finite(refinementOptions.iterations, 2))));
+    const baselineSurface = buckler.getWorldParrySurface();
+    desiredOffset.set(
+      finite(plan?.correction?.x), finite(plan?.correction?.y), finite(plan?.correction?.z),
+    );
+    const requestedResidualDistance = desiredOffset.length();
+    const defaultMaxStep = profile.maxTrackingSpeedMps * dt * speedScale;
+    const maxStep = Math.max(0, finite(refinementOptions.maxStepMeters, defaultMaxStep));
+    if (desiredOffset.length() > maxStep && maxStep > 0) desiredOffset.setLength(maxStep);
+    if (!(maxStep > 0)) desiredOffset.set(0, 0, 0);
+    residualBeforeOffset.copy(residualOffset);
+    residualOffset.add(desiredOffset);
+    const residualLimitMeters = constrainResidualOffset(profile, refinementOptions.maxResidualMeters);
+    residualDeltaOffset.copy(residualOffset).sub(residualBeforeOffset);
+    const appliedResidualDistance = residualDeltaOffset.length();
+    targetCenter.set(
+      baselineSurface.center.x,
+      baselineSurface.center.y,
+      baselineSurface.center.z,
+    ).add(residualDeltaOffset);
+    const appliedDegrees = { 'upperarm.l': 0, 'lowerarm.l': 0 };
+
+    if (residualDeltaOffset.lengthSq() > 1e-10) {
+      for (let iteration = 0; iteration < iterations; iteration += 1) {
+        const surface = buckler.getWorldParrySurface();
+        effector.set(surface.center.x, surface.center.y, surface.center.z);
+        const lowerBudget = profile.lowerArmMaxDegrees * jointBudgetScale;
+        const lowerRemaining = Math.max(0, lowerBudget - appliedDegrees['lowerarm.l']);
+        appliedDegrees['lowerarm.l'] += setWorldDirectionDelta(
+          THREE, rig.bones['lowerarm.l'], effector, targetCenter, lowerRemaining,
+        );
+        rig.root?.updateMatrixWorld?.(true);
+        const surfaceAfterLower = buckler.getWorldParrySurface();
+        effector.set(surfaceAfterLower.center.x, surfaceAfterLower.center.y, surfaceAfterLower.center.z);
+        const upperBudget = profile.upperArmMaxDegrees * jointBudgetScale;
+        const upperRemaining = Math.max(0, upperBudget - appliedDegrees['upperarm.l']);
+        appliedDegrees['upperarm.l'] += setWorldDirectionDelta(
+          THREE, rig.bones['upperarm.l'], effector, targetCenter, upperRemaining,
+        );
+        rig.root?.updateMatrixWorld?.(true);
+      }
+    }
+
+    const finalSurface = buckler.getWorldParrySurface();
+    const achieved = new THREE.Vector3(
+      finalSurface.center.x - baselineSurface.center.x,
+      finalSurface.center.y - baselineSurface.center.y,
+      finalSurface.center.z - baselineSurface.center.z,
+    );
+    const achievedDistance = achieved.length();
+    const directionDot = appliedResidualDistance > 1e-6 && achievedDistance > 1e-6
+      ? residualDeltaOffset.dot(achieved) / (appliedResidualDistance * achievedDistance)
+      : null;
+    return Object.freeze({
+      stage: GUARD_THREAT_RESIDUAL_REFINEMENT_STAGE,
+      mode,
+      requestedResidual: freezeVector({
+        x: finite(plan?.correction?.x),
+        y: finite(plan?.correction?.y),
+        z: finite(plan?.correction?.z),
+      }),
+      requestedResidualDistance,
+      appliedResidual: freezeVector({
+        x: residualDeltaOffset.x, y: residualDeltaOffset.y, z: residualDeltaOffset.z,
+      }),
+      appliedResidualDistance,
+      residualOffsetBefore: freezeVector({
+        x: residualBeforeOffset.x, y: residualBeforeOffset.y, z: residualBeforeOffset.z,
+      }),
+      residualOffsetAfter: freezeVector({ x: residualOffset.x, y: residualOffset.y, z: residualOffset.z }),
+      carriedResidualDistance: residualOffset.length(),
+      combinedRequestedOffset: freezeVector({ x: combinedOffset.x, y: combinedOffset.y, z: combinedOffset.z }),
+      combinedRequestedDistance: combinedOffset.length(),
+      residualLimitMeters,
+      achievedOffset: freezeVector({ x: achieved.x, y: achieved.y, z: achieved.z }),
+      achievedDistance,
+      directionDot,
+      appliedDegrees: Object.freeze({ ...appliedDegrees }),
+      jointBudgetScale,
+      surface: finalSurface,
+      preservedPrimaryOffset: freezeVector({ x: currentOffset.x, y: currentOffset.y, z: currentOffset.z }),
+      authority: 'persistent-bounded-residual-carry-no-contact-authority',
+    });
+  }
+
+  function reset() {
+    currentOffset.set(0, 0, 0);
+    residualOffset.set(0, 0, 0);
+    combinedOffset.set(0, 0, 0);
+  }
+  return Object.freeze({
+    update,
+    refineMeasuredContact,
+    reset,
+    get offset() { return currentOffset.clone(); },
+    get residualOffset() { return residualOffset.clone(); },
+    get combinedOffset() { return currentOffset.clone().add(residualOffset); },
+  });
 }

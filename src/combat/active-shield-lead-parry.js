@@ -40,6 +40,14 @@ function dot(a, b) {
   return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
+function cross(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
 function freezeVector(a) {
   return Object.freeze({ x: a.x, y: a.y, z: a.z });
 }
@@ -64,6 +72,12 @@ export function sampleActiveShieldLeadMotion(input = {}) {
   const normalDot = clamp(dot(previousNormal, currentNormal), -1, 1);
   const angularRadians = Math.acos(normalDot);
   const angularSpeedRadPerSecond = angularRadians / deltaSeconds;
+  const angularAxis = normalize(cross(previousNormal, currentNormal), { x: 0, y: 0, z: 0 });
+  const angularVelocity = {
+    x: angularAxis.x * angularSpeedRadPerSecond,
+    y: angularAxis.y * angularSpeedRadPerSecond,
+    z: angularAxis.z * angularSpeedRadPerSecond,
+  };
 
   const minimumTranslationSpeedMps = Math.max(
     0,
@@ -84,6 +98,8 @@ export function sampleActiveShieldLeadMotion(input = {}) {
     translationMeters,
     translationSpeedMps,
     angularRadians,
+    angularAxis: freezeVector(angularAxis),
+    angularVelocity: freezeVector(angularVelocity),
     angularSpeedRadPerSecond,
     authority: 'measured-pre-contact-shield-surface-motion',
   });

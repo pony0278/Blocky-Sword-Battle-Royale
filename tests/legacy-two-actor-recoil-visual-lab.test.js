@@ -5,56 +5,60 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 
-test('G4.3B.5R.2.8.1 HTML runs the Active Shield-Lead Parry entry', () => {
-  assert.match(html, /G4\.3B\.5R\.2\.8\.1 · Active Shield-Lead Parry/);
-  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-active-shield-lead/);
-  assert.match(html, /Predictive shield lead → MOVING shield contact/);
-  assert.match(html, /Post-contact Parry HOLD<\/span><b>0 ms/);
+function functionBody(name, nextName) {
+  const start = source.indexOf(`function ${name}(`);
+  const end = source.indexOf(`function ${nextName}(`, start + 1);
+  assert.notEqual(start, -1, `${name} must exist`);
+  assert.notEqual(end, -1, `${nextName} must exist`);
+  return source.slice(start, end);
+}
+
+test('current R281 HTML runs the Step 3A shield to sword to hand entry', () => {
+  assert.match(html, /Step 3A · Live Shield → Sword → Wrist-Grip Constraint/);
+  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-residual-body-reach-r18/);
+  assert.match(html, /PARRY NOW \(F\)/);
+  assert.doesNotMatch(html, /data-mode="perfect"/);
 });
 
-test('G4.3B.5R.2.8.1 restores predictive Parry before authoritative sword × shield contact', () => {
-  assert.match(source, /analyzePredictiveInterceptParry/);
-  assert.match(source, /createPredictiveInterceptParryPresentationRuntime/);
-  assert.match(source, /predictivePresentation\.start\(/);
-  assert.match(source, /predictivePresentation\.update\(/);
-  assert.match(source, /sampleActiveShieldLeadMotion\(/);
-
-  const frameBranch = source.slice(source.indexOf('const currentBlade = captureBladePolyline()'), source.indexOf('previousBlade = currentBlade'));
-  const preContact = frameBranch.indexOf('updatePreContact(snapshot, currentBlade, deltaSeconds)');
-  const contact = frameBranch.indexOf('resolveContact(snapshot, currentBlade, deltaSeconds)');
-  assert.ok(preContact >= 0 && contact > preContact, 'shield lead must update before contact is resolved');
+test('current R281 starts shield presentation only from manual Parry input', () => {
+  const manual = functionBody('triggerParryNow', 'forceOldTwoActorB3');
+  const preContact = functionBody('updateParryPreContact', 'updatePreContact');
+  assert.match(manual, /parryGate\.arm/);
+  assert.match(manual, /predictivePresentation\.start/);
+  assert.doesNotMatch(preContact, /predictivePresentation\.start/);
+  assert.match(preContact, /predictivePresentation\.update/);
+  assert.match(preContact, /sampleActiveShieldLeadMotion/);
 });
 
-test('G4.3B.5R.2.8.1 contact consumes the old dead hold and enters moving shield DRIVE immediately', () => {
-  const contactBranch = source.slice(source.indexOf('function resolveContact'), source.indexOf('function prepareLegacyReleaseBridge'));
-  assert.match(contactBranch, /buildActiveShieldLeadCouplingStart\(/);
-  assert.match(contactBranch, /profile: latestLeadHandoff\.couplingProfileOverrides/);
-  assert.match(contactBranch, /couplingRuntime\.update\(latestLeadHandoff\.initialCouplingElapsedMs \/ 1000\)/);
-  assert.match(source, /post-contact HOLD 0ms/);
-  assert.match(source, /attacker arm follow/);
+test('current R281 confirms Parry through real swept contact before live wrist-grip transfer', () => {
+  const contact = functionBody('resolveContact', 'updateHud');
+  assert.match(contact, /probeSweptSwordBucklerContact/);
+  assert.match(contact, /if \(!latestContact\.contact\) return/);
+  assert.match(contact, /parryGate\.confirm/);
+  assert.match(contact, /swordGripConstraint\.start/);
+  assert.ok(contact.indexOf('parryGate.confirm') < contact.indexOf('swordGripConstraint.start'));
+  assert.doesNotMatch(contact, /publishPostCouplingRecoilStaggerHandoff/);
 });
 
-test('G4.3B.5R.2.8.1 still restores old frozen contact base during the historical B3 hold', () => {
-  assert.match(source, /const LEGACY_HOLD_MS = Object\.freeze\(\{ parry: 28, 'perfect-parry': 36 \}\)/);
-  assert.match(source, /legacyContactPose = captureRigPose\(attacker\.rig\)/);
-  assert.match(source, /couplingRuntime\.reapplyAttackerConstraint\(latestCouplingReport\)/);
-  assert.match(source, /couplingReleasePose = captureRigPose\(attacker\.rig\)/);
-  assert.match(source, /blendRecoveryPose\([\s\S]*couplingReleasePose[\s\S]*legacyContactPose[\s\S]*progress/);
+test('current R281 keeps the verified legacy Two-Actor B3 plan unchanged behind the direct diagnostic', () => {
+  assert.match(source, /LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE/);
+  assert.match(source, /LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE/);
+  assert.match(source, /direct-existing-old-two-actor-b3-diagnostic/);
+  assert.match(source, /combat\.update\(0\.021/);
 });
 
-test('G4.3B.5R.2.8.1 bridge advances before old B3 update and keeps the old recoil ordering', () => {
-  const combatBranch = source.slice(source.indexOf('if (combat.active && !couplingOwnsWeapon)'), source.indexOf('} else if (!combat.active)'));
-  const advance = combatBranch.indexOf('advanceReleaseBridge(deltaMs)');
-  const update = combatBranch.indexOf('combat.update(deltaSeconds, { camera })');
-  const finish = combatBranch.indexOf('finishReleaseBridgeIfReady()');
-  assert.ok(advance >= 0 && update > advance && finish > update);
-  assert.match(source, /originalB2PlanPreservedAfterCoupling: true/);
-  assert.match(source, /legacyB3StartsAtZeroMs: true/);
-});
-
-test('G4.3B.5R.2.8.1 visual path has no balance-break or whole-body-burst pose authority', () => {
+test('current R281 contains no legacy authored-offset coupling, release bridge, Perfect, or balance-break authority', () => {
+  assert.doesNotMatch(source, /createShieldDrivenContactCouplingRuntime/);
+  assert.doesNotMatch(source, /couplingRuntime\.start/);
+  assert.match(source, /createLiveShieldSwordGripContactRuntime/);
+  assert.doesNotMatch(source, /prepareLegacyReleaseBridge/);
+  assert.doesNotMatch(source, /perfect-parry/);
   assert.doesNotMatch(source, /createParryBackwardBalanceBreakRuntime/);
   assert.doesNotMatch(source, /TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
-  assert.match(source, /LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE/);
-  assert.match(source, /noBalanceBreakOverlayAfterRelease: true/);
+});
+
+test('current R281 retains the independently verified Step 1 B3 diagnostic', () => {
+  assert.match(html, /id="forceOldB3"/);
+  assert.match(source, /function forceOldTwoActorB3/);
+  assert.match(source, /direct-existing-old-two-actor-b3-diagnostic/);
 });

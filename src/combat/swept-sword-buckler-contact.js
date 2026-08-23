@@ -212,6 +212,85 @@ function samplePolylineAtFraction(polyline, fraction) {
   return lerp(polyline[index], polyline[index + 1], local);
 }
 
+export function measureSweptSwordBucklerClosestApproach(input = {}) {
+  const previous = normalizeSwordSweepPolyline(input.previousBlade);
+  const current = normalizeSwordSweepPolyline(input.currentBlade);
+  if (previous.length !== current.length) throw new Error('G4.3A closest-approach polylines must have matching point counts');
+  const surface = normalizeBucklerParrySurface(input.bucklerSurface);
+  const timeSamples = Math.max(2, Math.min(32, Math.round(finite(input.timeSamples, 8))));
+  const bladeSamplesPerSection = Math.max(2, Math.min(32, Math.round(finite(input.bladeSamplesPerSection, 8))));
+  const sectionCount = current.length - 1;
+  const halfThickness = surface.thickness * 0.5;
+  let best = null;
+
+  for (let sectionIndex = 0; sectionIndex < sectionCount; sectionIndex += 1) {
+    for (let timeIndex = 0; timeIndex <= timeSamples; timeIndex += 1) {
+      const sweepAlpha = timeIndex / timeSamples;
+      for (let bladeIndex = 0; bladeIndex <= bladeSamplesPerSection; bladeIndex += 1) {
+        const sectionFraction = bladeIndex / bladeSamplesPerSection;
+        const previousPoint = lerp(previous[sectionIndex], previous[sectionIndex + 1], sectionFraction);
+        const currentPoint = lerp(current[sectionIndex], current[sectionIndex + 1], sectionFraction);
+        const point = lerp(previousPoint, currentPoint, sweepAlpha);
+        const projection = projectToPlane(point, surface.center, surface.normal);
+        const radial = length(sub(projection.point, surface.center));
+        const planeGapMeters = Math.max(0, Math.abs(projection.signedDistance) - halfThickness);
+        const radialGapMeters = Math.max(0, radial - surface.radius);
+        const combinedGapMeters = Math.hypot(planeGapMeters, radialGapMeters);
+        const candidate = {
+          point,
+          planePoint: projection.point,
+          signedDistance: projection.signedDistance,
+          planeGapMeters,
+          radialDistanceMeters: radial,
+          radialGapMeters,
+          combinedGapMeters,
+          bladeFraction: (sectionIndex + sectionFraction) / sectionCount,
+          sweepAlpha,
+        };
+        if (!best || candidate.combinedGapMeters < best.combinedGapMeters
+          || (candidate.combinedGapMeters === best.combinedGapMeters
+            && candidate.planeGapMeters + candidate.radialGapMeters < best.planeGapMeters + best.radialGapMeters)) {
+          best = candidate;
+        }
+      }
+    }
+  }
+
+  return Object.freeze({
+    point: freezeVector(best.point),
+    planePoint: freezeVector(best.planePoint),
+    signedDistance: best.signedDistance,
+    planeGapMeters: best.planeGapMeters,
+    radialDistanceMeters: best.radialDistanceMeters,
+    radialGapMeters: best.radialGapMeters,
+    combinedGapMeters: best.combinedGapMeters,
+    bladeFraction: clamp01(best.bladeFraction),
+    sweepAlpha: clamp01(best.sweepAlpha),
+    insideSlab: best.planeGapMeters === 0,
+    insideDisc: best.radialGapMeters === 0,
+    timeSamples,
+    bladeSamplesPerSection,
+    authority: 'sampled-closest-approach-diagnostic-only',
+  });
+}
+
+function exactContactApproach(best) {
+  return Object.freeze({
+    point: freezeVector(best.point),
+    planePoint: freezeVector(best.point),
+    signedDistance: best.signedDistance,
+    planeGapMeters: 0,
+    radialDistanceMeters: best.radialDistance,
+    radialGapMeters: 0,
+    combinedGapMeters: 0,
+    bladeFraction: clamp01(best.bladeFraction),
+    sweepAlpha: clamp01(best.sweepAlpha),
+    insideSlab: true,
+    insideDisc: true,
+    authority: 'exact-swept-contact',
+  });
+}
+
 function makeNoContact(previous, current, surface, options, diagnostics = {}) {
   return Object.freeze({
     stage: SWEPT_SWORD_BUCKLER_CONTACT_STAGE,
@@ -234,6 +313,13 @@ export function probeSweptSwordBucklerContact(input = {}) {
   const epsilon = Math.max(1e-10, finite(input.epsilon, DEFAULT_SWORD_SWEEP_EPSILON));
   const deltaSeconds = Math.max(1e-6, finite(input.deltaSeconds, 1 / 60));
   const active = input.active !== false;
+  const closestApproach = measureSweptSwordBucklerClosestApproach({
+    previousBlade: previous,
+    currentBlade: current,
+    bucklerSurface: surface,
+    timeSamples: input.closestApproachTimeSamples,
+    bladeSamplesPerSection: input.closestApproachBladeSamples,
+  });
 
   let best = null;
   const sectionCount = current.length - 1;
@@ -264,6 +350,7 @@ export function probeSweptSwordBucklerContact(input = {}) {
     const endpointTravel = current.map((point, index) => length(sub(point, previous[index])));
     return makeNoContact(previous, current, surface, { active }, {
       maxEndpointTravel: Math.max(...endpointTravel),
+      closestApproach,
       reason: 'no-swept-intersection',
     });
   }
@@ -296,6 +383,7 @@ export function probeSweptSwordBucklerContact(input = {}) {
       deltaSeconds,
       previousRadialDistance: radialDistance(previousAtContact, surface.center, surface.normal),
       currentRadialDistance: radialDistance(currentAtContact, surface.center, surface.normal),
+      closestApproach: exactContactApproach(best),
     }),
   });
 }

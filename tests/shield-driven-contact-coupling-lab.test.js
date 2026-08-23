@@ -46,9 +46,9 @@ test('G4.3B.5R.2.7 preserves terminal hand constraint and neutral release base b
   assert.match(source, /terminalHandConstraintReappliedForNeutralB3Base: true/);
 });
 
-test('G4.3B.5R.2.7 Lab exposes shield redirect then unified old Two-Actor whole-body burst', () => {
-  assert.match(html, /Two-Actor Whole-Body Recoil Burst/);
-  assert.match(html, /PARRY release separation<\/span><b>BYPASSED · 0 ms/);
+test('historical .2.7 source remains covered while current Lab isolates live wrist-grip transfer', () => {
+  assert.match(html, /Success authority<\/span><b>real swept Sword × Shield contact<\/b>/);
+  assert.match(html, /After success<\/span><b>live-contact inspection hold<\/b>/);
   assert.match(source, /WHOLE-BODY BURST: ACTIVE/);
   assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
   assert.match(source, /weaponShouldersTorsoHipsLegsShareBurstClock: true/);

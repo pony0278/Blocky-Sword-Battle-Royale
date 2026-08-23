@@ -93,3 +93,27 @@ test('G4.3A.1 keeps Three r128 slerpQuaternions result out of chaining assignmen
   assert.match(source, /limitedWorldDelta\.slerpQuaternions\(/);
   assert.doesNotMatch(source, /const\s+limitedWorldDelta\s*=\s*new THREE\.Quaternion\(\)\.slerpQuaternions\(/);
 });
+
+test('R17 residual refinement persists separately, stays bounded, and resets without mutating primary intent', async () => {
+  const source = await readFile(new URL('../src/combat/guard-threat-tracking.js', import.meta.url), 'utf8');
+  const updateStart = source.indexOf('function update(plan,');
+  const refineStart = source.indexOf('function refineMeasuredContact(');
+  const resetStart = source.indexOf('function reset()', refineStart);
+  assert.ok(updateStart >= 0 && refineStart > updateStart && resetStart > refineStart);
+  const updateBody = source.slice(updateStart, refineStart);
+  const refineBody = source.slice(refineStart, resetStart);
+  const resetBody = source.slice(resetStart);
+  assert.match(source, /GUARD_THREAT_RESIDUAL_REFINEMENT_STAGE = 'G4\.3B\.5R\.3\.5'/);
+  assert.match(updateBody, /constrainResidualOffset\(profile\)/);
+  assert.match(updateBody, /if \(mode !== 'parry'\) residualOffset\.set\(0, 0, 0\)/);
+  assert.match(updateBody, /targetCenter[\s\S]*\.add\(combinedOffset\)/);
+  assert.match(refineBody, /profile\.maxTrackingSpeedMps \* dt \* speedScale/);
+  assert.match(refineBody, /residualOffset\.add\(desiredOffset\)/);
+  assert.match(refineBody, /constrainResidualOffset\(profile, refinementOptions\.maxResidualMeters\)/);
+  assert.match(refineBody, /residualLimitMeters/);
+  assert.match(refineBody, /preservedPrimaryOffset/);
+  assert.match(refineBody, /persistent-bounded-residual-carry-no-contact-authority/);
+  assert.doesNotMatch(refineBody, /currentOffset\.add/);
+  assert.match(resetBody, /residualOffset\.set\(0, 0, 0\)/);
+  assert.match(source, /get residualOffset\(\)/);
+});

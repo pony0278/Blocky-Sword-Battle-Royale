@@ -82,6 +82,11 @@ test('G4.3A rejects a swept crossing outside Buckler radius', () => {
   });
   assert.equal(result.contact, false);
   assert.equal(result.reason, 'no-swept-intersection');
+  assert.equal(result.diagnostics.closestApproach.insideSlab, true);
+  assert.equal(result.diagnostics.closestApproach.insideDisc, false);
+  close(result.diagnostics.closestApproach.planeGapMeters, 0);
+  assert.ok(result.diagnostics.closestApproach.radialGapMeters > 0.2);
+  assert.equal(result.diagnostics.closestApproach.authority, 'sampled-closest-approach-diagnostic-only');
 });
 
 test('G4.3A separates geometric touch from ACTIVE combat eligibility', () => {
@@ -103,6 +108,8 @@ test('G4.3A separates geometric touch from ACTIVE combat eligibility', () => {
   assert.equal(result.contact, false);
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'contact-outside-active-window');
+  assert.equal(result.diagnostics.closestApproach.combinedGapMeters, 0);
+  assert.equal(result.diagnostics.closestApproach.authority, 'exact-swept-contact');
 });
 
 test('G4.3A midpoint polyline produces blade-fraction and incoming-motion metadata for future recoil', () => {

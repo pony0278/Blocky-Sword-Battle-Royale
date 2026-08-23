@@ -30,8 +30,8 @@ test('G4.3B.5R.2.7 keeps Parry weapon coupling frozen until release power frame'
   assert.match(source, /WHOLE-BODY BURST: ACTIVE/);
 });
 
-test('G4.3B.5R.2.7 keeps the accepted Block parity contract visible', () => {
-  assert.match(html, /BLOCK<\/span><b>unchanged · immediate B2\/B3<\/b>/);
-  assert.match(html, /PARRY contact phase/);
-  assert.match(html, /v=g43b5r27/);
+test('current Step 2 Lab keeps invalid or absent Parry input on the Block fallback', () => {
+  assert.match(html, /Invalid \/ no input<\/span><b>falls back to BLOCK<\/b>/);
+  assert.match(html, /Physical arm chain<\/span><b>wrist\.r active → hand \/ socket \/ hilt follow · elbow \/ shoulder deferred<\/b>/);
+  assert.match(html, /g43b5r281-residual-body-reach-r18/);
 });

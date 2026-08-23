@@ -28,11 +28,10 @@ test('G4.3B.5R.2.6 neutral torso release base remains the .2.7 whole-body burst 
   assert.match(source, /terminalHandConstraintReappliedForNeutralB3Base: true/);
 });
 
-test('G4.3B.5R.2.7 Lab retains .2.6 backward preload targets with a new cache bust', () => {
-  assert.match(html, /G4\.3B\.5R\.2\.7/);
-  assert.match(html, /≥ 11\.5° chest/);
-  assert.match(html, /backward preload/);
-  assert.match(html, /shield-driven-contact-coupling-lab\.js\?v=g43b5r27/);
+test('historical .2.6 preload source remains while current Lab isolates hand propagation', () => {
+  assert.match(html, /Step 3A · Live Shield → Sword → Wrist-Grip/);
+  assert.match(html, /Physical arm chain<\/span><b>wrist\.r active → hand \/ socket \/ hilt follow · elbow \/ shoulder deferred<\/b>/);
+  assert.match(html, /g43b5r281-residual-body-reach-r18/);
   assert.match(source, /parry-backward-balance-break\.js\?v=g43b5r27/);
   assert.match(source, /window\.__G43B5R27_LAB__/);
 });

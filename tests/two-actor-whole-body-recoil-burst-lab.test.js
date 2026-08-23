@@ -5,9 +5,9 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 
-test('G4.3B.5R.2.7 lab cache-busts the new whole-body burst authority', () => {
-  assert.match(html, /G4\.3B\.5R\.2\.7/);
-  assert.match(html, /shield-driven-contact-coupling-lab\.js\?v=g43b5r27/);
+test('historical G4.3B.5R.2.7 source stays covered after current Lab advances to Step 3A', () => {
+  assert.match(html, /Step 3A · Live Shield → Sword → Wrist-Grip Constraint/);
+  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-residual-body-reach-r18/);
   assert.match(source, /two-actor-whole-body-recoil-burst\.js\?v=g43b5r27/);
   assert.match(source, /const LAB_STAGE = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
   assert.match(source, /window\.__G43B5R27_LAB__/);
@@ -31,10 +31,10 @@ test('G4.3B.5R.2.7 lab exposes release power frame instead of separation phase',
   assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
 });
 
-test('G4.3B.5R.2.7 keeps backward preload but restores one shared whole-body clock', () => {
+test('historical .2.7 keeps one shared clock while current Lab isolates hand and freezes B3', () => {
   assert.match(source, /backward PRELOAD/);
   assert.match(source, /weaponShouldersTorsoHipsLegsShareBurstClock: true/);
   assert.match(source, /freeArmUsesParentHierarchyRatherThanExplicitFlail: true/);
-  assert.match(html, /weapon \+ shoulders \+ chest \+ spine \+ hips \+ legs/);
-  assert.match(html, /68 ms · 30fps next frame ≈ 101 ms/);
+  assert.match(html, /Inspection hold; elbow \/ shoulder \/ OLD B3 remain off/);
+  assert.match(html, /Physical arm chain<\/span><b>wrist\.r active → hand \/ socket \/ hilt follow · elbow \/ shoulder deferred<\/b>/);
 });
