@@ -33,5 +33,5 @@ test('G4.3B.5R.2.7 keeps Parry weapon coupling frozen until release power frame'
 test('current Step 2 Lab keeps invalid or absent Parry input on the Block fallback', () => {
   assert.match(html, /Invalid \/ no input<\/span><b>falls back to BLOCK<\/b>/);
   assert.match(html, /Physical arm chain<\/span><b>wrist\.r active → hand \/ socket \/ hilt follow · elbow \/ shoulder deferred<\/b>/);
-  assert.match(html, /g43b5r281-residual-body-reach-r18/);
+  assert.match(html, /g43b5r281-debug-low-stance-controls-r18e/);
 });

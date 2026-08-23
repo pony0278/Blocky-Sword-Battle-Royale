@@ -24,6 +24,10 @@ import { buildParryWhiffDiagnostic } from '../../src/combat/parry-whiff-diagnost
 import { selectReachableParryInterceptTarget } from '../../src/combat/reachable-parry-intercept-target.js?v=g43b5r281-residual-body-reach-r18';
 import { createGuardThreatTrackingRuntime, planGuardThreatCorrection } from '../../src/combat/guard-threat-tracking.js?v=g43b5r281-residual-body-reach-r18';
 import { createGuardResidualBodyReachRuntime } from '../../src/combat/guard-residual-body-reach.js?v=g43b5r281-residual-body-reach-r18';
+import {
+  GUARD_RESIDUAL_STANCE_REACH_PROFILE,
+  createGuardResidualStanceReachRuntime,
+} from '../../src/combat/guard-residual-stance-reach.js?v=g43b5r281-debug-low-stance-controls-r18e';
 import { planFineGuardTracking } from '../../src/combat/directional-guard-bracing.js';
 import { createArticulatedImpactBracingRuntime, planArticulatedImpactBracing } from '../../src/combat/articulated-impact-bracing.js';
 import {
@@ -57,6 +61,8 @@ const HUD_INTERVAL_MS = 50;
 const REPORT_INTERVAL_MS = 160;
 const PARRY_REVIEW_RATE = 0.12;
 const PARRY_PROMPT_HOLD_MS = 1500;
+const DEBUG_QUERY = new URLSearchParams(window.location.search);
+const DEBUG_MODE = DEBUG_QUERY.get('debug') === '1';
 
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -140,6 +146,7 @@ const guardRuntime = createGuardPresentationRuntime(THREE, { machine: guardMachi
 const bracingRuntime = createArticulatedImpactBracingRuntime(THREE, { rig: defender.rig, buckler });
 const fineTrackingRuntime = createGuardThreatTrackingRuntime(THREE, { rig: defender.rig, buckler });
 const residualBodyReachRuntime = createGuardResidualBodyReachRuntime(THREE, { rig: defender.rig, buckler });
+const residualStanceReachRuntime = createGuardResidualStanceReachRuntime(THREE, { rig: defender.rig, buckler });
 const predictivePresentation = createPredictiveInterceptParryPresentationRuntime(THREE, { character: defender });
 const parryGate = createCommittedParryContactGate();
 function sampleOriginalContactPose(interruption) {
@@ -190,6 +197,61 @@ const showSurface = document.getElementById('showSurface');
 const forceOldB3Button = document.getElementById('forceOldB3');
 const parryNowButton = document.getElementById('parryNow');
 const retryAttackButton = document.getElementById('retryAttack');
+const stanceDebugPanel = document.getElementById('stanceDebugPanel');
+const debugProfileSummary = document.getElementById('debugProfileSummary');
+const debugApplyRetryButton = document.getElementById('debugApplyRetry');
+const debugResetDefaultsButton = document.getElementById('debugResetDefaults');
+const DEBUG_STANCE_CONTROLS = Object.freeze([
+  Object.freeze({ id: 'debugLeadMs', query: 'leadMs', profileKey: 'anticipatoryLeadMaxSeconds', scale: 0.001, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.anticipatoryLeadMaxSeconds * 1000, precision: 0, unit: 'ms' }),
+  Object.freeze({ id: 'debugMaxCrouchCm', query: 'crouchCm', profileKey: 'maxCrouchMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.maxCrouchMeters * 100, precision: 1, unit: 'cm' }),
+  Object.freeze({ id: 'debugCrouchSpeed', query: 'crouchSpeed', profileKey: 'crouchSpeedMps', scale: 1, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.crouchSpeedMps, precision: 2, unit: 'm/s' }),
+  Object.freeze({ id: 'debugEdgeCm', query: 'edgeCm', profileKey: 'edgeActivationMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.edgeActivationMeters * 100, precision: 1, unit: 'cm' }),
+  Object.freeze({ id: 'debugPlaneCm', query: 'planeCm', profileKey: 'kneeThreatPlaneMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.kneeThreatPlaneMeters * 100, precision: 1, unit: 'cm' }),
+  Object.freeze({ id: 'debugLowGapCm', query: 'lowGapCm', profileKey: 'lowGapVerticalActivationMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.lowGapVerticalActivationMeters * 100, precision: 1, unit: 'cm' }),
+  Object.freeze({ id: 'debugDownRatio', query: 'downRatio', profileKey: 'kneeThreatDownRatio', scale: 1, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.kneeThreatDownRatio, precision: 2, unit: '' }),
+  Object.freeze({ id: 'debugKneeBandCm', query: 'kneeBandCm', profileKey: 'kneeLineBandMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.kneeLineBandMeters * 100, precision: 0, unit: 'cm' }),
+  Object.freeze({ id: 'debugArmAttemptCm', query: 'armAttemptCm', profileKey: 'armAttemptActivationMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.armAttemptActivationMeters * 100, precision: 1, unit: 'cm' }),
+]);
+const debugStanceProfile = {};
+
+function clampDebugControl(input, value) {
+  return Math.max(Number(input.min), Math.min(Number(input.max), Number(value)));
+}
+function refreshDebugStanceProfile(syncUrl = true) {
+  if (!DEBUG_MODE) return;
+  const url = new URL(window.location.href);
+  for (const spec of DEBUG_STANCE_CONTROLS) {
+    const input = document.getElementById(spec.id);
+    const value = clampDebugControl(input, input.value);
+    input.value = String(value);
+    debugStanceProfile[spec.profileKey] = value * spec.scale;
+    document.getElementById(`${spec.id}Value`).textContent = `${value.toFixed(spec.precision)}${spec.unit}`;
+    if (syncUrl) url.searchParams.set(spec.query, String(value));
+  }
+  if (syncUrl) window.history.replaceState(null, '', url);
+  debugProfileSummary.textContent = `ACTIVE · lead ${Math.round(debugStanceProfile.anticipatoryLeadMaxSeconds * 1000)}ms · crouch ${(debugStanceProfile.maxCrouchMeters * 100).toFixed(1)}cm @ ${debugStanceProfile.crouchSpeedMps.toFixed(2)}m/s · edge ${(debugStanceProfile.edgeActivationMeters * 100).toFixed(1)}cm · plane ${(debugStanceProfile.kneeThreatPlaneMeters * 100).toFixed(1)}cm · lowgap ${(debugStanceProfile.lowGapVerticalActivationMeters * 100).toFixed(1)}cm · down ${debugStanceProfile.kneeThreatDownRatio.toFixed(2)} · knee ±${(debugStanceProfile.kneeLineBandMeters * 100).toFixed(0)}cm · arm gate ${(debugStanceProfile.armAttemptActivationMeters * 100).toFixed(1)}cm`;
+}
+function initializeDebugStanceControls() {
+  stanceDebugPanel.hidden = !DEBUG_MODE;
+  document.documentElement.dataset.debugMode = DEBUG_MODE ? 'on' : 'off';
+  if (!DEBUG_MODE) return;
+  for (const spec of DEBUG_STANCE_CONTROLS) {
+    const input = document.getElementById(spec.id);
+    const queryValue = Number(DEBUG_QUERY.get(spec.query));
+    input.value = String(Number.isFinite(queryValue)
+      ? clampDebugControl(input, queryValue)
+      : spec.defaultValue);
+    input.addEventListener('input', () => refreshDebugStanceProfile(true));
+  }
+  refreshDebugStanceProfile(false);
+}
+function resetDebugStanceDefaults() {
+  for (const spec of DEBUG_STANCE_CONTROLS) {
+    document.getElementById(spec.id).value = String(spec.defaultValue);
+  }
+  refreshDebugStanceProfile(true);
+}
+initializeDebugStanceControls();
 
 let ready = false;
 let selectedDirection = 'right';
@@ -371,6 +433,7 @@ function resetExchange() {
   bracingRuntime.resetImpact();
   fineTrackingRuntime.reset();
   residualBodyReachRuntime.reset();
+  residualStanceReachRuntime.reset();
   predictivePresentation.reset();
   firstContact = null;
   latestContact = null;
@@ -613,6 +676,7 @@ function setMode(mode) {
   if (mode !== 'parry') {
     parryPromptHold = null;
     residualBodyReachRuntime.reset();
+    residualStanceReachRuntime.reset();
   }
   document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
 }
@@ -757,6 +821,30 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
     if (residualBodyReach.active) {
       defender.update(0, camera); defenderSword?.update();
     }
+    const residualAfterBodyReach = measureSweptSwordBucklerClosestApproach({
+      previousBlade,
+      currentBlade,
+      bucklerSurface: cloneSurface(buckler.getWorldParrySurface()),
+    });
+    const residualStanceReach = residualStanceReachRuntime.update({
+      mode: 'parry',
+      profile: DEBUG_MODE ? debugStanceProfile : null,
+      closestApproach: residualAfterBodyReach,
+      anticipatedClosestApproach: latestPredictiveAnalysis?.threat?.worldPoint
+        ? { point: latestPredictiveAnalysis.threat.worldPoint }
+        : null,
+      anticipatedLeadSeconds: latestPredictiveAnalysis?.threat?.futureSeconds ?? null,
+      armEvidence: {
+        extensionRatio: residualBodyReach.armExtensionRatio ?? 0,
+        correctionAttemptedMeters: residualTrackingPlan?.appliedDistance ?? 0,
+        correctionAchievedMeters: residualRefinement?.achievedDistance ?? 0,
+        edgeGapBeforeMeters: residualBeforeRefinement.radialGapMeters,
+        edgeGapAfterMeters: residualAfterArmRefinement.radialGapMeters,
+      },
+    }, deltaSeconds);
+    if (residualStanceReach.active) {
+      defender.update(0, camera); defenderSword?.update();
+    }
     const trackingSurfaceAfter = cloneSurface(buckler.getWorldParrySurface());
     const residualAfterRefinement = measureSweptSwordBucklerClosestApproach({
       previousBlade,
@@ -782,8 +870,12 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
     const residualPlaneReductionMeters = residualBeforeRefinement.planeGapMeters
       - residualAfterRefinement.planeGapMeters;
     const bodyEdgeReductionMeters = residualAfterArmRefinement.radialGapMeters
-      - residualAfterRefinement.radialGapMeters;
+      - residualAfterBodyReach.radialGapMeters;
     const bodyPlaneReductionMeters = residualAfterArmRefinement.planeGapMeters
+      - residualAfterBodyReach.planeGapMeters;
+    const stanceEdgeReductionMeters = residualAfterBodyReach.radialGapMeters
+      - residualAfterRefinement.radialGapMeters;
+    const stancePlaneReductionMeters = residualAfterBodyReach.planeGapMeters
       - residualAfterRefinement.planeGapMeters;
     latestInterceptDriveReport = Object.freeze({
       attackPhase: snapshot.phase,
@@ -816,22 +908,27 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
       residualCarryAfterMeters: residualRefinement?.carriedResidualDistance ?? residualCarryBeforeMeters,
       residualAfterArmRefinement,
       residualBodyReach,
+      residualAfterBodyReach,
+      residualStanceReach,
       residualAfterRefinement,
       residualEdgeReductionMeters,
       residualPlaneReductionMeters,
       bodyEdgeReductionMeters,
       bodyPlaneReductionMeters,
+      stanceEdgeReductionMeters,
+      stancePlaneReductionMeters,
       plannedCorrectionVector,
       plannedCorrectionMeters,
       shieldStepVector,
       shieldStepTranslationMeters,
       correctionDirectionDot,
-      authority: 'persistent-arm-carry-then-live-wrist-chest-spine-reach-to-real-contact-diagnostic',
+      authority: 'persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic',
     });
     interceptDriveTrace.push(latestInterceptDriveReport);
     if (interceptDriveTrace.length > 96) interceptDriveTrace.shift();
   } else {
     residualBodyReachRuntime.reset();
+    residualStanceReachRuntime.reset();
     latestReachableInterceptTarget = null;
     latestFinePlan = null;
     latestFineTracking = null;
@@ -962,6 +1059,7 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
     });
     fineTrackingRuntime.reset();
     residualBodyReachRuntime.reset();
+    residualStanceReachRuntime.reset();
     status.textContent = step3AContactTransfer.accepted
       ? 'STEP 3A ACTIVE · live shield surface is constraining sword contact through wrist.r → hand.r → grip · elbow/shoulder OFF · OLD B3 frozen'
       : `STEP 3A FAIL · ${step3AContactTransfer.reason || 'live grip contact constraint rejected'}`;
@@ -1075,7 +1173,11 @@ const PARRY_WHIFF_CATEGORY_LABELS = Object.freeze({
 function formatWhiffDiagnostic(whiff) {
   if (!whiff) return null;
   const sample = whiff.outsideActiveContact || whiff.closestApproachRecord;
-  const label = PARRY_WHIFF_CATEGORY_LABELS[whiff.category] || whiff.category || 'UNKNOWN WHIFF';
+  const baseLabel = PARRY_WHIFF_CATEGORY_LABELS[whiff.category] || whiff.category || 'UNKNOWN WHIFF';
+  const sampledThreat = sample?.interceptDriveReport?.residualStanceReach?.threat;
+  const label = sampledThreat?.kneeLineThreat
+    ? baseLabel + ' · KNEE-LINE THREAT'
+    : sampledThreat?.lowGuardGapThreat ? baseLabel + ' · LOW GUARD GAP' : baseLabel;
   if (!sample) return Object.freeze({ label, detail: `reason ${whiff.reason} · no sweep sample recorded` });
   const phase = String(sample.attackPhase || 'unknown').toUpperCase();
   const ttcMs = sample.timeToContactSeconds == null ? null : sample.timeToContactSeconds * 1000;
@@ -1127,10 +1229,75 @@ function formatWhiffDiagnostic(whiff) {
     const bodyDirection = bodyReach?.bodyDirectionDot == null
       ? '—'
       : bodyReach.bodyDirectionDot.toFixed(2);
+    const armEdgeAfter = formatGap(drive.residualAfterArmRefinement?.radialGapMeters);
+    const stance = drive.residualStanceReach;
+    const threat = stance?.threat;
+    const stanceState = stance?.stanceHeld
+      ? 'HOLD'
+      : stance?.stanceConfirmed
+        ? stance?.earlyLowThreatRecruitment ? 'EARLY ACTIVE' : 'ACTIVE'
+        : stance?.armStalled ? 'STALL WAIT' : 'OFF';
+    const threatZone = threat?.zone || '—';
+    const formatHeight = (value) => value == null ? '—' : (value * 100).toFixed(1) + 'cm';
+    const threatHeights = [
+      threat?.pointY,
+      threat?.shieldBottomY,
+      threat?.kneeLeftY,
+      threat?.kneeRightY,
+    ].map(formatHeight).join('/');
+    const lowGap = formatGap(threat?.verticalGapBelowShieldMeters);
+    const kneeDistance = formatGap(threat?.kneeLineDistanceMeters);
+    const earlyStance = stance?.earlyLowThreatRecruitment ? 'YES' : 'NO';
+    const stanceThreatSource = stance?.activationSource === 'predicted-future-sword-point'
+      ? 'PREDICTED'
+      : stance?.activationSource === 'measured-residual-sword-point' ? 'MEASURED' : 'NONE';
+    const stanceLead = stance?.anticipatedLeadSeconds == null
+      ? '—'
+      : `${Math.round(stance.anticipatedLeadSeconds * 1000)}ms`;
+    const stanceHold = stance?.stanceHeld ? 'YES' : 'NO';
+    const crouchTarget = formatGap(stance?.engagedTargetCrouchMeters);
+    const stanceSelection = stance?.threatSelection;
+    const anticipatedPlan = stance?.anticipatedPlan;
+    const rawPredictedLead = stanceSelection?.anticipatedLeadSeconds;
+    const predictedDecision = String(
+      stanceSelection?.anticipatedEligibilityReason || 'no-predicted-selection',
+    ).toUpperCase().replaceAll('-', '_');
+    const predictedLead = rawPredictedLead == null ? '—' : `${Math.round(rawPredictedLead * 1000)}ms`;
+    const predictedZone = anticipatedPlan?.threat?.zone || '—';
+    const predictedEdge = formatGap(anticipatedPlan?.metrics?.radialGapMeters);
+    const predictedPlane = formatGap(anticipatedPlan?.metrics?.planeGapMeters);
+    const predictedArm = anticipatedPlan?.arm?.saturated
+      ? 'SATURATED'
+      : anticipatedPlan?.arm?.stalled ? 'STALLED' : anticipatedPlan?.arm?.attempted ? 'ATTEMPT' : 'NO_ATTEMPT';
+    const predictedThreat = anticipatedPlan?.threat;
+    const predictedFlags = predictedThreat
+      ? `plane ${predictedThreat.planeNear ? 'Y' : 'N'} / down ${predictedThreat.stronglyDownward ? 'Y' : 'N'} / below ${predictedThreat.belowShield ? 'Y' : 'N'} / feet ${predictedThreat.aboveFeet ? 'Y' : 'N'}`
+      : '—';
+    const downwardRatio = stance?.downwardRatio == null ? '—' : stance.downwardRatio.toFixed(2);
+    const crouchBefore = formatGap(stance?.crouchBeforeMeters);
+    const crouchAfter = formatGap(stance?.crouchMeters);
+    const hipsDegrees = stance?.hipsAppliedDegrees == null ? '—' : `${stance.hipsAppliedDegrees.toFixed(1)}°`;
+    const footL = stance?.footPlant?.l?.driftMeters == null ? '—' : `${(stance.footPlant.l.driftMeters * 1000).toFixed(1)}mm`;
+    const footR = stance?.footPlant?.r?.driftMeters == null ? '—' : `${(stance.footPlant.r.driftMeters * 1000).toFixed(1)}mm`;
+    const planted = stance?.feetPlanted == null ? '—' : stance.feetPlanted ? 'PASS' : 'FAIL';
+    parts.push([
+      'zone ' + threatZone,
+      'y blade/rim/kneeL/kneeR ' + threatHeights,
+      'lowgap ' + lowGap,
+      'kdist ' + kneeDistance,
+      'early ' + earlyStance,
+      'stance src ' + stanceThreatSource,
+      'lead ' + stanceLead,
+      'hold ' + stanceHold,
+      'target ' + crouchTarget,
+    ].join(' · '));
+    if (DEBUG_MODE) {
+      parts.push(`DEBUG pred ${predictedDecision} · plead ${predictedLead} · pzone ${predictedZone} · pedge ${predictedEdge} · pplane ${predictedPlane} · parm ${predictedArm} · pflags ${predictedFlags}`);
+    }
     const refinementDirection = drive.residualRefinement?.directionDot == null
       ? '—'
       : drive.residualRefinement.directionDot.toFixed(2);
-    parts.push(`selector ${driveSource} · drive ${driveFrame} · edge correction ${edgeCorrection} · acquire ${drive.measuredInsideAcquisitionBand ? 'PASS' : 'FAIL'} · shield step ${shieldStep} · dir ${directionDot} · residual edge ${edgeBefore}→${edgeAfter} · plane ${planeBefore}→${planeAfter} · carry ${carryBefore}→${carryAfter} · refine ${refinementStep} · rdir ${refinementDirection} · arm ${armReach} · wrist ${wristDegrees} · wplane ${wristPlaneBefore}→${wristPlaneAfter} · torso ${torsoDegrees} · reach ${bodyReachBefore}→${bodyReachAfter} · bdir ${bodyDirection}`);
+    parts.push(`selector ${driveSource} · drive ${driveFrame} · edge correction ${edgeCorrection} · acquire ${drive.measuredInsideAcquisitionBand ? 'PASS' : 'FAIL'} · shield step ${shieldStep} · dir ${directionDot} · residual edge ${edgeBefore}→${edgeAfter} · plane ${planeBefore}→${planeAfter} · carry ${carryBefore}→${carryAfter} · refine ${refinementStep} · rdir ${refinementDirection} · arm ${armReach} · aedge ${edgeBefore}→${armEdgeAfter} · wrist ${wristDegrees} · wplane ${wristPlaneBefore}→${wristPlaneAfter} · torso ${torsoDegrees} · reach ${bodyReachBefore}→${bodyReachAfter} · bdir ${bodyDirection} · stance ${stanceState} · down ${downwardRatio} · crouch ${crouchBefore}→${crouchAfter} · hips ${hipsDegrees} · feet ${footL}/${footR} ${planted}`);
   } else {
     parts.push('selector NO ARMED DRIVE FRAME');
   }
@@ -1375,6 +1542,12 @@ function buildReport(combatSnapshot = combat.snapshot) {
     postCouplingReason: handoff?.reason || null,
     recoil: combatSnapshot.attackerRecoil?.sample || null,
     directOldB3Diagnostic,
+    debugLowStance: Object.freeze({
+      enabled: DEBUG_MODE,
+      profile: DEBUG_MODE ? Object.freeze({ ...debugStanceProfile }) : null,
+      latestThreatSelection: latestInterceptDriveReport?.residualStanceReach?.threatSelection ?? null,
+      authority: 'debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority',
+    }),
     invariants: {
       singleParryOnlyInThisLab: true,
       noAutomaticTimingTrigger: true,
@@ -1441,6 +1614,8 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
 forceOldB3Button.addEventListener('click', () => forceOldTwoActorB3(selectedDirection));
 parryNowButton.addEventListener('click', () => dispatchParryInput('button'));
 retryAttackButton.addEventListener('click', () => restartAttack(selectedDirection));
+debugApplyRetryButton.addEventListener('click', () => restartAttack(selectedDirection));
+debugResetDefaultsButton.addEventListener('click', resetDebugStanceDefaults);
 document.addEventListener('keydown', handleParryKeyDown, true);
 document.addEventListener('keyup', handleParryKeyUp, true);
 addEventListener('blur', () => { parryKeyDownObserved = false; });
@@ -1556,6 +1731,11 @@ window.__G43B5R281_LAB__ = {
   parryGate,
   freeCamera,
   residualBodyReachRuntime,
+  residualStanceReachRuntime,
+  debugMode: DEBUG_MODE,
+  get debugStanceProfile() { return Object.freeze({ ...debugStanceProfile }); },
+  refreshDebugStanceProfile,
+  resetDebugStanceDefaults,
   swordGripConstraint,
   triggerParryNow,
   dispatchParryInput,

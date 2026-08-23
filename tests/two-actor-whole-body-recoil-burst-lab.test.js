@@ -7,7 +7,7 @@ const html = await readFile(new URL('../tools/action-studio/shield-driven-contac
 
 test('historical G4.3B.5R.2.7 source stays covered after current Lab advances to Step 3A', () => {
   assert.match(html, /Step 3A · Live Shield → Sword → Wrist-Grip Constraint/);
-  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-residual-body-reach-r18/);
+  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-debug-low-stance-controls-r18e/);
   assert.match(source, /two-actor-whole-body-recoil-burst\.js\?v=g43b5r27/);
   assert.match(source, /const LAB_STAGE = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
   assert.match(source, /window\.__G43B5R27_LAB__/);
