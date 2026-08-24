@@ -1,12 +1,5 @@
-import { createDefaultCharacter } from '../../src/character/default-character.js';
-import { createFreeInspectionCameraControls } from './free-inspection-camera-controls.js?v=g43b5r281-residual-body-reach-r18';
 import { createDebugSword, mountDebugSword } from '../../src/character/debug-sword.js';
 import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
-import { createProceduralBuckler, mountOffhandBuckler } from '../../src/character/offhand-buckler.js';
-import {
-  ACCEPTED_OFFHAND_BUCKLER_MOUNT_G423,
-  ACCEPTED_OFFHAND_BUCKLER_SHAPE_G423,
-} from '../../src/character/offhand-buckler-accepted-calibration.js';
 import { loadUal1AnimationLibrary } from '../../src/animation/ual1-animation-library.js';
 import { loadUal2AnimationLibrary } from '../../src/animation/ual2-animation-library.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
@@ -89,6 +82,8 @@ import {
 } from './shield-parry-r281/exchange-state.js';
 import { createShieldParryPreContactController } from './shield-parry-r281/pre-contact-controller.js';
 import { createShieldParryContactHandoffController } from './shield-parry-r281/contact-handoff-controller.js';
+import { createShieldParryLabScene } from './shield-parry-r281/lab-scene.js';
+import { createShieldParryInspectionOverlay } from './shield-parry-r281/inspection-overlay.js';
 
 
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
@@ -108,83 +103,12 @@ const PARRY_ATTACKER_RELEASE_SOURCE_SECONDS = PARRY_PRESENTATION_MARKERS.attacke
 const DEBUG_QUERY = new URLSearchParams(window.location.search);
 const DEBUG_MODE = DEBUG_QUERY.get('debug') === '1';
 
-const canvas = document.getElementById('canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-renderer.outputEncoding = THREE.sRGBEncoding;
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x090e16);
-scene.fog = new THREE.Fog(0x090e16, 8, 18);
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
-camera.position.set(4.8, 2.4, 4.9);
-camera.lookAt(0, 1.05, 0);
-camera.updateMatrixWorld(true);
-const freeCamera = createFreeInspectionCameraControls(THREE, {
-  camera,
-  domElement: canvas,
-  target: { x: 0, y: 1.05, z: 0 },
-  minimumRadius: 0.65,
-  maximumRadius: 18,
-});
-scene.add(new THREE.HemisphereLight(0xddeaff, 0x202738, 1.25));
-const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(4, 7, 3); scene.add(key);
-const rim = new THREE.DirectionalLight(0x7fe2cf, 0.55); rim.position.set(-4, 3, -4); scene.add(rim);
-scene.add(new THREE.GridHelper(12, 24, 0x33445f, 0x202a3b));
-
-const attacker = createDefaultCharacter(THREE);
-const defender = createDefaultCharacter(THREE);
-attacker.object3d.position.set(0, 0, -1.15);
-defender.object3d.position.set(0, 0, 1.15);
-defender.object3d.rotation.y = Math.PI;
-scene.add(attacker.object3d, defender.object3d);
-
-const attackerSword = createDebugSword(THREE);
-mountDebugSword(attacker, attackerSword, DEFAULT_KAYKIT_SWORD_MOUNT);
+const labScene = createShieldParryLabScene({ THREE, documentRef: document, windowRef: window });
+const {
+  canvas, renderer, scene, camera, freeCamera, attacker, defender, attackerSword, buckler, resize, setView,
+} = labScene;
+const inspectionOverlay = createShieldParryInspectionOverlay({ THREE, scene });
 let defenderSword = null;
-const buckler = createProceduralBuckler(THREE, {
-  ...ACCEPTED_OFFHAND_BUCKLER_SHAPE_G423,
-  lineMode: true,
-  solidVisible: false,
-});
-mountOffhandBuckler(defender, buckler, ACCEPTED_OFFHAND_BUCKLER_MOUNT_G423);
-buckler.setParrySurfaceVisible(true);
-
-const liveTargetMarker = new THREE.Mesh(
-  new THREE.SphereGeometry(0.027, 12, 8),
-  new THREE.MeshBasicMaterial({ color: 0x54e7f5, depthTest: false }),
-);
-const actualSwordContactMarker = new THREE.Mesh(
-  new THREE.SphereGeometry(0.022, 12, 8),
-  new THREE.MeshBasicMaterial({ color: 0xffdf59, depthTest: false }),
-);
-const contactTravelGeometry = new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(),
-  new THREE.Vector3(),
-]);
-const contactTravelLine = new THREE.Line(
-  contactTravelGeometry,
-  new THREE.LineBasicMaterial({ color: 0x54e7f5, depthTest: false }),
-);
-liveTargetMarker.renderOrder = 20;
-actualSwordContactMarker.renderOrder = 20;
-contactTravelLine.renderOrder = 19;
-contactTravelLine.frustumCulled = false;
-liveTargetMarker.visible = false;
-actualSwordContactMarker.visible = false;
-contactTravelLine.visible = false;
-scene.add(liveTargetMarker, actualSwordContactMarker, contactTravelLine);
-function createInspectionLine(color) {
-  const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-  const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, depthTest: false }));
-  line.visible = false;
-  line.frustumCulled = false;
-  line.renderOrder = 21;
-  scene.add(line);
-  return line;
-}
-const originalAttackAxisLine = createInspectionLine(0xff5964);
-const currentSwordAxisLine = createInspectionLine(0x61f59a);
-const currentWristGripLine = createInspectionLine(0xc58cff);
 
 const attackRuntime = createLongswordDirectionalAttackRuntime();
 const guardMachine = createGuardStateMachine();
@@ -381,7 +305,7 @@ const contactHandoffController = createShieldParryContactHandoffController({
   callbacks: {
     captureCanonicalAttackerOldB3Base: () => captureCanonicalAttackerOldB3Base(attackRuntime.snapshot.interruption),
     captureAttackerWorldSilhouette,
-    updateLiveContactMarkers,
+    updateLiveContactMarkers: (report) => inspectionOverlay.update(report),
     formatInspectionFailureSummary,
     publishStatus({ text, className }) {
       status.textContent = text;
@@ -429,57 +353,6 @@ function magnitude(v) {
   return v ? Math.hypot(Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0) : 0;
 }
 
-function setInspectionLine(line, start, end) {
-  const positions = line.geometry.attributes.position;
-  positions.setXYZ(0, start.x, start.y, start.z);
-  positions.setXYZ(1, end.x, end.y, end.z);
-  positions.needsUpdate = true;
-}
-
-function updateLiveContactMarkers(report) {
-  const target = report?.targetContactPoint;
-  const actual = report?.actualContactPoint;
-  const origin = report?.plan?.contactPoint;
-  const visible = Boolean(target && actual && origin);
-  const lineVisible = Boolean(report?.initialSwordBasePoint && report?.initialSwordTipPoint
-    && report?.currentSwordBasePoint && report?.currentSwordTipPoint
-    && report?.actualWristPoint && report?.actualGripPoint);
-  liveTargetMarker.visible = visible;
-  actualSwordContactMarker.visible = visible;
-  contactTravelLine.visible = visible;
-  originalAttackAxisLine.visible = lineVisible;
-  currentSwordAxisLine.visible = lineVisible;
-  currentWristGripLine.visible = lineVisible;
-  if (visible) {
-    liveTargetMarker.position.set(target.x, target.y, target.z);
-    actualSwordContactMarker.position.set(actual.x, actual.y, actual.z);
-    const positions = contactTravelGeometry.attributes.position;
-    positions.setXYZ(0, origin.x, origin.y, origin.z);
-    positions.setXYZ(1, target.x, target.y, target.z);
-    positions.needsUpdate = true;
-  }
-  if (!lineVisible) return;
-  setInspectionLine(originalAttackAxisLine, report.initialSwordBasePoint, report.initialSwordTipPoint);
-  setInspectionLine(currentSwordAxisLine, report.currentSwordBasePoint, report.currentSwordTipPoint);
-  setInspectionLine(currentWristGripLine, report.actualWristPoint, report.actualGripPoint);
-  currentSwordAxisLine.material.color.setHex(report.attackLineClearance?.pass ? 0x61f59a : 0xffad55);
-}
-
-function resize() {
-  const width = Math.max(1, canvas.clientWidth);
-  const height = Math.max(1, canvas.clientHeight);
-  renderer.setSize(width, height, false);
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-}
-function setView(view) {
-  const position = view === 'side'
-    ? { x: 5.8, y: 1.7, z: 0.1 }
-    : view === 'contact'
-      ? { x: 2.25, y: 1.5, z: 2.2 }
-      : { x: 4.8, y: 2.4, z: 4.9 };
-  freeCamera.setPose(position, { x: 0, y: 1.05, z: 0 });
-}
 function enterGuard() {
   guardMachine.send(GUARD_EVENTS.RESET, { stage: LAB_STAGE }); guardRuntime.sync(camera);
   guardMachine.send(GUARD_EVENTS.GUARD_PRESS, { stage: LAB_STAGE }); guardRuntime.sync(camera);
@@ -532,7 +405,7 @@ function resetExchange() {
   resetShieldParryExchangeState(exchangeState, {
     previousShieldLeadSurface: cloneSurface(buckler.getWorldParrySurface()),
   });
-  updateLiveContactMarkers(null);
+  inspectionOverlay.clear();
 }
 
 function diagnosticIncomingVelocity(direction) {

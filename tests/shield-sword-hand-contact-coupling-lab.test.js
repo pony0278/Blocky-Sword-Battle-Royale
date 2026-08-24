@@ -23,6 +23,10 @@ const cameraSource = readFileSync(
   new URL('../tools/action-studio/free-inspection-camera-controls.js', import.meta.url),
   'utf8',
 );
+const sceneCompositionSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/lab-scene.js', import.meta.url),
+  'utf8',
+);
 
 function functionBody(name, nextName) {
   const start = source.indexOf(`function ${name}(`);
@@ -56,7 +60,7 @@ test('Step 3A exposes an explicit live contact inspection state and markers', ()
 });
 
 test('Step 3A provides a free inspection camera without changing combat time', () => {
-  assert.match(source, /createFreeInspectionCameraControls/);
+  assert.match(sceneCompositionSource, /createFreeInspectionCameraControls/);
   assert.match(source, /freeCamera\.update\(rawDeltaMs \/ 1000\)/);
   assert.match(source, /inspectionCamera: freeCamera\.snapshot\(\)/);
   assert.match(html, /Free inspection camera/);
