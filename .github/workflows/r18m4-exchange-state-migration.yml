@@ -10,6 +10,7 @@ on:
       - 'tools/action-studio/shield-parry-r281/exchange-state.js'
       - 'tests/shield-driven-contact-coupling-r281-regression.test.js'
       - 'tests/shield-parry-r281-exchange-state.test.js'
+      - 'tests/shield-sword-hand-contact-coupling-lab.test.js'
       - 'package.json'
 
 permissions:
@@ -117,7 +118,8 @@ jobs:
           git add -- \
             tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
             tools/action-studio/action-studio.bundle.js \
-            tools/action-studio/index.html
+            tools/action-studio/index.html \
+            tests/shield-sword-hand-contact-coupling-lab.test.js
           git diff --cached --check
           git commit -m 'R18M.4 consolidate per-exchange mutable state'
           git push origin HEAD:${{ github.head_ref }}
