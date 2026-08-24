@@ -59,7 +59,8 @@ jobs:
             tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
             tools/action-studio/shield-parry-r281/lab-scene.js \
             tools/action-studio/shield-parry-r281/inspection-overlay.js \
-            tests/shield-parry-r281-composition-scene.test.js
+            tests/shield-parry-r281-composition-scene.test.js \
+            tests/shield-sword-hand-contact-coupling-lab.test.js
 
       - name: Syntax checks
         run: |
@@ -67,6 +68,7 @@ jobs:
           node --check tools/action-studio/shield-parry-r281/lab-scene.js
           node --check tools/action-studio/shield-parry-r281/inspection-overlay.js
           node --check tests/shield-parry-r281-composition-scene.test.js
+          node --check tests/shield-sword-hand-contact-coupling-lab.test.js
 
       - name: R18M focused regression contracts
         run: |
@@ -115,7 +117,7 @@ jobs:
           rm -f r18mc1-baseline.log r18mc1-candidate.log r18mc1-baseline.failures r18mc1-candidate.failures package-lock.json
           rm -f tools/action-studio/r18mc1-scene-inspection-migration.mjs
           rm -f .github/workflows/r18mc1-scene-inspection-migration.yml
-          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/r18mc1-scene-inspection-migration\.mjs|\.github/workflows/r18mc1-scene-inspection-migration\.yml)$'
+          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tests/shield-sword-hand-contact-coupling-lab\.test\.js|tools/action-studio/r18mc1-scene-inspection-migration\.mjs|\.github/workflows/r18mc1-scene-inspection-migration\.yml)$'
           git status --short
           UNEXPECTED=$(git status --short | grep -Ev "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
@@ -132,6 +134,7 @@ jobs:
           git add -- \
             package.json \
             tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
+            tests/shield-sword-hand-contact-coupling-lab.test.js \
             tools/action-studio/r18mc1-scene-inspection-migration.mjs \
             .github/workflows/r18mc1-scene-inspection-migration.yml
           git diff --cached --check
