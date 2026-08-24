@@ -8,6 +8,7 @@ on:
       - 'scripts/r18m4-migrate-exchange-state.mjs'
       - 'tools/action-studio/shield-driven-contact-coupling-lab-r281.js'
       - 'tools/action-studio/shield-parry-r281/exchange-state.js'
+      - 'tests/shield-driven-contact-coupling-r281-regression.test.js'
       - 'tests/shield-parry-r281-exchange-state.test.js'
       - 'package.json'
 
