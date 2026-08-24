@@ -64,6 +64,9 @@ jobs:
           node --check tests/shield-parry-r281-pre-contact-controller.test.js
           node --check tests/shield-driven-contact-coupling-r281-regression.test.js
           node --check tests/shield-parry-r281-exchange-state.test.js
+          node --check tests/committed-parry-contact-gate-lab.test.js
+          node --check tests/old-two-actor-b3-direct-diagnostic.test.js
+          node --check tests/shield-sword-hand-contact-coupling-lab.test.js
 
       - name: R18M focused regression contracts
         run: |
@@ -114,7 +117,7 @@ jobs:
           rm -f tools/action-studio/r18m5-precontact-migration.mjs
           rm -f tools/action-studio/r18m5-contract-patch.mjs
           rm -f .github/workflows/r18m5-precontact-migration.yml
-          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/pre-contact-controller\.js|tests/shield-parry-r281-pre-contact-controller\.test\.js|tests/shield-driven-contact-coupling-r281-regression\.test\.js|tests/shield-parry-r281-exchange-state\.test\.js|tools/action-studio/r18m5-precontact-migration\.mjs|tools/action-studio/r18m5-contract-patch\.mjs|\.github/workflows/r18m5-precontact-migration\.yml)$'
+          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/pre-contact-controller\.js|tests/shield-parry-r281-pre-contact-controller\.test\.js|tests/shield-driven-contact-coupling-r281-regression\.test\.js|tests/shield-parry-r281-exchange-state\.test\.js|tests/committed-parry-contact-gate-lab\.test\.js|tests/old-two-actor-b3-direct-diagnostic\.test\.js|tests/shield-sword-hand-contact-coupling-lab\.test\.js|tools/action-studio/r18m5-precontact-migration\.mjs|tools/action-studio/r18m5-contract-patch\.mjs|\.github/workflows/r18m5-precontact-migration\.yml)$'
           git status --short
           UNEXPECTED=$(git status --short | grep -Ev "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
@@ -135,6 +138,9 @@ jobs:
             tests/shield-parry-r281-pre-contact-controller.test.js \
             tests/shield-driven-contact-coupling-r281-regression.test.js \
             tests/shield-parry-r281-exchange-state.test.js \
+            tests/committed-parry-contact-gate-lab.test.js \
+            tests/old-two-actor-b3-direct-diagnostic.test.js \
+            tests/shield-sword-hand-contact-coupling-lab.test.js \
             tools/action-studio/r18m5-precontact-migration.mjs \
             tools/action-studio/r18m5-contract-patch.mjs \
             .github/workflows/r18m5-precontact-migration.yml
