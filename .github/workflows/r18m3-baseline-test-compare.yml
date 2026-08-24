@@ -1,0 +1,30 @@
+name: R18M.3 Baseline Test Compare
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/r18m3-baseline-test-compare.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-npm-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout R18M.2 completed baseline
+        uses: actions/checkout@v4
+        with:
+          ref: 0b45864073207bb4dfb6f1e32b918fd726094c14
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run full R18M.2 baseline test suite
+        run: npm test
