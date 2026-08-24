@@ -57,6 +57,15 @@ jobs:
       - name: Adapt existing contracts to the extracted ownership boundary
         run: node tools/action-studio/r18m5-contract-patch.mjs
 
+      - name: Normalize extracted controller whitespace
+        shell: bash
+        run: |
+          sed -i 's/[[:blank:]]\+$//' tools/action-studio/shield-parry-r281/pre-contact-controller.js
+          if grep -nE '[[:blank:]]+$' tools/action-studio/shield-parry-r281/pre-contact-controller.js; then
+            echo 'Trailing whitespace remains in extracted pre-contact controller' >&2
+            exit 1
+          fi
+
       - name: Syntax checks
         run: |
           node --check tools/action-studio/shield-driven-contact-coupling-lab-r281.js
