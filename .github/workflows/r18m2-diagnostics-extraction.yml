@@ -1,32 +1,31 @@
-name: R18M.2 Diagnostics Extraction
+name: R18M.2 Diagnostics Verification
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - 'tools/refactor/r18m2-extract-diagnostics.mjs'
       - '.github/workflows/r18m2-diagnostics-extraction.yml'
+      - 'tests/shield-driven-contact-coupling-r281-regression.test.js'
+      - 'tests/shield-parry-r281-diagnostics.test.js'
+      - 'tools/action-studio/shield-driven-contact-coupling-lab-r281.js'
+      - 'tools/action-studio/shield-parry-r281/**'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  extract-and-verify:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout refactor branch
         uses: actions/checkout@v4
         with:
           ref: refactor/shield-parry-r18m-maintainability
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Extract R18M.2 diagnostics modules
-        run: node tools/refactor/r18m2-extract-diagnostics.mjs
 
       - name: Syntax check extracted browser modules
         run: |
@@ -37,19 +36,3 @@ jobs:
 
       - name: Run R18M regression contracts
         run: node --test tests/shield-driven-contact-coupling-r281-regression.test.js tests/shield-parry-r281-diagnostics.test.js
-
-      - name: Commit extracted modules
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- \
-            package.json \
-            tests/shield-parry-r281-diagnostics.test.js \
-            tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
-            tools/action-studio/shield-parry-r281/diagnostic-telemetry.js \
-            tools/action-studio/shield-parry-r281/diagnostic-formatters.js \
-            tools/action-studio/shield-parry-r281/report-serialization.js
-          git diff --cached --check
-          git commit -m 'R18M.2 extract R281 diagnostics telemetry'
-          git push origin HEAD:refactor/shield-parry-r18m-maintainability
