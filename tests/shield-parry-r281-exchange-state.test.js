@@ -9,7 +9,8 @@ import {
 
 const entry = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
 const preContactController = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
-const exchangeOwnershipSources = `${entry}\n${preContactController}`;
+const contactHandoffController = await readFile(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');
+const exchangeOwnershipSources = `${entry}\n${preContactController}\n${contactHandoffController}`;
 
 const EXPECTED_EXCHANGE_KEYS = [
   'previousShieldLeadSurface',

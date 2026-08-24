@@ -10,6 +10,10 @@ const preContactSource = await readFile(
   new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url),
   'utf8',
 );
+const contactHandoffSource = await readFile(
+  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),
+  'utf8',
+);
 const html = await readFile(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url),
   'utf8',
@@ -52,7 +56,7 @@ test('R18M.1 locks manual Parry input and authored commitment\/TTC authority', (
   assert.match(source, /const parryGate = createCommittedParryContactGate\(\);/);
   assert.match(source, /(?:exchangeState\.)?latestParryInput = parryGate\.arm\(\{/);
   assert.match(source, /manual: true,/);
-  assert.match(source, /(?:exchangeState\.)?latestParryConfirmation = selectedMode === 'parry'[\s\S]*parryGate\.confirm\(\{/);
+  assert.match(contactHandoffSource, /exchangeState\.latestParryConfirmation = selectedMode === 'parry'[\s\S]*parryGate\.confirm\(\{/);
   assert.match(html, /Input authority<\/span><b>manual PARRY NOW<\/b>/);
   assert.match(html, /Attack commitment<\/span><b>authored movementStartSeconds<\/b>/);
   assert.match(html, /Valid TTC<\/span><b>60–180 ms<\/b>/);
@@ -71,7 +75,7 @@ test('R18M.1 locks predictive\/measured pre-contact guidance without granting su
 });
 
 test('R18M.1 locks real swept contact → Parry confirmation → combat resolution → live grip ownership', () => {
-  const body = sliceFunction(source, 'function resolveContact(');
+  const body = sliceBetween(contactHandoffSource, 'function resolveContact(', 'function updateCombatBeforeGuard(');
 
   assert.match(body, /probeSweptSwordBucklerContact\(\{/);
   assert.match(body, /if \(!(?:exchangeState\.)?latestContact\.contact\) return;/);
@@ -94,11 +98,11 @@ test('R18M.1 locks real swept contact → Parry confirmation → combat resoluti
 });
 
 test('R18M.1 locks DEFLECT_IMPULSE release, confirmed-Parry fail-safe, continuity bridge, and OLD B3 handoff', () => {
-  const body = sliceBetween(source, 'function releaseLiveContactToOldB3()', 'function recordVisibleOldB3Sample(');
+  const body = sliceBetween(contactHandoffSource, 'function releaseLiveContactToOldB3({ selectedDirection })', 'function recordVisibleOldB3Sample(');
 
   assert.match(body, /const defenderReleaseGate = defenderDeflectReleaseGate\(\);/);
   assert.match(body, /reason: 'defender-deflect-marker-not-reached'/);
-  assert.match(source, /marker: 'deflect-impulse'/);
+  assert.match(contactHandoffSource, /marker: 'deflect-impulse'/);
   assert.match(body, /buildLiveParryOldB3Handoff\(\{/);
   assert.match(body, /allowConfirmedParryFallback: true,/);
   assert.match(body, /publishPostCouplingRecoilStaggerHandoff\(attacker\.rig, \{/);
@@ -115,18 +119,18 @@ test('R18M.1 locks DEFLECT_IMPULSE release, confirmed-Parry fail-safe, continuit
 
 test('R18M.1 locks TOP\/RIGHT calibrated arm assistance while LEFT release remains deferred', () => {
   assert.match(
-    source,
+    contactHandoffSource,
     /proximalAssistBone: selectedDirection === 'top' \|\| selectedDirection === 'right' \? 'upperarm\.r' : null,/,
   );
   assert.match(
-    source,
+    contactHandoffSource,
     /assistBone: selectedDirection === 'top' \|\| selectedDirection === 'right' \? 'lowerarm\.r' : null,/,
   );
   assert.match(
-    source,
+    contactHandoffSource,
     /elbowPropagationActive: selectedDirection === 'top' \|\| selectedDirection === 'right',/,
   );
-  assert.match(source, /shoulderPropagationActive: false,/);
+  assert.match(contactHandoffSource, /shoulderPropagationActive: false,/);
   assert.match(html, /TOP\/RIGHT 7\/7/);
   assert.match(html, /LEFT release (?:仍)?(?:暫緩|deferred)/);
 });

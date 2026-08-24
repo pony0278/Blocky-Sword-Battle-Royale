@@ -10,6 +10,11 @@ const preContactSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url),
   'utf8',
 );
+const contactHandoffSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),
+  'utf8',
+);
+const postContactOwnershipSource = `${source}\n${contactHandoffSource}`;
 const html = readFileSync(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url),
   'utf8',
@@ -120,35 +125,49 @@ test('R18I lets live contact own the final pose while OLD B3 waits at presentati
   const frameEnd = source.indexOf('requestAnimationFrame(frame);', frameStart);
   assert.ok(frameStart >= 0 && frameEnd > frameStart);
   const frame = source.slice(frameStart, frameEnd);
-  const ownership = frame.indexOf('if (step3AOwnsLiveContact())');
-  const bodyRecoil = frame.indexOf('combat.update(deltaSeconds', ownership);
-  const channelMask = frame.indexOf('TWO_ACTOR_PARRY_REACTION_CHANNELS.LIVE_CONTACT_HOLD', bodyRecoil);
-  const guardUpdate = frame.indexOf('guardRuntime.update(deltaMs, camera)', channelMask);
-  const liveUpdate = frame.indexOf('swordGripConstraint.update(deltaSeconds', guardUpdate);
-  const release = frame.indexOf('releaseLiveContactToOldB3()', liveUpdate);
-  const swordUpdate = frame.indexOf('attackerSword.update(); defenderSword?.update();', liveUpdate);
+  const combatDelegate = frame.indexOf('contactHandoffController.updateCombatBeforeGuard({');
+  const guardUpdate = frame.indexOf('guardRuntime.update(deltaMs, camera)', combatDelegate);
+  const deflectLatch = frame.indexOf('contactHandoffController.updateDefenderDeflectReleaseGate()', guardUpdate);
+  const liveDelegate = frame.indexOf('contactHandoffController.updateLiveConstraintAfterGuard({', deflectLatch);
+  const swordUpdate = frame.indexOf('attackerSword.update(); defenderSword?.update();', liveDelegate);
+  assert.ok(combatDelegate >= 0 && guardUpdate > combatDelegate && deflectLatch > guardUpdate);
+  assert.ok(liveDelegate > deflectLatch && swordUpdate > liveDelegate);
 
-  assert.ok(ownership >= 0 && bodyRecoil > ownership && channelMask > bodyRecoil);
-  assert.ok(guardUpdate > channelMask && liveUpdate > guardUpdate && release > liveUpdate && swordUpdate > release);
-  assert.match(frame, /surfaceAtFrame: buckler\.getWorldParrySurface\(\)/);
-  assert.match(frame, /reactionIntentAppliedBeforeConstraint: false/);
-  assert.match(source, /publishPostCouplingRecoilStaggerHandoff/);
-  assert.match(source, /releasedToOldB3/);
-  assert.match(source, /b3BodyClockStartedAtImpact: false/);
-  assert.match(source, /fullOldB3ReactionIntentActiveAtImpact: false/);
-  assert.match(source, /contactConstraintOwnsUntilDeflectImpulse: true/);
-  assert.match(source, /boundedProximalArmCorrectionBeforeForearmAndWrist/);
-  assert.match(source, /proximalAssistBone/);
-  assert.match(source, /weaponArmRemainsContactConstrainedDuringStep3A/);
-  assert.match(source, /(?:exchangeState\.)?frozenAttackerContactPose = captureRigPose\(attacker\.rig\)/);
-  assert.match(source, /applyRigPose\(attacker\.rig, (?:exchangeState\.)?frozenAttackerContactPose\)/);
-  assert.match(source, /(?:exchangeState\.)?canonicalAttackerOldB3Pose = captureRigPose\(attacker\.rig\)/);
-  assert.match(source, /sampleCanonicalInterruptionPose\(interruption\)/);
-  assert.match(frame, /holdAttackerInterruption: true/);
-  assert.match(source, /frozenContactPoseRestoredBeforeEveryBodyOverlay/);
-  assert.match(source, /bodyCompletionCannotReleaseContactOwnedPose/);
-  assert.match(source, /contactOwnsFinalPoseBeforeVisibleOldB3/);
-  assert.match(source, /b3PresentationParkedAtOriginDuringLiveContact/);
+  const beforeGuardStart = contactHandoffSource.indexOf('function updateCombatBeforeGuard(');
+  const beforeGuardEnd = contactHandoffSource.indexOf('function updateLiveConstraintAfterGuard(', beforeGuardStart);
+  const beforeGuard = contactHandoffSource.slice(beforeGuardStart, beforeGuardEnd);
+  const afterGuard = contactHandoffSource.slice(beforeGuardEnd);
+  for (const marker of [
+    'if (ownsLiveContact())',
+    'TWO_ACTOR_PARRY_REACTION_CHANNELS.LIVE_CONTACT_HOLD',
+    'TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT',
+    'holdAttackerInterruption: true',
+  ]) assert.ok(beforeGuard.includes(marker), marker);
+  for (const marker of [
+    'swordGripConstraint.update(deltaSeconds',
+    'surfaceAtFrame: buckler.getWorldParrySurface()',
+    'reactionIntentAppliedBeforeConstraint: false',
+    'releaseLiveContactToOldB3({ selectedDirection })',
+  ]) assert.ok(afterGuard.includes(marker), marker);
+
+  for (const marker of [
+    'publishPostCouplingRecoilStaggerHandoff',
+    'releasedToOldB3',
+    'b3BodyClockStartedAtImpact: false',
+    'fullOldB3ReactionIntentActiveAtImpact: false',
+    'contactConstraintOwnsUntilDeflectImpulse: true',
+    'boundedProximalArmCorrectionBeforeForearmAndWrist',
+    'proximalAssistBone',
+  ]) assert.ok(postContactOwnershipSource.includes(marker), marker);
+  assert.ok(source.includes('weaponArmRemainsContactConstrainedDuringStep3A'));
+  assert.ok(contactHandoffSource.includes('exchangeState.frozenAttackerContactPose = captureRigPose(attacker.rig)'));
+  assert.ok(source.includes('applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose)'));
+  assert.ok(source.includes('exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig)'));
+  assert.ok(source.includes('sampleCanonicalInterruptionPose(interruption)'));
+  assert.ok(source.includes('frozenContactPoseRestoredBeforeEveryBodyOverlay'));
+  assert.ok(source.includes('bodyCompletionCannotReleaseContactOwnedPose'));
+  assert.ok(source.includes('contactOwnsFinalPoseBeforeVisibleOldB3'));
+  assert.ok(source.includes('b3PresentationParkedAtOriginDuringLiveContact'));
 });
 
 test('R18I preserves predictive defender time and latches the defender deflect marker', () => {
@@ -173,33 +192,39 @@ test('R18I releases contact through 28ms continuity and starts canonical OLD B3 
   const frameStart = source.indexOf('function frame(');
   const frameEnd = source.indexOf('requestAnimationFrame(frame);', frameStart);
   const frame = source.slice(frameStart, frameEnd);
-  const liveContact = frame.indexOf('if (step3AOwnsLiveContact())');
-  const latch = frame.indexOf('TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT', liveContact);
-  const releaseUpdate = frame.indexOf('combat.update(deltaSeconds, { camera })', latch);
-  const consume = frame.indexOf('postCouplingHandoffApplied === true', releaseUpdate);
+  const combatDelegate = frame.indexOf('contactHandoffController.updateCombatBeforeGuard({');
+  const guardUpdate = frame.indexOf('guardRuntime.update(deltaMs, camera)', combatDelegate);
+  const deflectLatch = frame.indexOf('contactHandoffController.updateDefenderDeflectReleaseGate()', guardUpdate);
+  const liveDelegate = frame.indexOf('contactHandoffController.updateLiveConstraintAfterGuard({', deflectLatch);
+  assert.ok(combatDelegate >= 0 && guardUpdate > combatDelegate && deflectLatch > guardUpdate && liveDelegate > deflectLatch);
 
-  assert.ok(liveContact >= 0 && latch > liveContact && releaseUpdate > latch && consume > releaseUpdate);
-  assert.match(source, /oldB3ReleaseStartPresentationMs/);
-  assert.match(source, /continuityBridgeMs/);
-  assert.match(source, /handoffConsumedByOldB3/);
-  assert.match(source, /continuationStartedAtPresentationMs/);
-  assert.match(source, /bodyRestartedAtRelease: false/);
-  assert.match(source, /continuationPlanIdentityPreserved/);
-  assert.match(source, /continuationElapsedPreserved/);
-  assert.match(source, /attackerReactionDefinitionId/);
-  assert.match(source, /oldB3PlanBackwardPitchDegrees/);
-  assert.match(source, /oldB3AppliedBodyChainPitchAtReleaseDegrees/);
-  assert.match(source, /oldB3InitialElapsedMs/);
-  assert.match(source, /parryImpactSelectsExaggeratedOldB3ReactionDefinition/);
-  assert.match(source, /deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero/);
-  assert.match(source, /from '\.\.\/\.\.\/src\/combat\/post-coupling-recoil-stagger-handoff\.js';/);
-  assert.doesNotMatch(source, /post-coupling-recoil-stagger-handoff\.js\?v=/);
-  assert.match(source, /OLD B3 STARTED/);
-  assert.match(source, /deflectImpulseStartsOldB3FromZeroWithoutBodyRestart/);
-  assert.match(source, /full-rig-live-contact-pose-to-canonical-interruption-pose/);
-  assert.match(source, /measureAttackerRecoilWorldSilhouette/);
-  assert.match(source, /visibleOldB3Peak\?\.readable === true/);
-  assert.doesNotMatch(source, /visibleOldB3Peak\?\.backwardChainPitchDegrees/);
+  const beforeGuardStart = contactHandoffSource.indexOf('function updateCombatBeforeGuard(');
+  const beforeGuardEnd = contactHandoffSource.indexOf('function updateLiveConstraintAfterGuard(', beforeGuardStart);
+  const beforeGuard = contactHandoffSource.slice(beforeGuardStart, beforeGuardEnd);
+  assert.ok(beforeGuard.includes('postCouplingHandoffApplied === true'));
+  assert.ok(beforeGuard.includes('handoffConsumedByOldB3: true'));
+  for (const marker of [
+    'oldB3ReleaseStartPresentationMs',
+    'continuityBridgeMs',
+    'continuationStartedAtPresentationMs',
+    'bodyRestartedAtRelease: false',
+    'continuationPlanIdentityPreserved',
+    'continuationElapsedPreserved',
+    'attackerReactionDefinitionId',
+    'oldB3PlanBackwardPitchDegrees',
+    'oldB3AppliedBodyChainPitchAtReleaseDegrees',
+    'oldB3InitialElapsedMs',
+    'OLD B3 STARTED',
+    'full-rig-live-contact-pose-to-canonical-interruption-pose',
+  ]) assert.ok(contactHandoffSource.includes(marker), marker);
+  assert.ok(source.includes('parryImpactSelectsExaggeratedOldB3ReactionDefinition'));
+  assert.ok(postContactOwnershipSource.includes('deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero'));
+  assert.ok(source.includes("from '../../src/combat/post-coupling-recoil-stagger-handoff.js';"));
+  assert.ok(!source.includes('post-coupling-recoil-stagger-handoff.js?v='));
+  assert.ok(source.includes('deflectImpulseStartsOldB3FromZeroWithoutBodyRestart'));
+  assert.ok(postContactOwnershipSource.includes('measureAttackerRecoilWorldSilhouette'));
+  assert.ok(source.includes('visibleOldB3Peak?.readable === true'));
+  assert.ok(!source.includes('visibleOldB3Peak?.backwardChainPitchDegrees'));
   assert.match(html, /canonical OLD B3.*elapsed 0/);
 });
 
