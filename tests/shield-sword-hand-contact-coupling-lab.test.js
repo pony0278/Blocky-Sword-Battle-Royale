@@ -128,9 +128,9 @@ test('R18I lets live contact own the final pose while OLD B3 waits at presentati
   assert.match(source, /boundedProximalArmCorrectionBeforeForearmAndWrist/);
   assert.match(source, /proximalAssistBone/);
   assert.match(source, /weaponArmRemainsContactConstrainedDuringStep3A/);
-  assert.match(source, /frozenAttackerContactPose = captureRigPose\(attacker\.rig\)/);
-  assert.match(source, /applyRigPose\(attacker\.rig, frozenAttackerContactPose\)/);
-  assert.match(source, /canonicalAttackerOldB3Pose = captureRigPose\(attacker\.rig\)/);
+  assert.match(source, /(?:exchangeState\.)?frozenAttackerContactPose = captureRigPose\(attacker\.rig\)/);
+  assert.match(source, /applyRigPose\(attacker\.rig, (?:exchangeState\.)?frozenAttackerContactPose\)/);
+  assert.match(source, /(?:exchangeState\.)?canonicalAttackerOldB3Pose = captureRigPose\(attacker\.rig\)/);
   assert.match(source, /sampleCanonicalInterruptionPose\(interruption\)/);
   assert.match(frame, /holdAttackerInterruption: true/);
   assert.match(source, /frozenContactPoseRestoredBeforeEveryBodyOverlay/);

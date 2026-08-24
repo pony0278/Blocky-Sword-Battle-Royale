@@ -83,6 +83,10 @@ import { serializeVerificationReport } from './shield-parry-r281/report-serializ
 import { createShieldParryLabDom } from './shield-parry-r281/lab-dom.js';
 import { createStanceDebugController } from './shield-parry-r281/stance-debug-controls.js';
 import { createShieldParryLabUi, bindShieldParryLabUiEvents } from './shield-parry-r281/lab-ui.js';
+import {
+  createShieldParryExchangeState,
+  resetShieldParryExchangeState,
+} from './shield-parry-r281/exchange-state.js';
 
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
 const RECOIL_STAGE = LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE;
@@ -188,9 +192,7 @@ const residualBodyReachRuntime = createGuardResidualBodyReachRuntime(THREE, { ri
 const residualStanceReachRuntime = createGuardResidualStanceReachRuntime(THREE, { rig: defender.rig, buckler });
 const predictivePresentation = createPredictiveInterceptParryPresentationRuntime(THREE, { character: defender });
 const parryGate = createCommittedParryContactGate();
-let frozenAttackerContactPose = null;
-let canonicalAttackerOldB3Pose = null;
-let canonicalAttackerOldB3WorldSilhouette = null;
+const exchangeState = createShieldParryExchangeState();
 
 function captureAttackerWorldSilhouette() {
   attacker.rig.root?.updateMatrixWorld?.(true);
@@ -226,31 +228,31 @@ function captureCanonicalAttackerOldB3Base(interruption) {
   if (!interruption) return false;
   const visiblePose = captureRigPose(attacker.rig);
   sampleCanonicalInterruptionPose(interruption);
-  canonicalAttackerOldB3Pose = captureRigPose(attacker.rig);
-  canonicalAttackerOldB3WorldSilhouette = captureAttackerWorldSilhouette();
+  exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig);
+  exchangeState.canonicalAttackerOldB3WorldSilhouette = captureAttackerWorldSilhouette();
   applyRigPose(attacker.rig, visiblePose);
   attacker.update(0, camera);
   return true;
 }
 
 function sampleOriginalContactPose(interruption) {
-  if (step3AOwnsLiveContact() && frozenAttackerContactPose) {
-    applyRigPose(attacker.rig, frozenAttackerContactPose);
-  } else if (step3AReleaseBlend?.sourcePose && step3AReleaseBlend?.targetPose) {
+  if (step3AOwnsLiveContact() && exchangeState.frozenAttackerContactPose) {
+    applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose);
+  } else if (exchangeState.step3AReleaseBlend?.sourcePose && exchangeState.step3AReleaseBlend?.targetPose) {
     const releaseSample = sampleLiveParryOldB3ReleaseBlend(
-      step3AReleaseBlend.elapsedMs,
-      step3AReleaseBlend.durationMs,
+      exchangeState.step3AReleaseBlend.elapsedMs,
+      exchangeState.step3AReleaseBlend.durationMs,
     );
     applyRigPose(attacker.rig, blendRecoveryPose(
-      step3AReleaseBlend.sourcePose,
-      step3AReleaseBlend.sourcePose,
-      step3AReleaseBlend.targetPose,
+      exchangeState.step3AReleaseBlend.sourcePose,
+      exchangeState.step3AReleaseBlend.sourcePose,
+      exchangeState.step3AReleaseBlend.targetPose,
       releaseSample.progress,
-      { durationMs: step3AReleaseBlend.durationMs, sampleDeltaMs: 0, momentumScale: 0 },
+      { durationMs: exchangeState.step3AReleaseBlend.durationMs, sampleDeltaMs: 0, momentumScale: 0 },
     ));
-    step3AReleaseBlend.sample = releaseSample;
-  } else if (canonicalAttackerOldB3Pose) {
-    applyRigPose(attacker.rig, canonicalAttackerOldB3Pose);
+    exchangeState.step3AReleaseBlend.sample = releaseSample;
+  } else if (exchangeState.canonicalAttackerOldB3Pose) {
+    applyRigPose(attacker.rig, exchangeState.canonicalAttackerOldB3Pose);
   } else {
     sampleCanonicalInterruptionPose(interruption);
   }
@@ -300,38 +302,6 @@ let attackerIdleClockSeconds = 0;
 let attackerRecovery = null;
 let repeatCooldownMs = 0;
 let previousBlade = null;
-let previousShieldLeadSurface = null;
-let firstContact = null;
-let latestContact = null;
-let latestCombatResult = null;
-let latestCombatUpdate = null;
-let latestFinePlan = null;
-let latestFineTracking = null;
-let latestPredictiveAnalysis = null;
-let latestReachableInterceptTarget = null;
-let latestInterceptDriveReport = null;
-let interceptDriveTrace = [];
-let latestPredictiveReport = null;
-let latestPredictiveHandoff = null;
-let latestShieldLeadMotion = null;
-let latestLeadHandoff = null;
-let directOldB3Diagnostic = null;
-let latestParryInput = null;
-let latestParryOpportunity = null;
-let latestParryConfirmation = null;
-let step3AContactTransfer = null;
-let latestGripConstraintReport = null;
-let latestLiveSurfaceAtContact = null;
-let step3AReleaseBlend = null;
-let visibleOldB3Peak = null;
-let latchedDefenderDeflectReleaseGate = null;
-let latestParryWhiff = null;
-let whiffProbeFrames = 0;
-let closestWhiffApproach = null;
-let outsideActiveContact = null;
-let latestInputSignal = null;
-let parryPromptHold = null;
-let parryPromptHoldSequence = null;
 let hudClockMs = HUD_INTERVAL_MS;
 let reportClockMs = REPORT_INTERVAL_MS;
 
@@ -474,42 +444,10 @@ function resetExchange() {
   residualBodyReachRuntime.reset();
   residualStanceReachRuntime.reset();
   predictivePresentation.reset();
-  firstContact = null;
-  latestContact = null;
-  latestCombatResult = null;
-  latestCombatUpdate = null;
-  latestFinePlan = null;
-  latestFineTracking = null;
-  latestPredictiveAnalysis = null;
-  latestReachableInterceptTarget = null;
-  latestInterceptDriveReport = null;
-  interceptDriveTrace = [];
-  latestPredictiveReport = null;
-  latestPredictiveHandoff = null;
-  latestShieldLeadMotion = null;
-  latestLeadHandoff = null;
-  directOldB3Diagnostic = null;
-  latestParryInput = null;
-  latestParryOpportunity = null;
-  latestParryConfirmation = null;
-  frozenAttackerContactPose = null;
-  canonicalAttackerOldB3Pose = null;
-  canonicalAttackerOldB3WorldSilhouette = null;
-  step3AContactTransfer = null;
-  latestGripConstraintReport = null;
-  latestLiveSurfaceAtContact = null;
-  step3AReleaseBlend = null;
-  visibleOldB3Peak = null;
-  latchedDefenderDeflectReleaseGate = null;
+  resetShieldParryExchangeState(exchangeState, {
+    previousShieldLeadSurface: cloneSurface(buckler.getWorldParrySurface()),
+  });
   updateLiveContactMarkers(null);
-  latestParryWhiff = null;
-  whiffProbeFrames = 0;
-  closestWhiffApproach = null;
-  outsideActiveContact = null;
-  latestInputSignal = null;
-  parryPromptHold = null;
-  parryPromptHoldSequence = null;
-  previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
 }
 
 function diagnosticIncomingVelocity(direction) {
@@ -535,9 +473,9 @@ function diagnosticCouplingReport(direction) {
 
 function step3AOwnsLiveContact() {
   return Boolean(
-    step3AContactTransfer?.accepted
-    && latestParryConfirmation?.accepted
-    && step3AContactTransfer.releasedToOldB3 !== true,
+    exchangeState.step3AContactTransfer?.accepted
+    && exchangeState.latestParryConfirmation?.accepted
+    && exchangeState.step3AContactTransfer.releasedToOldB3 !== true,
   );
 }
 
@@ -558,19 +496,19 @@ function currentDefenderDeflectReleaseGate() {
 }
 
 function updateDefenderDeflectReleaseGate() {
-  if (latchedDefenderDeflectReleaseGate) return latchedDefenderDeflectReleaseGate;
+  if (exchangeState.latchedDefenderDeflectReleaseGate) return exchangeState.latchedDefenderDeflectReleaseGate;
   const current = currentDefenderDeflectReleaseGate();
   if (!current.passed) return current;
-  latchedDefenderDeflectReleaseGate = Object.freeze({
+  exchangeState.latchedDefenderDeflectReleaseGate = Object.freeze({
     ...current,
     latched: true,
     authority: 'latched-defender-deflect-marker-gates-attacker-release',
   });
-  return latchedDefenderDeflectReleaseGate;
+  return exchangeState.latchedDefenderDeflectReleaseGate;
 }
 
 function defenderDeflectReleaseGate() {
-  return latchedDefenderDeflectReleaseGate || currentDefenderDeflectReleaseGate();
+  return exchangeState.latchedDefenderDeflectReleaseGate || currentDefenderDeflectReleaseGate();
 }
 
 function releaseLiveContactToOldB3() {
@@ -587,10 +525,10 @@ function releaseLiveContactToOldB3() {
   }
   const handoff = buildLiveParryOldB3Handoff({
     attackDirection: selectedDirection,
-    contactReport: latestGripConstraintReport,
-    surfaceAtContact: latestLiveSurfaceAtContact,
-    confirmedParry: latestParryConfirmation?.accepted === true
-      && firstContact?.eligible === true,
+    contactReport: exchangeState.latestGripConstraintReport,
+    surfaceAtContact: exchangeState.latestLiveSurfaceAtContact,
+    confirmedParry: exchangeState.latestParryConfirmation?.accepted === true
+      && exchangeState.firstContact?.eligible === true,
     allowConfirmedParryFallback: true,
   });
   if (!handoff.accepted) return handoff;
@@ -610,16 +548,16 @@ function releaseLiveContactToOldB3() {
     return Object.freeze({ ...handoff, accepted: false, reason: 'old-b3-handoff-publish-failed' });
   }
 
-  step3AReleaseBlend = {
+  exchangeState.step3AReleaseBlend = {
     elapsedMs: 0,
     durationMs: handoff.releaseBlendMs,
     sample: sampleLiveParryOldB3ReleaseBlend(0, handoff.releaseBlendMs),
     sourcePose: visibleReleasePose,
-    targetPose: canonicalAttackerOldB3Pose || frozenAttackerContactPose,
+    targetPose: exchangeState.canonicalAttackerOldB3Pose || exchangeState.frozenAttackerContactPose,
     authority: 'full-rig-live-contact-pose-to-canonical-interruption-pose',
   };
-  step3AContactTransfer = Object.freeze({
-    ...step3AContactTransfer,
+  exchangeState.step3AContactTransfer = Object.freeze({
+    ...exchangeState.step3AContactTransfer,
     releasedToOldB3: true,
     releaseHandoff: handoff,
     defenderReleaseGate,
@@ -643,7 +581,7 @@ function releaseLiveContactToOldB3() {
 }
 
 function recordVisibleOldB3Sample(combatUpdate) {
-  if (step3AContactTransfer?.releasedToOldB3 !== true) return;
+  if (exchangeState.step3AContactTransfer?.releasedToOldB3 !== true) return;
   const recoilUpdate = combatUpdate?.recoilUpdate || null;
   const sample = recoilUpdate?.sample
     || recoilUpdate?.snapshot?.sample
@@ -654,9 +592,9 @@ function recordVisibleOldB3Sample(combatUpdate) {
     + (Number(sample.pose.spinePitchDegrees) || 0)
     + (Number(sample.pose.hipsPitchDegrees) || 0);
   const measurement = measureAttackerRecoilWorldSilhouette({
-    baseline: canonicalAttackerOldB3WorldSilhouette,
+    baseline: exchangeState.canonicalAttackerOldB3WorldSilhouette,
     current: captureAttackerWorldSilhouette(),
-    backwardDirection: latestCombatResult?.attackerReaction?.plan?.body?.direction,
+    backwardDirection: exchangeState.latestCombatResult?.attackerReaction?.plan?.body?.direction,
     requestedLocalChainPitchDegrees,
   });
   if (!measurement.accepted) return;
@@ -664,11 +602,11 @@ function recordVisibleOldB3Sample(combatUpdate) {
     + Math.max(0, measurement.headBackwardMeters) * 100
     + Math.max(0, measurement.shouldersBackwardMeters) * 100;
   if (
-    visibleOldB3Peak
-    && visibleOldB3Peak.readabilityScore >= readabilityScore
+    exchangeState.visibleOldB3Peak
+    && exchangeState.visibleOldB3Peak.readabilityScore >= readabilityScore
   ) return;
   const phaseClock = recoilUpdate?.phaseClock || recoilUpdate?.snapshot?.phaseClock || null;
-  visibleOldB3Peak = Object.freeze({
+  exchangeState.visibleOldB3Peak = Object.freeze({
     ...measurement,
     phase: sample.phase,
     presentationElapsedMs: phaseClock?.elapsedMs ?? null,
@@ -682,53 +620,53 @@ function recordVisibleOldB3Sample(combatUpdate) {
 
 function triggerParryNow(source = 'button') {
   if (!ready) {
-    latestParryInput = Object.freeze({ accepted: false, reason: 'lab-not-ready', source });
+    exchangeState.latestParryInput = Object.freeze({ accepted: false, reason: 'lab-not-ready', source });
     status.textContent = 'PARRY INPUT REJECTED · lab-not-ready';
     status.className = 'bad';
-    return latestParryInput;
+    return exchangeState.latestParryInput;
   }
   if (selectedMode !== 'parry') {
-    latestParryInput = Object.freeze({ accepted: false, reason: 'select-parry-mode-first', source });
+    exchangeState.latestParryInput = Object.freeze({ accepted: false, reason: 'select-parry-mode-first', source });
     status.textContent = 'PARRY INPUT REJECTED · select-parry-mode-first';
     status.className = 'bad';
-    return latestParryInput;
+    return exchangeState.latestParryInput;
   }
 
   const snapshot = attackRuntime.snapshot;
-  latestParryInput = parryGate.arm({
+  exchangeState.latestParryInput = parryGate.arm({
     attackSnapshot: snapshot,
-    predictiveAnalysis: latestPredictiveAnalysis,
+    predictiveAnalysis: exchangeState.latestPredictiveAnalysis,
     manual: true,
     source,
   });
 
-  if (latestParryInput.accepted) {
-    whiffProbeFrames = 0;
-    closestWhiffApproach = null;
-    outsideActiveContact = null;
-    latestReachableInterceptTarget = null;
-    latestInterceptDriveReport = null;
-    interceptDriveTrace = [];
+  if (exchangeState.latestParryInput.accepted) {
+    exchangeState.whiffProbeFrames = 0;
+    exchangeState.closestWhiffApproach = null;
+    exchangeState.outsideActiveContact = null;
+    exchangeState.latestReachableInterceptTarget = null;
+    exchangeState.latestInterceptDriveReport = null;
+    exchangeState.interceptDriveTrace = [];
     predictivePresentation.start({
       sequence: snapshot.sequence,
       requestedGrade: 'parry',
-      triggerTtcSeconds: latestParryInput.timeToContactSeconds,
+      triggerTtcSeconds: exchangeState.latestParryInput.timeToContactSeconds,
     });
-    const trackingDistance = latestParryInput.requiredShieldTravelMeters == null
+    const trackingDistance = exchangeState.latestParryInput.requiredShieldTravelMeters == null
       ? 'path pending'
-      : `${(latestParryInput.requiredShieldTravelMeters * 100).toFixed(1)}cm${latestParryInput.gates.trackingClamped ? ' → CLAMP 18cm' : ''}`;
-    status.textContent = `PARRY ARMED · TTC ${(latestParryInput.timeToContactSeconds * 1000).toFixed(0)}ms · tracking ${trackingDistance} · waiting for real Sword × Shield contact`;
+      : `${(exchangeState.latestParryInput.requiredShieldTravelMeters * 100).toFixed(1)}cm${exchangeState.latestParryInput.gates.trackingClamped ? ' → CLAMP 18cm' : ''}`;
+    status.textContent = `PARRY ARMED · TTC ${(exchangeState.latestParryInput.timeToContactSeconds * 1000).toFixed(0)}ms · tracking ${trackingDistance} · waiting for real Sword × Shield contact`;
     status.className = 'good';
   } else {
-    status.textContent = `PARRY REJECTED · ${latestParryInput.reason}`;
+    status.textContent = `PARRY REJECTED · ${exchangeState.latestParryInput.reason}`;
     status.className = 'bad';
   }
   buildReport();
-  return latestParryInput;
+  return exchangeState.latestParryInput;
 }
 
 function dispatchParryInput(source, event = null) {
-  latestInputSignal = Object.freeze({
+  exchangeState.latestInputSignal = Object.freeze({
     source,
     code: event?.code || null,
     key: event?.key || null,
@@ -737,7 +675,7 @@ function dispatchParryInput(source, event = null) {
   });
   labUi.flashParryInput();
   const result = triggerParryNow(source);
-  parryPromptHold = null;
+  exchangeState.parryPromptHold = null;
   labUi.setInputReceipt(source, result);
   updateParryCue(attackRuntime.snapshot);
   return result;
@@ -762,7 +700,7 @@ function forceOldTwoActorB3(direction = selectedDirection) {
 
   const contactPoint = new THREE.Vector3();
   attackerSword.bladeMid.getWorldPosition(contactPoint);
-  latestContact = Object.freeze({
+  exchangeState.latestContact = Object.freeze({
     contact: true,
     geometricContact: true,
     eligible: true,
@@ -773,13 +711,13 @@ function forceOldTwoActorB3(direction = selectedDirection) {
     sweepAlpha: 0.5,
     authority: 'step1-synthetic-authoritative-contact-for-old-b3-only',
   });
-  firstContact = latestContact;
-  frozenAttackerContactPose = captureRigPose(attacker.rig);
-  latestCombatResult = combat.resolveContact({ contact: latestContact, guardIntentAgeMs: TIMING_AGE_MS.parry });
-  if (!latestCombatResult.accepted) {
-    frozenAttackerContactPose = null;
-    directOldB3Diagnostic = Object.freeze({ accepted: false, reason: latestCombatResult.reason || 'diagnostic-contact-rejected' });
-    return directOldB3Diagnostic;
+  exchangeState.firstContact = exchangeState.latestContact;
+  exchangeState.frozenAttackerContactPose = captureRigPose(attacker.rig);
+  exchangeState.latestCombatResult = combat.resolveContact({ contact: exchangeState.latestContact, guardIntentAgeMs: TIMING_AGE_MS.parry });
+  if (!exchangeState.latestCombatResult.accepted) {
+    exchangeState.frozenAttackerContactPose = null;
+    exchangeState.directOldB3Diagnostic = Object.freeze({ accepted: false, reason: exchangeState.latestCombatResult.reason || 'diagnostic-contact-rejected' });
+    return exchangeState.directOldB3Diagnostic;
   }
   captureCanonicalAttackerOldB3Base(attackRuntime.snapshot.interruption);
   guardRuntime.sync(camera);
@@ -788,9 +726,9 @@ function forceOldTwoActorB3(direction = selectedDirection) {
     couplingReport: diagnosticCouplingReport(direction),
     surfaceAtContact: buckler.getWorldParrySurface(),
   });
-  latestCombatUpdate = combat.update(0.021, { camera });
+  exchangeState.latestCombatUpdate = combat.update(0.021, { camera });
   const handoff = combat.snapshot.attackerRecoil?.postCouplingHandoff || null;
-  directOldB3Diagnostic = Object.freeze({
+  exchangeState.directOldB3Diagnostic = Object.freeze({
     accepted: handoffPublished && handoff?.accepted === true,
     direction,
     parryTimingBypassed: true,
@@ -801,20 +739,20 @@ function forceOldTwoActorB3(direction = selectedDirection) {
     handoffPublished,
     handoffStage: handoff?.stage || null,
     handoffAccepted: handoff?.accepted === true,
-    reactionDefinitionId: latestCombatResult.attackerReaction?.id || null,
+    reactionDefinitionId: exchangeState.latestCombatResult.attackerReaction?.id || null,
     reactionPlanBackwardPitchDegrees:
-      latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
-    reactionInitialElapsedMs: latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
+      exchangeState.latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
+    reactionInitialElapsedMs: exchangeState.latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
     authority: 'direct-existing-old-two-actor-b3-diagnostic',
   });
-  status.textContent = directOldB3Diagnostic.accepted
+  status.textContent = exchangeState.directOldB3Diagnostic.accepted
     ? 'STEP 1 ACTIVE · OLD Two-Actor B3 direct · all Parry/collision stages bypassed'
     : `STEP 1 FAIL · ${handoff?.reason || 'legacy handoff was not accepted'}`;
-  status.className = directOldB3Diagnostic.accepted ? 'good' : 'bad';
+  status.className = exchangeState.directOldB3Diagnostic.accepted ? 'good' : 'bad';
   attacker.update(0, camera);
   attackerSword.update();
   buildReport();
-  return directOldB3Diagnostic;
+  return exchangeState.directOldB3Diagnostic;
 }
 
 function startAttack(direction = selectedDirection) {
@@ -851,7 +789,7 @@ function setMode(mode) {
   if (!['block', 'parry'].includes(mode)) return;
   selectedMode = mode;
   if (mode !== 'parry') {
-    parryPromptHold = null;
+    exchangeState.parryPromptHold = null;
     residualBodyReachRuntime.reset();
     residualStanceReachRuntime.reset();
   }
@@ -863,7 +801,7 @@ function isParryPreContactReviewActive(snapshot = attackRuntime.snapshot) {
   const contactSeconds = snapshot?.action?.runtime?.contactSeconds;
   return selectedMode === 'parry'
     && slowReview.checked
-    && !firstContact
+    && !exchangeState.firstContact
     && Number.isFinite(contactSeconds)
     && snapshot.elapsedSeconds < contactSeconds;
 }
@@ -878,25 +816,25 @@ function updateBlockPreContact(snapshot, currentBlade, deltaSeconds) {
     : zeroBracePlan();
   bracingRuntime.update(bracePlan, deltaSeconds);
   const postBraceSurface = buckler.getWorldParrySurface();
-  latestFinePlan = planFineGuardTracking({
+  exchangeState.latestFinePlan = planFineGuardTracking({
     threat: bracePlan?.analysis?.threat || null,
     bucklerSurface: postBraceSurface,
     maxCorrectionMeters: bracePlan?.fineTrackMaxMeters || 0,
   });
-  latestFineTracking = fineTrackingRuntime.update(latestFinePlan, deltaSeconds);
+  exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);
   defender.update(0, camera); defenderSword?.update();
-  previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
+  exchangeState.previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
 }
 
 function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
-  if (parryPromptHold?.sequence === snapshot.sequence && !parryGate.attempt) {
-    latestPredictiveAnalysis = parryPromptHold.predictiveAnalysis;
-    latestParryOpportunity = parryPromptHold.opportunity;
-    previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
+  if (exchangeState.parryPromptHold?.sequence === snapshot.sequence && !parryGate.attempt) {
+    exchangeState.latestPredictiveAnalysis = exchangeState.parryPromptHold.predictiveAnalysis;
+    exchangeState.latestParryOpportunity = exchangeState.parryPromptHold.opportunity;
+    exchangeState.previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
     return;
   }
   const beforeSurface = cloneSurface(buckler.getWorldParrySurface());
-  latestPredictiveAnalysis = analyzePredictiveInterceptParry({
+  exchangeState.latestPredictiveAnalysis = analyzePredictiveInterceptParry({
     attackSnapshot: snapshot,
     previousBlade,
     currentBlade,
@@ -904,57 +842,57 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
     deltaSeconds,
     requestedGrade: selectedMode,
   });
-  latestParryOpportunity = evaluateCommittedParryInput({
+  exchangeState.latestParryOpportunity = evaluateCommittedParryInput({
     attackSnapshot: snapshot,
-    predictiveAnalysis: latestPredictiveAnalysis,
+    predictiveAnalysis: exchangeState.latestPredictiveAnalysis,
     manual: false,
     profile: parryGate.profile,
   });
   if (slowReview.checked
-    && latestParryOpportunity.accepted
-    && parryPromptHoldSequence !== snapshot.sequence) {
-    parryPromptHoldSequence = snapshot.sequence;
-    parryPromptHold = {
+    && exchangeState.latestParryOpportunity.accepted
+    && exchangeState.parryPromptHoldSequence !== snapshot.sequence) {
+    exchangeState.parryPromptHoldSequence = snapshot.sequence;
+    exchangeState.parryPromptHold = {
       sequence: snapshot.sequence,
       remainingRealMs: PARRY_PROMPT_HOLD_MS,
-      opportunity: latestParryOpportunity,
-      predictiveAnalysis: latestPredictiveAnalysis,
+      opportunity: exchangeState.latestParryOpportunity,
+      predictiveAnalysis: exchangeState.latestPredictiveAnalysis,
     };
   }
 
   if (predictivePresentation.active) {
-    latestPredictiveReport = predictivePresentation.update({
+    exchangeState.latestPredictiveReport = predictivePresentation.update({
       deltaSeconds,
-      timeToContactSeconds: latestPredictiveAnalysis?.timeToContactSeconds,
+      timeToContactSeconds: exchangeState.latestPredictiveAnalysis?.timeToContactSeconds,
       camera,
     });
     const predictiveSurface = cloneSurface(buckler.getWorldParrySurface());
-    const continuitySurface = previousShieldLeadSurface
-      ? cloneSurface(previousShieldLeadSurface)
+    const continuitySurface = exchangeState.previousShieldLeadSurface
+      ? cloneSurface(exchangeState.previousShieldLeadSurface)
       : predictiveSurface;
     const measuredClosestApproach = measureSweptSwordBucklerClosestApproach({
       previousBlade,
       currentBlade,
       bucklerSurface: continuitySurface,
     });
-    latestReachableInterceptTarget = selectReachableParryInterceptTarget({
-      predictedThreat: latestPredictiveAnalysis?.threat,
-      predictedTrackingPlan: latestPredictiveAnalysis?.trackingPlan,
+    exchangeState.latestReachableInterceptTarget = selectReachableParryInterceptTarget({
+      predictedThreat: exchangeState.latestPredictiveAnalysis?.threat,
+      predictedTrackingPlan: exchangeState.latestPredictiveAnalysis?.trackingPlan,
       closestApproach: measuredClosestApproach,
       bucklerSurface: continuitySurface,
     });
-    latestFinePlan = latestReachableInterceptTarget?.fallbackApplied
-      ? latestReachableInterceptTarget.trackingPlan
-      : latestReachableInterceptTarget?.threat
+    exchangeState.latestFinePlan = exchangeState.latestReachableInterceptTarget?.fallbackApplied
+      ? exchangeState.latestReachableInterceptTarget.trackingPlan
+      : exchangeState.latestReachableInterceptTarget?.threat
         ? planGuardThreatCorrection({
             mode: 'parry',
-            threat: latestReachableInterceptTarget.threat,
+            threat: exchangeState.latestReachableInterceptTarget.threat,
             bucklerSurface: predictiveSurface,
           })
         : null;
     const trackingSurfaceBefore = cloneSurface(buckler.getWorldParrySurface());
-    latestFineTracking = fineTrackingRuntime.update(latestFinePlan, deltaSeconds);
-    const residualCarryBeforeMeters = magnitude(latestFineTracking?.carriedResidualOffset);
+    exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);
+    const residualCarryBeforeMeters = magnitude(exchangeState.latestFineTracking?.carriedResidualOffset);
     const primaryTrackingSurfaceAfter = cloneSurface(buckler.getWorldParrySurface());
     const residualBeforeRefinement = measureSweptSwordBucklerClosestApproach({
       previousBlade,
@@ -1000,10 +938,10 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
       mode: 'parry',
       profile: DEBUG_MODE ? debugStanceProfile : null,
       closestApproach: residualAfterBodyReach,
-      anticipatedClosestApproach: latestPredictiveAnalysis?.threat?.worldPoint
-        ? { point: latestPredictiveAnalysis.threat.worldPoint }
+      anticipatedClosestApproach: exchangeState.latestPredictiveAnalysis?.threat?.worldPoint
+        ? { point: exchangeState.latestPredictiveAnalysis.threat.worldPoint }
         : null,
-      anticipatedLeadSeconds: latestPredictiveAnalysis?.threat?.futureSeconds ?? null,
+      anticipatedLeadSeconds: exchangeState.latestPredictiveAnalysis?.threat?.futureSeconds ?? null,
       armEvidence: {
         extensionRatio: residualBodyReach.armExtensionRatio ?? 0,
         correctionAttemptedMeters: residualTrackingPlan?.appliedDistance ?? 0,
@@ -1027,7 +965,7 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
       z: trackingSurfaceAfter.center.z - trackingSurfaceBefore.center.z,
     });
     const shieldStepTranslationMeters = magnitude(shieldStepVector);
-    const plannedCorrectionVector = latestFinePlan?.correction || null;
+    const plannedCorrectionVector = exchangeState.latestFinePlan?.correction || null;
     const plannedCorrectionMeters = magnitude(plannedCorrectionVector);
     const correctionDirectionDot = plannedCorrectionMeters > 1e-6 && shieldStepTranslationMeters > 1e-6
       ? (plannedCorrectionVector.x * shieldStepVector.x
@@ -1047,29 +985,29 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
       - residualAfterRefinement.radialGapMeters;
     const stancePlaneReductionMeters = residualAfterBodyReach.planeGapMeters
       - residualAfterRefinement.planeGapMeters;
-    latestInterceptDriveReport = Object.freeze({
+    exchangeState.latestInterceptDriveReport = Object.freeze({
       attackPhase: snapshot.phase,
       elapsedSeconds: snapshot.elapsedSeconds,
-      timeToContactSeconds: latestPredictiveAnalysis?.timeToContactSeconds ?? null,
+      timeToContactSeconds: exchangeState.latestPredictiveAnalysis?.timeToContactSeconds ?? null,
       presentationActive: true,
       selectorBaseline: 'previous-frame-post-tracking-world-shield-surface',
-      selectionSource: latestReachableInterceptTarget?.source ?? 'none',
-      drivePlanSource: latestReachableInterceptTarget?.fallbackApplied
+      selectionSource: exchangeState.latestReachableInterceptTarget?.source ?? 'none',
+      drivePlanSource: exchangeState.latestReachableInterceptTarget?.fallbackApplied
         ? 'surface-relative-measured-contact-correction'
         : 'current-presentation-linear-contact-correction',
-      fallbackApplied: latestReachableInterceptTarget?.fallbackApplied === true,
-      predictedReachable: latestReachableInterceptTarget?.predictedReachable ?? null,
-      measuredReachable: latestReachableInterceptTarget?.measuredReachable ?? null,
-      measuredInsideAcquisitionBand: latestReachableInterceptTarget?.measuredInsideAcquisitionBand ?? null,
-      predictedRequiredDistanceMeters: latestReachableInterceptTarget?.predictedRequiredDistanceMeters ?? null,
-      measuredRequiredDistanceMeters: latestReachableInterceptTarget?.measuredRequiredDistanceMeters ?? null,
-      measuredRadialContactCorrectionMeters: latestReachableInterceptTarget?.measuredRadialContactCorrectionMeters ?? null,
-      measuredContactCorrectionMeters: latestReachableInterceptTarget?.measuredContactCorrectionMeters ?? null,
+      fallbackApplied: exchangeState.latestReachableInterceptTarget?.fallbackApplied === true,
+      predictedReachable: exchangeState.latestReachableInterceptTarget?.predictedReachable ?? null,
+      measuredReachable: exchangeState.latestReachableInterceptTarget?.measuredReachable ?? null,
+      measuredInsideAcquisitionBand: exchangeState.latestReachableInterceptTarget?.measuredInsideAcquisitionBand ?? null,
+      predictedRequiredDistanceMeters: exchangeState.latestReachableInterceptTarget?.predictedRequiredDistanceMeters ?? null,
+      measuredRequiredDistanceMeters: exchangeState.latestReachableInterceptTarget?.measuredRequiredDistanceMeters ?? null,
+      measuredRadialContactCorrectionMeters: exchangeState.latestReachableInterceptTarget?.measuredRadialContactCorrectionMeters ?? null,
+      measuredContactCorrectionMeters: exchangeState.latestReachableInterceptTarget?.measuredContactCorrectionMeters ?? null,
       measuredClosestApproach,
-      planRequiredDistanceMeters: latestFinePlan?.requiredDistance ?? null,
-      planAppliedDistanceMeters: latestFinePlan?.appliedDistance ?? null,
-      planReachable: latestFinePlan?.reachable ?? null,
-      trackingAchievedDistanceMeters: latestFineTracking?.achievedDistance ?? null,
+      planRequiredDistanceMeters: exchangeState.latestFinePlan?.requiredDistance ?? null,
+      planAppliedDistanceMeters: exchangeState.latestFinePlan?.appliedDistance ?? null,
+      planReachable: exchangeState.latestFinePlan?.reachable ?? null,
+      trackingAchievedDistanceMeters: exchangeState.latestFineTracking?.achievedDistance ?? null,
       residualBeforeRefinement,
       residualInterceptTarget,
       residualTrackingPlan,
@@ -1094,34 +1032,34 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
       correctionDirectionDot,
       authority: 'persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic',
     });
-    interceptDriveTrace.push(compactInterceptDriveTraceFrame(latestInterceptDriveReport));
-    if (interceptDriveTrace.length > 96) interceptDriveTrace.shift();
+    exchangeState.interceptDriveTrace.push(compactInterceptDriveTraceFrame(exchangeState.latestInterceptDriveReport));
+    if (exchangeState.interceptDriveTrace.length > 96) exchangeState.interceptDriveTrace.shift();
   } else {
     residualBodyReachRuntime.reset();
     residualStanceReachRuntime.reset();
-    latestReachableInterceptTarget = null;
-    latestFinePlan = null;
-    latestFineTracking = null;
-    latestInterceptDriveReport = null;
+    exchangeState.latestReachableInterceptTarget = null;
+    exchangeState.latestFinePlan = null;
+    exchangeState.latestFineTracking = null;
+    exchangeState.latestInterceptDriveReport = null;
   }
 
   const afterSurface = cloneSurface(buckler.getWorldParrySurface());
-  latestShieldLeadMotion = sampleActiveShieldLeadMotion({
-    previousSurface: previousShieldLeadSurface || beforeSurface,
+  exchangeState.latestShieldLeadMotion = sampleActiveShieldLeadMotion({
+    previousSurface: exchangeState.previousShieldLeadSurface || beforeSurface,
     currentSurface: afterSurface,
     deltaSeconds,
   });
-  previousShieldLeadSurface = afterSurface;
+  exchangeState.previousShieldLeadSurface = afterSurface;
 }
 function updatePreContact(snapshot, currentBlade, deltaSeconds) {
-  if (!snapshot.action || firstContact) return;
+  if (!snapshot.action || exchangeState.firstContact) return;
   if (selectedMode === 'block') updateBlockPreContact(snapshot, currentBlade, deltaSeconds);
   else updateParryPreContact(snapshot, currentBlade, deltaSeconds);
 }
 
 function recordWhiffProbe(snapshot, probe) {
   if (selectedMode !== 'parry' || !parryGate.armed || !snapshot?.action || !probe) return;
-  whiffProbeFrames += 1;
+  exchangeState.whiffProbeFrames += 1;
   const approach = probe.diagnostics?.closestApproach || null;
   if (!approach) return;
   const contactSeconds = Number(snapshot.action.runtime?.contactSeconds);
@@ -1140,82 +1078,82 @@ function recordWhiffProbe(snapshot, probe) {
     eligible: probe.eligible === true,
     shieldRadiusMeters: probe.surface?.radius ?? null,
     shieldThicknessMeters: probe.surface?.thickness ?? null,
-    predictedGeometryReason: latestPredictiveAnalysis?.geometryReason ?? latestPredictiveAnalysis?.reason ?? null,
-    trackingRequiredDistanceMeters: latestFinePlan?.requiredDistance ?? latestParryInput?.requiredShieldTravelMeters ?? null,
-    trackingAppliedDistanceMeters: latestFinePlan?.appliedDistance ?? null,
-    trackingAchievedDistanceMeters: latestFineTracking?.achievedDistance ?? null,
-    trackingReachable: latestFinePlan?.reachable ?? null,
-    interceptTargetSource: latestReachableInterceptTarget?.source ?? null,
-    interceptFallbackApplied: latestReachableInterceptTarget?.fallbackApplied === true,
-    predictedRequiredDistanceMeters: latestReachableInterceptTarget?.predictedRequiredDistanceMeters ?? null,
-    measuredRequiredDistanceMeters: latestReachableInterceptTarget?.measuredRequiredDistanceMeters ?? null,
-    interceptDriveReport: compactInterceptDriveTelemetry(latestInterceptDriveReport),
+    predictedGeometryReason: exchangeState.latestPredictiveAnalysis?.geometryReason ?? exchangeState.latestPredictiveAnalysis?.reason ?? null,
+    trackingRequiredDistanceMeters: exchangeState.latestFinePlan?.requiredDistance ?? exchangeState.latestParryInput?.requiredShieldTravelMeters ?? null,
+    trackingAppliedDistanceMeters: exchangeState.latestFinePlan?.appliedDistance ?? null,
+    trackingAchievedDistanceMeters: exchangeState.latestFineTracking?.achievedDistance ?? null,
+    trackingReachable: exchangeState.latestFinePlan?.reachable ?? null,
+    interceptTargetSource: exchangeState.latestReachableInterceptTarget?.source ?? null,
+    interceptFallbackApplied: exchangeState.latestReachableInterceptTarget?.fallbackApplied === true,
+    predictedRequiredDistanceMeters: exchangeState.latestReachableInterceptTarget?.predictedRequiredDistanceMeters ?? null,
+    measuredRequiredDistanceMeters: exchangeState.latestReachableInterceptTarget?.measuredRequiredDistanceMeters ?? null,
+    interceptDriveReport: compactInterceptDriveTelemetry(exchangeState.latestInterceptDriveReport),
   });
-  if (!closestWhiffApproach
-    || record.combinedGapMeters < closestWhiffApproach.combinedGapMeters
-    || (record.combinedGapMeters === closestWhiffApproach.combinedGapMeters
-      && Math.abs(record.timeToContactSeconds ?? Infinity) < Math.abs(closestWhiffApproach.timeToContactSeconds ?? Infinity))) {
-    closestWhiffApproach = record;
+  if (!exchangeState.closestWhiffApproach
+    || record.combinedGapMeters < exchangeState.closestWhiffApproach.combinedGapMeters
+    || (record.combinedGapMeters === exchangeState.closestWhiffApproach.combinedGapMeters
+      && Math.abs(record.timeToContactSeconds ?? Infinity) < Math.abs(exchangeState.closestWhiffApproach.timeToContactSeconds ?? Infinity))) {
+    exchangeState.closestWhiffApproach = record;
   }
   if (probe.geometricContact === true && probe.contact !== true
-    && (!outsideActiveContact
-      || Math.abs(record.timeToContactSeconds ?? Infinity) < Math.abs(outsideActiveContact.timeToContactSeconds ?? Infinity))) {
-    outsideActiveContact = record;
+    && (!exchangeState.outsideActiveContact
+      || Math.abs(record.timeToContactSeconds ?? Infinity) < Math.abs(exchangeState.outsideActiveContact.timeToContactSeconds ?? Infinity))) {
+    exchangeState.outsideActiveContact = record;
   }
 }
 
 function resolveContact(snapshot, currentBlade, deltaSeconds) {
-  if (!previousBlade || !snapshot.action || firstContact) return;
-  latestContact = probeSweptSwordBucklerContact({
+  if (!previousBlade || !snapshot.action || exchangeState.firstContact) return;
+  exchangeState.latestContact = probeSweptSwordBucklerContact({
     previousBlade,
     currentBlade,
     bucklerSurface: buckler.getWorldParrySurface(),
     deltaSeconds,
     active: snapshot.phase === LONGSWORD_ATTACK_PHASES.ACTIVE,
   });
-  recordWhiffProbe(snapshot, latestContact);
-  if (!latestContact.contact) return;
+  recordWhiffProbe(snapshot, exchangeState.latestContact);
+  if (!exchangeState.latestContact.contact) return;
 
-  firstContact = latestContact;
+  exchangeState.firstContact = exchangeState.latestContact;
   const surfaceAtContact = buckler.getWorldParrySurface();
-  latestLiveSurfaceAtContact = surfaceAtContact;
-  latestPredictiveHandoff = predictivePresentation.active ? predictivePresentation.handoff() : null;
-  latestParryConfirmation = selectedMode === 'parry'
-    ? parryGate.confirm({ attackSnapshot: snapshot, contact: latestContact })
+  exchangeState.latestLiveSurfaceAtContact = surfaceAtContact;
+  exchangeState.latestPredictiveHandoff = predictivePresentation.active ? predictivePresentation.handoff() : null;
+  exchangeState.latestParryConfirmation = selectedMode === 'parry'
+    ? parryGate.confirm({ attackSnapshot: snapshot, contact: exchangeState.latestContact })
     : null;
-  const parryConfirmed = latestParryConfirmation?.accepted === true;
+  const parryConfirmed = exchangeState.latestParryConfirmation?.accepted === true;
   const guardIntentAgeMs = parryConfirmed ? TIMING_AGE_MS.parry : TIMING_AGE_MS.block;
 
-  frozenAttackerContactPose = captureRigPose(attacker.rig);
-  latestCombatResult = combat.resolveContact({
-    contact: latestContact,
+  exchangeState.frozenAttackerContactPose = captureRigPose(attacker.rig);
+  exchangeState.latestCombatResult = combat.resolveContact({
+    contact: exchangeState.latestContact,
     guardIntentAgeMs,
-    defenderPresentationOffsetSeconds: latestPredictiveHandoff?.accepted
-      ? latestPredictiveHandoff.defenderPresentationOffsetSeconds
+    defenderPresentationOffsetSeconds: exchangeState.latestPredictiveHandoff?.accepted
+      ? exchangeState.latestPredictiveHandoff.defenderPresentationOffsetSeconds
       : undefined,
   });
-  if (!latestCombatResult.accepted) {
-    frozenAttackerContactPose = null;
+  if (!exchangeState.latestCombatResult.accepted) {
+    exchangeState.frozenAttackerContactPose = null;
     return;
   }
   captureCanonicalAttackerOldB3Base(attackRuntime.snapshot.interruption);
   guardRuntime.sync(camera);
-  const outcome = latestCombatResult.resolution.outcome;
+  const outcome = exchangeState.latestCombatResult.resolution.outcome;
 
   if (outcome === 'parry' && parryConfirmed) {
-    latestCombatUpdate = combat.update(0, { camera });
+    exchangeState.latestCombatUpdate = combat.update(0, { camera });
     attackerSword.update();
-    latestGripConstraintReport = swordGripConstraint.start({
-      contact: latestContact,
+    exchangeState.latestGripConstraintReport = swordGripConstraint.start({
+      contact: exchangeState.latestContact,
       surfaceAtContact,
-      shieldLeadMotion: latestShieldLeadMotion,
+      shieldLeadMotion: exchangeState.latestShieldLeadMotion,
       attackDirection: selectedDirection,
       reactionIntentActiveAtImpact: false,
     });
-    latestLeadHandoff = Object.freeze({
+    exchangeState.latestLeadHandoff = Object.freeze({
       stage: COMMITTED_PARRY_CONTACT_GATE_STAGE,
-      accepted: latestGripConstraintReport.accepted === true,
-      shieldMovingAtContact: latestShieldLeadMotion?.moving === true,
+      accepted: exchangeState.latestGripConstraintReport.accepted === true,
+      shieldMovingAtContact: exchangeState.latestShieldLeadMotion?.moving === true,
       postContactHoldMs: 0,
       realSweptContact: true,
       shieldSwordGripStage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
@@ -1227,11 +1165,11 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
       shoulderPropagationActive: false,
       b3BodyClockStartedAtImpact: false,
       oldB3ReleaseStartPresentationMs: null,
-      attackerReactionDefinitionId: latestCombatResult.attackerReaction?.id || null,
+      attackerReactionDefinitionId: exchangeState.latestCombatResult.attackerReaction?.id || null,
       oldB3PlanBackwardPitchDegrees:
-        latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
-      oldB3ImpulsePeakMs: latestCombatResult.attackerReaction?.timeline?.impulsePeakMs ?? null,
-      oldB3InitialElapsedMs: latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
+        exchangeState.latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
+      oldB3ImpulsePeakMs: exchangeState.latestCombatResult.attackerReaction?.timeline?.impulsePeakMs ?? null,
+      oldB3InitialElapsedMs: exchangeState.latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
       reactionDefinitionSelectedAtImpact: true,
       fullOldB3ReactionIntentActiveAtImpact: false,
       contactConstraintOwnsUntilDeflectImpulse: true,
@@ -1246,38 +1184,38 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
       noPresetMotionCurve: true,
       authority: 'confirmed-impact-selects-old-b3-contact-holds-until-deflect-impulse',
     });
-    step3AContactTransfer = Object.freeze({
-      accepted: latestGripConstraintReport.accepted === true,
-      reason: latestGripConstraintReport.reason || null,
-      stage: latestGripConstraintReport.stage || LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
-      tangentAuthority: latestGripConstraintReport.plan?.tangentAuthority || null,
-      initialDeflectionDirection: latestGripConstraintReport.plan?.initialDeflectionDirection || null,
-      modifiedBone: latestGripConstraintReport.modifiedBone || null,
-      proximalAssistBone: latestGripConstraintReport.proximalAssistBone || null,
-      propagatedBones: latestGripConstraintReport.propagatedBones || null,
+    exchangeState.step3AContactTransfer = Object.freeze({
+      accepted: exchangeState.latestGripConstraintReport.accepted === true,
+      reason: exchangeState.latestGripConstraintReport.reason || null,
+      stage: exchangeState.latestGripConstraintReport.stage || LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
+      tangentAuthority: exchangeState.latestGripConstraintReport.plan?.tangentAuthority || null,
+      initialDeflectionDirection: exchangeState.latestGripConstraintReport.plan?.initialDeflectionDirection || null,
+      modifiedBone: exchangeState.latestGripConstraintReport.modifiedBone || null,
+      proximalAssistBone: exchangeState.latestGripConstraintReport.proximalAssistBone || null,
+      propagatedBones: exchangeState.latestGripConstraintReport.propagatedBones || null,
       b3BodyClockStartedAtImpact: false,
-      attackerReactionDefinitionId: latestCombatResult.attackerReaction?.id || null,
+      attackerReactionDefinitionId: exchangeState.latestCombatResult.attackerReaction?.id || null,
       oldB3PlanBackwardPitchDegrees:
-        latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
-      oldB3ImpulsePeakMs: latestCombatResult.attackerReaction?.timeline?.impulsePeakMs ?? null,
-      oldB3InitialElapsedMs: latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
+        exchangeState.latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
+      oldB3ImpulsePeakMs: exchangeState.latestCombatResult.attackerReaction?.timeline?.impulsePeakMs ?? null,
+      oldB3InitialElapsedMs: exchangeState.latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
       reactionDefinitionSelectedAtImpact: true,
       fullOldB3ReactionIntentActiveAtImpact: false,
       contactConstraintOwnsUntilDeflectImpulse: true,
       weaponArmContactConstrained: true,
       contactBasePoseAuthority: 'authoritative-impact-rig-snapshot',
       noPresetMotionCurve: true,
-      authority: latestLeadHandoff.authority,
+      authority: exchangeState.latestLeadHandoff.authority,
     });
     fineTrackingRuntime.reset();
     residualBodyReachRuntime.reset();
     residualStanceReachRuntime.reset();
-    status.textContent = step3AContactTransfer.accepted
+    status.textContent = exchangeState.step3AContactTransfer.accepted
       ? `STEP 3A ACTIVE · ParryImpact selected OLD B3 · live shield owns contact until DEFLECT_IMPULSE · then 28ms bridge → canonical OLD B3 from 0ms`
-      : `STEP 3A FAIL · ${step3AContactTransfer.reason || 'live grip contact constraint rejected'}`;
-    status.className = step3AContactTransfer.accepted ? 'good' : 'bad';
+      : `STEP 3A FAIL · ${exchangeState.step3AContactTransfer.reason || 'live grip contact constraint rejected'}`;
+    status.className = exchangeState.step3AContactTransfer.accepted ? 'good' : 'bad';
   } else if (selectedMode === 'parry') {
-    status.textContent = `PARRY FAILED → BLOCK · ${latestParryConfirmation?.reason || 'parry gate was not confirmed'}`;
+    status.textContent = `PARRY FAILED → BLOCK · ${exchangeState.latestParryConfirmation?.reason || 'parry gate was not confirmed'}`;
     status.className = 'warn';
   }
 }
@@ -1287,14 +1225,14 @@ function updateParryCue(snapshot = attackRuntime.snapshot) {
     snapshot,
     ready,
     selectedMode,
-    step3AContactTransfer,
-    latestGripConstraintReport,
+    step3AContactTransfer: exchangeState.step3AContactTransfer,
+    latestGripConstraintReport: exchangeState.latestGripConstraintReport,
     selectedDirection,
-    latestParryConfirmation,
-    latestParryWhiff,
+    latestParryConfirmation: exchangeState.latestParryConfirmation,
+    latestParryWhiff: exchangeState.latestParryWhiff,
     parryAttempt: parryGate.attempt,
-    firstContact,
-    latestParryOpportunity,
+    firstContact: exchangeState.firstContact,
+    latestParryOpportunity: exchangeState.latestParryOpportunity,
     parryReviewActive: isParryPreContactReviewActive(snapshot),
     parryReviewRate: PARRY_REVIEW_RATE,
     debugMode: DEBUG_MODE,
@@ -1305,23 +1243,23 @@ function updateHud(snapshot, combatSnapshot) {
   return labUi.updateHud({
     snapshot,
     combatSnapshot,
-    latestCombatResult,
-    latestParryWhiff,
-    latestParryConfirmation,
-    latestParryInput,
+    latestCombatResult: exchangeState.latestCombatResult,
+    latestParryWhiff: exchangeState.latestParryWhiff,
+    latestParryConfirmation: exchangeState.latestParryConfirmation,
+    latestParryInput: exchangeState.latestParryInput,
     selectedMode,
     requestedOutcome: requestedOutcome(),
     parryReviewActive: isParryPreContactReviewActive(snapshot),
     parryReviewRate: PARRY_REVIEW_RATE,
-    parryPromptHeld: Boolean(parryPromptHold),
-    firstContact,
-    latestFinePlan,
-    latestReachableInterceptTarget,
-    latestGripConstraintReport,
-    step3AContactTransfer,
+    parryPromptHeld: Boolean(exchangeState.parryPromptHold),
+    firstContact: exchangeState.firstContact,
+    latestFinePlan: exchangeState.latestFinePlan,
+    latestReachableInterceptTarget: exchangeState.latestReachableInterceptTarget,
+    latestGripConstraintReport: exchangeState.latestGripConstraintReport,
+    step3AContactTransfer: exchangeState.step3AContactTransfer,
     defenderReleaseGate: defenderDeflectReleaseGate(),
     step3AOwnsLiveContact: step3AOwnsLiveContact(),
-    directOldB3Diagnostic,
+    directOldB3Diagnostic: exchangeState.directOldB3Diagnostic,
     debugMode: DEBUG_MODE,
   });
 }
@@ -1335,36 +1273,36 @@ function buildReport(combatSnapshot = combat.snapshot) {
       + (Number(recoilPose.spinePitchDegrees) || 0)
       + (Number(recoilPose.hipsPitchDegrees) || 0)
     : null;
-  const attackerReaction = latestCombatResult?.attackerReaction || null;
+  const attackerReaction = exchangeState.latestCombatResult?.attackerReaction || null;
   const report = {
     stage: LAB_STAGE,
     recoilStage: RECOIL_STAGE,
     pass: ready,
     selectedDirection,
     selectedMode,
-    outcome: latestCombatResult?.resolution?.outcome || null,
+    outcome: exchangeState.latestCombatResult?.resolution?.outcome || null,
     parryGate: {
       profile: parryGate.profile,
-      opportunity: compactParryGateAttempt(latestParryOpportunity),
-      input: compactParryGateAttempt(latestParryInput),
-      confirmation: compactParryGateAttempt(latestParryConfirmation),
+      opportunity: compactParryGateAttempt(exchangeState.latestParryOpportunity),
+      input: compactParryGateAttempt(exchangeState.latestParryInput),
+      confirmation: compactParryGateAttempt(exchangeState.latestParryConfirmation),
       manualInputRequired: true,
       commitmentSource: 'attack.action.runtime.movementStartSeconds',
       successAuthority: 'eligible real swept Sword × Shield contact during attack_active',
     },
-    contact: firstContact,
-    contactGeometryDiagnostic: describeContactGeometry(firstContact),
-    predictiveAnalysis: compactPredictiveAnalysis(latestPredictiveAnalysis),
-    predictiveHandoff: latestPredictiveHandoff,
-    defenderPresentationContinuity: latestCombatResult?.defenderPayload
+    contact: exchangeState.firstContact,
+    contactGeometryDiagnostic: describeContactGeometry(exchangeState.firstContact),
+    predictiveAnalysis: compactPredictiveAnalysis(exchangeState.latestPredictiveAnalysis),
+    predictiveHandoff: exchangeState.latestPredictiveHandoff,
+    defenderPresentationContinuity: exchangeState.latestCombatResult?.defenderPayload
       ? Object.freeze({
-          source: latestCombatResult.defenderPayload.presentationContinuitySource || null,
-          predictiveSourceTimeSeconds: latestPredictiveHandoff?.defenderPresentationOffsetSeconds ?? null,
-          authoritativeSourceTimeSeconds: latestCombatResult.defenderPayload.presentationOffsetSeconds ?? null,
+          source: exchangeState.latestCombatResult.defenderPayload.presentationContinuitySource || null,
+          predictiveSourceTimeSeconds: exchangeState.latestPredictiveHandoff?.defenderPresentationOffsetSeconds ?? null,
+          authoritativeSourceTimeSeconds: exchangeState.latestCombatResult.defenderPayload.presentationOffsetSeconds ?? null,
         })
       : null,
     defenderDeflectReleaseGate: defenderDeflectReleaseGate(),
-    parryImpactEvent: combatSnapshot.parryImpactEvent || latestCombatResult?.parryImpactEvent || null,
+    parryImpactEvent: combatSnapshot.parryImpactEvent || exchangeState.latestCombatResult?.parryImpactEvent || null,
     parryReactionClock: combatSnapshot.parryReactionClock || null,
     recoilPhaseClock: combatSnapshot.attackerRecoil?.phaseClock || null,
     attackerParriedReactionDefinition: attackerReaction
@@ -1375,110 +1313,110 @@ function buildReport(combatSnapshot = combat.snapshot) {
           initialElapsedMs: attackerReaction.initialElapsedMs,
           planBackwardPitchDegrees: attackerReaction.silhouette?.backwardPitchDegrees ?? null,
           appliedBodyChainPitchDegrees:
-            step3AContactTransfer?.oldB3AppliedBodyChainPitchAtReleaseDegrees
+            exchangeState.step3AContactTransfer?.oldB3AppliedBodyChainPitchAtReleaseDegrees
               ?? appliedBodyChainPitchDegrees,
           impulsePeakMs: attackerReaction.timeline?.impulsePeakMs ?? null,
           separateBalanceBreakRuntime: attackerReaction.channelPolicy?.separateBalanceBreakRuntime,
           authority: attackerReaction.authority,
         })
       : null,
-    visibleOldB3Peak,
+    visibleOldB3Peak: exchangeState.visibleOldB3Peak,
     oldB3Continuation: Object.freeze({
-      handoffPublished: step3AContactTransfer?.handoffPublished === true,
-      handoffConsumed: step3AContactTransfer?.handoffConsumedByOldB3 === true,
+      handoffPublished: exchangeState.step3AContactTransfer?.handoffPublished === true,
+      handoffConsumed: exchangeState.step3AContactTransfer?.handoffConsumedByOldB3 === true,
       releaseStartPresentationMs:
-        step3AContactTransfer?.oldB3ReleaseStartPresentationMs ?? null,
-      continuityBridgeMs: step3AContactTransfer?.continuityBridgeMs ?? null,
+        exchangeState.step3AContactTransfer?.oldB3ReleaseStartPresentationMs ?? null,
+      continuityBridgeMs: exchangeState.step3AContactTransfer?.continuityBridgeMs ?? null,
       visibleOldB3StartsAtDeflectImpulse:
-        step3AContactTransfer?.visibleOldB3StartsAtDeflectImpulse === true,
+        exchangeState.step3AContactTransfer?.visibleOldB3StartsAtDeflectImpulse === true,
       continuationStartedAtPresentationMs:
-        step3AContactTransfer?.continuationStartedAtPresentationMs ?? null,
+        exchangeState.step3AContactTransfer?.continuationStartedAtPresentationMs ?? null,
       continuationStartedAtImpactClockMs:
-        step3AContactTransfer?.continuationStartedAtImpactClockMs ?? null,
-      bodyRestartedAtRelease: step3AContactTransfer?.bodyRestartedAtRelease ?? false,
+        exchangeState.step3AContactTransfer?.continuationStartedAtImpactClockMs ?? null,
+      bodyRestartedAtRelease: exchangeState.step3AContactTransfer?.bodyRestartedAtRelease ?? false,
       planIdentityPreserved:
-        step3AContactTransfer?.continuationPlanIdentityPreserved ?? null,
+        exchangeState.step3AContactTransfer?.continuationPlanIdentityPreserved ?? null,
       presentationElapsedPreserved:
-        step3AContactTransfer?.continuationElapsedPreserved ?? null,
+        exchangeState.step3AContactTransfer?.continuationElapsedPreserved ?? null,
       authority: 'deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero',
     }),
     contactPoseLifecycle: Object.freeze({
-      capturedAtAuthoritativeImpact: Boolean(frozenAttackerContactPose),
-      restoredBeforeEveryBodyOverlay: Boolean(frozenAttackerContactPose && combatSnapshot.activeExchange),
+      capturedAtAuthoritativeImpact: Boolean(exchangeState.frozenAttackerContactPose),
+      restoredBeforeEveryBodyOverlay: Boolean(exchangeState.frozenAttackerContactPose && combatSnapshot.activeExchange),
       attackerReactionComplete: combatSnapshot.attackerReactionComplete === true,
       interruptionHeldForWeaponContact: combatSnapshot.attackerReactionComplete === true
         && step3AOwnsLiveContact(),
       authority: 'authoritative-impact-rig-snapshot-plus-independent-contact-release',
     }),
     predictiveShieldLead: {
-      active: Boolean(latestPredictiveReport?.active),
-      progress: latestPredictiveReport?.progress ?? null,
-      motion: latestShieldLeadMotion,
-      interceptTarget: compactReachableInterceptTarget(latestReachableInterceptTarget),
-      interceptDrive: compactInterceptDriveTelemetry(latestInterceptDriveReport),
+      active: Boolean(exchangeState.latestPredictiveReport?.active),
+      progress: exchangeState.latestPredictiveReport?.progress ?? null,
+      motion: exchangeState.latestShieldLeadMotion,
+      interceptTarget: compactReachableInterceptTarget(exchangeState.latestReachableInterceptTarget),
+      interceptDrive: compactInterceptDriveTelemetry(exchangeState.latestInterceptDriveReport),
       interceptDriveTrace: Object.freeze({
-        frameCount: interceptDriveTrace.length,
-        fallbackFrames: interceptDriveTrace.filter((frame) => frame.fallbackApplied).length,
-        measuredReachableFrames: interceptDriveTrace.filter((frame) => frame.measuredReachable).length,
-        acquisitionFrames: interceptDriveTrace.filter((frame) => frame.measuredInsideAcquisitionBand).length,
-        recentFrames: Object.freeze(interceptDriveTrace.slice(-RECENT_COMPACT_TRACE_FRAMES)),
+        frameCount: exchangeState.interceptDriveTrace.length,
+        fallbackFrames: exchangeState.interceptDriveTrace.filter((frame) => frame.fallbackApplied).length,
+        measuredReachableFrames: exchangeState.interceptDriveTrace.filter((frame) => frame.measuredReachable).length,
+        acquisitionFrames: exchangeState.interceptDriveTrace.filter((frame) => frame.measuredInsideAcquisitionBand).length,
+        recentFrames: Object.freeze(exchangeState.interceptDriveTrace.slice(-RECENT_COMPACT_TRACE_FRAMES)),
         telemetryDetail: 'compact-scalar-frames-only',
       }),
     },
-    step3AContactTransfer,
+    step3AContactTransfer: exchangeState.step3AContactTransfer,
     inspectionCamera: freeCamera.snapshot(),
-    liveShieldSwordGripContactConstraint: compactLiveContactConstraint(latestGripConstraintReport),
-    latestInputSignal,
-    parryWhiff: latestParryWhiff,
+    liveShieldSwordGripContactConstraint: compactLiveContactConstraint(exchangeState.latestGripConstraintReport),
+    latestInputSignal: exchangeState.latestInputSignal,
+    parryWhiff: exchangeState.latestParryWhiff,
     whiffTelemetry: Object.freeze({
-      probeFrames: whiffProbeFrames,
-      closestApproachRecord: latestParryWhiff ? closestWhiffApproach : null,
-      outsideActiveContact: latestParryWhiff ? outsideActiveContact : null,
+      probeFrames: exchangeState.whiffProbeFrames,
+      closestApproachRecord: exchangeState.latestParryWhiff ? exchangeState.closestWhiffApproach : null,
+      outsideActiveContact: exchangeState.latestParryWhiff ? exchangeState.outsideActiveContact : null,
       authority: 'presentation-diagnostic-only-no-combat-authority',
     }),
     postCouplingStage: handoff?.stage || null,
     postCouplingReason: handoff?.reason || null,
     recoil: recoilSample,
-    directOldB3Diagnostic,
+    directOldB3Diagnostic: exchangeState.directOldB3Diagnostic,
     debugLowStance: Object.freeze({
       enabled: DEBUG_MODE,
       profile: DEBUG_MODE ? Object.freeze({ ...debugStanceProfile }) : null,
       latestThreatSelection: compactThreatSelection(
-        latestInterceptDriveReport?.residualStanceReach?.threatSelection,
+        exchangeState.latestInterceptDriveReport?.residualStanceReach?.threatSelection,
       ),
       authority: 'debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority',
     }),
     invariants: {
       singleParryOnlyInThisLab: true,
       noAutomaticTimingTrigger: true,
-      authoredCommitmentMarkerRequired: latestParryInput?.gates?.attackCommitted ?? null,
-      ttcWindowRequired: latestParryInput?.gates?.timingInsideWindow ?? null,
-      shieldTrackingClampedTo18cm: latestParryInput?.gates?.trackingClamped ?? null,
-      geometryGuidesButCannotVetoInput: latestParryInput?.gates?.geometryGuidanceCanVetoInput === false,
-      measuredSweepFallbackIsGuidanceOnly: latestReachableInterceptTarget?.authority === 'guidance-only-real-swept-contact-remains-success-authority' || !latestReachableInterceptTarget,
-      realSweptContactRequired: latestParryConfirmation?.gates?.realSweptContact ?? null,
-      step3AOnlyAfterConfirmedRealContact: step3AContactTransfer
-        ? latestParryConfirmation?.accepted === true && firstContact?.geometricContact === true
+      authoredCommitmentMarkerRequired: exchangeState.latestParryInput?.gates?.attackCommitted ?? null,
+      ttcWindowRequired: exchangeState.latestParryInput?.gates?.timingInsideWindow ?? null,
+      shieldTrackingClampedTo18cm: exchangeState.latestParryInput?.gates?.trackingClamped ?? null,
+      geometryGuidesButCannotVetoInput: exchangeState.latestParryInput?.gates?.geometryGuidanceCanVetoInput === false,
+      measuredSweepFallbackIsGuidanceOnly: exchangeState.latestReachableInterceptTarget?.authority === 'guidance-only-real-swept-contact-remains-success-authority' || !exchangeState.latestReachableInterceptTarget,
+      realSweptContactRequired: exchangeState.latestParryConfirmation?.gates?.realSweptContact ?? null,
+      step3AOnlyAfterConfirmedRealContact: exchangeState.step3AContactTransfer
+        ? exchangeState.latestParryConfirmation?.accepted === true && exchangeState.firstContact?.geometricContact === true
         : true,
-      initialMeasuredShieldMotionIsDiagnosticOnly: latestGripConstraintReport?.plan?.tangentAuthority != null,
-      liveShieldSurfaceSampledAfterGuardUpdate: latestGripConstraintReport?.mappedSurfaceTarget?.authority === 'current-world-shield-surface',
-      noPresetMotionCurve: step3AContactTransfer?.noPresetMotionCurve ?? true,
-      swordRemainsRigidlyMountedToHand: latestGripConstraintReport?.rigidSwordGrip ?? null,
+      initialMeasuredShieldMotionIsDiagnosticOnly: exchangeState.latestGripConstraintReport?.plan?.tangentAuthority != null,
+      liveShieldSurfaceSampledAfterGuardUpdate: exchangeState.latestGripConstraintReport?.mappedSurfaceTarget?.authority === 'current-world-shield-surface',
+      noPresetMotionCurve: exchangeState.step3AContactTransfer?.noPresetMotionCurve ?? true,
+      swordRemainsRigidlyMountedToHand: exchangeState.latestGripConstraintReport?.rigidSwordGrip ?? null,
       boundedForearmThenWristForTopRight: ['top', 'right'].includes(selectedDirection)
-        ? latestGripConstraintReport?.assistBone === 'lowerarm.r'
+        ? exchangeState.latestGripConstraintReport?.assistBone === 'lowerarm.r'
         : true,
       boundedProximalArmCorrectionBeforeForearmAndWrist: ['top', 'right'].includes(selectedDirection)
-        ? latestGripConstraintReport?.proximalAssistBone === 'upperarm.r'
-          && latestGripConstraintReport?.proximalArmCorrectionActive === true
+        ? exchangeState.latestGripConstraintReport?.proximalAssistBone === 'upperarm.r'
+          && exchangeState.latestGripConstraintReport?.proximalArmCorrectionActive === true
         : true,
-      handAndSocketFollowWristHierarchy: latestGripConstraintReport?.propagatedBones?.join(',') === 'hand.r,handslot.r',
-      elbowPropagationMatchesDirectionPolicy: latestGripConstraintReport?.elbowPropagationActive === ['top', 'right'].includes(selectedDirection) || !step3AContactTransfer,
-      shoulderPropagationDeferred: latestGripConstraintReport?.shoulderPropagationActive === false || !step3AContactTransfer,
-      liveContactInspectionPassed: latestGripConstraintReport?.holding
-        ? latestGripConstraintReport.inspectionPassed === true
+      handAndSocketFollowWristHierarchy: exchangeState.latestGripConstraintReport?.propagatedBones?.join(',') === 'hand.r,handslot.r',
+      elbowPropagationMatchesDirectionPolicy: exchangeState.latestGripConstraintReport?.elbowPropagationActive === ['top', 'right'].includes(selectedDirection) || !exchangeState.step3AContactTransfer,
+      shoulderPropagationDeferred: exchangeState.latestGripConstraintReport?.shoulderPropagationActive === false || !exchangeState.step3AContactTransfer,
+      liveContactInspectionPassed: exchangeState.latestGripConstraintReport?.holding
+        ? exchangeState.latestGripConstraintReport.inspectionPassed === true
         : null,
       attackLineClearanceRequired: true,
-      attackLineClearancePassed: latestGripConstraintReport?.attackLineClearance?.pass ?? null,
+      attackLineClearancePassed: exchangeState.latestGripConstraintReport?.attackLineClearance?.pass ?? null,
       freeInspectionCameraDoesNotMutateCombat: true,
       parryImpactSelectsReactionWhileDefenderClockRuns: combatSnapshot.parryReactionClock
         ? combatSnapshot.parryReactionClock.defenderReactionStarted === true
@@ -1495,7 +1433,7 @@ function buildReport(combatSnapshot = combat.snapshot) {
       contactOwnsFinalPoseBeforeVisibleOldB3: step3AOwnsLiveContact()
         ? combatSnapshot.attackerRecoil?.appliedChannels?.torso === false
           && combatSnapshot.attackerRecoil?.appliedChannels?.weaponArm === false
-          && latestGripConstraintReport?.reactionIntentAppliedBeforeConstraint === false
+          && exchangeState.latestGripConstraintReport?.reactionIntentAppliedBeforeConstraint === false
         : true,
       b3PresentationParkedAtOriginDuringLiveContact: step3AOwnsLiveContact()
         ? combatSnapshot.attackerRecoil?.phaseClock?.phaseLatch
@@ -1504,42 +1442,42 @@ function buildReport(combatSnapshot = combat.snapshot) {
           && combatSnapshot.attackerRecoil?.phaseClock?.elapsedMs === 0
         : true,
       weaponArmRemainsContactConstrainedDuringStep3A: step3AOwnsLiveContact()
-        ? step3AContactTransfer?.weaponArmContactConstrained === true
+        ? exchangeState.step3AContactTransfer?.weaponArmContactConstrained === true
         : true,
-      frozenContactPoseRestoredBeforeEveryBodyOverlay: step3AContactTransfer
-        ? Boolean(frozenAttackerContactPose)
+      frozenContactPoseRestoredBeforeEveryBodyOverlay: exchangeState.step3AContactTransfer
+        ? Boolean(exchangeState.frozenAttackerContactPose)
         : true,
-      bodyCompletionCannotReleaseContactOwnedPose: step3AContactTransfer
-        ? step3AContactTransfer.releasedToOldB3 === true
+      bodyCompletionCannotReleaseContactOwnedPose: exchangeState.step3AContactTransfer
+        ? exchangeState.step3AContactTransfer.releasedToOldB3 === true
           || combatSnapshot.attackerReactionComplete !== true
           || combatSnapshot.attack?.interrupted === true
         : true,
-      oldB3WeaponArmReleasedAfterInspectionOrConfirmedFallback: step3AContactTransfer?.releasedToOldB3
-        ? latestGripConstraintReport?.inspectionPassed === true
-          || step3AContactTransfer?.releaseHandoff?.couplingReport?.inspectionFallbackUsed === true
+      oldB3WeaponArmReleasedAfterInspectionOrConfirmedFallback: exchangeState.step3AContactTransfer?.releasedToOldB3
+        ? exchangeState.latestGripConstraintReport?.inspectionPassed === true
+          || exchangeState.step3AContactTransfer?.releaseHandoff?.couplingReport?.inspectionFallbackUsed === true
         : true,
-      defenderParryPresentationNeverRewindsAtContact: latestPredictiveHandoff?.accepted && latestCombatResult?.accepted
-        ? latestCombatResult.defenderPayload?.presentationOffsetSeconds + 1e-4
-          >= latestPredictiveHandoff.defenderPresentationOffsetSeconds
+      defenderParryPresentationNeverRewindsAtContact: exchangeState.latestPredictiveHandoff?.accepted && exchangeState.latestCombatResult?.accepted
+        ? exchangeState.latestCombatResult.defenderPayload?.presentationOffsetSeconds + 1e-4
+          >= exchangeState.latestPredictiveHandoff.defenderPresentationOffsetSeconds
         : true,
-      oldB3WeaponArmReleasedOnlyAfterDefenderDeflectMarker: step3AContactTransfer?.releasedToOldB3
-        ? step3AContactTransfer.defenderReleaseGate?.passed === true
+      oldB3WeaponArmReleasedOnlyAfterDefenderDeflectMarker: exchangeState.step3AContactTransfer?.releasedToOldB3
+        ? exchangeState.step3AContactTransfer.defenderReleaseGate?.passed === true
         : true,
-      deflectImpulseStartsOldB3FromZeroWithoutBodyRestart: step3AContactTransfer?.handoffConsumedByOldB3
-        ? step3AContactTransfer.bodyRestartedAtRelease === false
-          && step3AContactTransfer.continuationPlanIdentityPreserved === true
-          && step3AContactTransfer.continuationElapsedPreserved === true
-          && step3AContactTransfer.continuationStartedAtPresentationMs === 0
-          && step3AContactTransfer.continuityBridgeMs === 28
-          && step3AContactTransfer.defenderReleaseGate?.passed === true
+      deflectImpulseStartsOldB3FromZeroWithoutBodyRestart: exchangeState.step3AContactTransfer?.handoffConsumedByOldB3
+        ? exchangeState.step3AContactTransfer.bodyRestartedAtRelease === false
+          && exchangeState.step3AContactTransfer.continuationPlanIdentityPreserved === true
+          && exchangeState.step3AContactTransfer.continuationElapsedPreserved === true
+          && exchangeState.step3AContactTransfer.continuationStartedAtPresentationMs === 0
+          && exchangeState.step3AContactTransfer.continuityBridgeMs === 28
+          && exchangeState.step3AContactTransfer.defenderReleaseGate?.passed === true
         : true,
-      visibleOldB3ReachedHistoricalBackwardPeak: step3AContactTransfer?.handoffConsumedByOldB3
-        ? visibleOldB3Peak?.readable === true
+      visibleOldB3ReachedHistoricalBackwardPeak: exchangeState.step3AContactTransfer?.handoffConsumedByOldB3
+        ? exchangeState.visibleOldB3Peak?.readable === true
         : true,
-      contactQaCannotPermanentlySuppressConfirmedParryOldB3: step3AContactTransfer?.releasedToOldB3
-        ? latestParryConfirmation?.accepted === true
+      contactQaCannotPermanentlySuppressConfirmedParryOldB3: exchangeState.step3AContactTransfer?.releasedToOldB3
+        ? exchangeState.latestParryConfirmation?.accepted === true
         : true,
-      compactTelemetryDoesNotRetainSolverGraphs: interceptDriveTrace.every(
+      compactTelemetryDoesNotRetainSolverGraphs: exchangeState.interceptDriveTrace.every(
         (frame) => frame?.telemetryDetail === 'compact-scalar-frame',
       ),
       blockPathPreserved: true,
@@ -1549,8 +1487,8 @@ function buildReport(combatSnapshot = combat.snapshot) {
   const publication = serializeVerificationReport({
     report,
     maxCharacters: MAX_REPORT_DOM_CHARACTERS,
-    traceFrames: interceptDriveTrace.length,
-    recentTraceFrames: Math.min(interceptDriveTrace.length, RECENT_COMPACT_TRACE_FRAMES),
+    traceFrames: exchangeState.interceptDriveTrace.length,
+    recentTraceFrames: Math.min(exchangeState.interceptDriveTrace.length, RECENT_COMPACT_TRACE_FRAMES),
   });
   reportNode.textContent = publication.displayText;
   document.documentElement.dataset.g43b5r281 = report.pass ? 'pass' : 'fail';
@@ -1573,7 +1511,7 @@ async function main() {
   defenderSword = createDebugSword(THREE);
   mountDebugSword(defender, defenderSword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
   enterGuard();
-  previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
+  exchangeState.previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
   ready = true;
   status.textContent = `${LAB_STAGE} READY · start an attack, then press PARRY NOW after commitment and before contact`;
   status.className = 'good';
@@ -1605,11 +1543,11 @@ function frame(timestamp) {
   const preUpdateSnapshot = attackRuntime.snapshot;
   const parryReviewActive = isParryPreContactReviewActive(preUpdateSnapshot);
   const holdingParryPrompt = parryReviewActive
-    && parryPromptHold?.sequence === preUpdateSnapshot.sequence
+    && exchangeState.parryPromptHold?.sequence === preUpdateSnapshot.sequence
     && !parryGate.attempt;
   if (holdingParryPrompt) {
-    parryPromptHold.remainingRealMs -= rawDeltaMs;
-    if (parryPromptHold.remainingRealMs <= 0) parryPromptHold = null;
+    exchangeState.parryPromptHold.remainingRealMs -= rawDeltaMs;
+    if (exchangeState.parryPromptHold.remainingRealMs <= 0) exchangeState.parryPromptHold = null;
   }
   const reviewRate = parryReviewActive ? PARRY_REVIEW_RATE : 1;
   const deltaMs = holdingParryPrompt ? 0 : rawDeltaMs * reviewRate;
@@ -1619,20 +1557,20 @@ function frame(timestamp) {
   if (ready) {
     const snapshot = attackRuntime.update(deltaMs);
 
-    if (parryGate.armed && !snapshot.action && !firstContact && !latestParryWhiff) {
-      latestParryWhiff = buildParryWhiffDiagnostic({
+    if (parryGate.armed && !snapshot.action && !exchangeState.firstContact && !exchangeState.latestParryWhiff) {
+      exchangeState.latestParryWhiff = buildParryWhiffDiagnostic({
         sequence: parryGate.attempt?.sequence ?? null,
         direction: selectedDirection,
-        probeFrames: whiffProbeFrames,
-        closestApproachRecord: closestWhiffApproach,
-        outsideActiveContact,
-        predictiveAnalysis: latestPredictiveAnalysis,
-        finePlan: latestFinePlan,
-        fineTracking: latestFineTracking,
-        shieldLeadMotion: latestShieldLeadMotion,
-        parryInput: latestParryInput,
+        probeFrames: exchangeState.whiffProbeFrames,
+        closestApproachRecord: exchangeState.closestWhiffApproach,
+        outsideActiveContact: exchangeState.outsideActiveContact,
+        predictiveAnalysis: exchangeState.latestPredictiveAnalysis,
+        finePlan: exchangeState.latestFinePlan,
+        fineTracking: exchangeState.latestFineTracking,
+        shieldLeadMotion: exchangeState.latestShieldLeadMotion,
+        parryInput: exchangeState.latestParryInput,
       });
-      const whiff = formatWhiffDiagnostic(latestParryWhiff, { debugMode: DEBUG_MODE });
+      const whiff = formatWhiffDiagnostic(exchangeState.latestParryWhiff, { debugMode: DEBUG_MODE });
       status.textContent = `PARRY WHIFF · ${whiff.label} · ${whiff.detail}`;
       status.className = 'bad';
     }
@@ -1640,7 +1578,7 @@ function frame(timestamp) {
     let step3ALiveConstraintNeedsUpdate = false;
     if (combat.active) {
       if (step3AOwnsLiveContact()) {
-        latestCombatUpdate = combat.update(deltaSeconds, {
+        exchangeState.latestCombatUpdate = combat.update(deltaSeconds, {
           camera,
           attackerRecoilChannels: TWO_ACTOR_PARRY_REACTION_CHANNELS.LIVE_CONTACT_HOLD,
           attackerRecoilPhaseLatch: TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT,
@@ -1648,25 +1586,25 @@ function frame(timestamp) {
         });
         step3ALiveConstraintNeedsUpdate = swordGripConstraint.active;
       } else {
-        latestCombatUpdate = combat.update(deltaSeconds, { camera });
-        const handoffConsumed = latestCombatUpdate?.recoilUpdate?.postCouplingHandoffApplied === true;
+        exchangeState.latestCombatUpdate = combat.update(deltaSeconds, { camera });
+        const handoffConsumed = exchangeState.latestCombatUpdate?.recoilUpdate?.postCouplingHandoffApplied === true;
         if (
           handoffConsumed
-          && step3AContactTransfer?.releasedToOldB3 === true
-          && step3AContactTransfer.handoffConsumedByOldB3 !== true
+          && exchangeState.step3AContactTransfer?.releasedToOldB3 === true
+          && exchangeState.step3AContactTransfer.handoffConsumedByOldB3 !== true
         ) {
-          const phaseClock = latestCombatUpdate.recoilUpdate.phaseClock
-            || latestCombatUpdate.recoilUpdate.snapshot?.phaseClock
+          const phaseClock = exchangeState.latestCombatUpdate.recoilUpdate.phaseClock
+            || exchangeState.latestCombatUpdate.recoilUpdate.snapshot?.phaseClock
             || null;
-          const appliedHandoff = latestCombatUpdate.recoilUpdate.postCouplingHandoff
-            || latestCombatUpdate.recoilUpdate.snapshot?.postCouplingHandoff
+          const appliedHandoff = exchangeState.latestCombatUpdate.recoilUpdate.postCouplingHandoff
+            || exchangeState.latestCombatUpdate.recoilUpdate.snapshot?.postCouplingHandoff
             || null;
-          step3AContactTransfer = Object.freeze({
-            ...step3AContactTransfer,
+          exchangeState.step3AContactTransfer = Object.freeze({
+            ...exchangeState.step3AContactTransfer,
             handoffConsumedByOldB3: true,
             continuationStartedAtPresentationMs: phaseClock?.previousElapsedMs ?? null,
             continuationStartedAtImpactClockMs:
-              latestCombatUpdate.parryReactionClock?.elapsedMs ?? null,
+              exchangeState.latestCombatUpdate.parryReactionClock?.elapsedMs ?? null,
             bodyRestartedAtRelease: false,
             continuationPlanIdentityPreserved:
               appliedHandoff?.planIdentityPreserved === true,
@@ -1675,11 +1613,11 @@ function frame(timestamp) {
             visibleOldB3StartedAtDeflectImpulse: true,
             authority: 'deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero',
           });
-          status.textContent = `OLD B3 STARTED · ${selectedDirection.toUpperCase()} DEFLECT_IMPULSE released contact · ${step3AReleaseBlend?.durationMs ?? 28}ms continuity bridge · canonical OLD B3 from ${phaseClock?.previousElapsedMs?.toFixed(0) ?? '0'}ms`;
+          status.textContent = `OLD B3 STARTED · ${selectedDirection.toUpperCase()} DEFLECT_IMPULSE released contact · ${exchangeState.step3AReleaseBlend?.durationMs ?? 28}ms continuity bridge · canonical OLD B3 from ${phaseClock?.previousElapsedMs?.toFixed(0) ?? '0'}ms`;
           status.className = 'good';
         }
-        if (step3AReleaseBlend) step3AReleaseBlend.elapsedMs += deltaMs;
-        if (latestCombatUpdate?.justCompleted && !attackerRecovery) beginAttackRecovery(selectedDirection);
+        if (exchangeState.step3AReleaseBlend) exchangeState.step3AReleaseBlend.elapsedMs += deltaMs;
+        if (exchangeState.latestCombatUpdate?.justCompleted && !attackerRecovery) beginAttackRecovery(selectedDirection);
       }
     } else {
       sampleAttackerBase(snapshot, deltaMs);
@@ -1688,35 +1626,35 @@ function frame(timestamp) {
     guardRuntime.update(deltaMs, camera);
     updateDefenderDeflectReleaseGate();
     if (step3ALiveConstraintNeedsUpdate) {
-      const wasHolding = latestGripConstraintReport?.holding === true;
-      latestGripConstraintReport = swordGripConstraint.update(deltaSeconds, {
+      const wasHolding = exchangeState.latestGripConstraintReport?.holding === true;
+      exchangeState.latestGripConstraintReport = swordGripConstraint.update(deltaSeconds, {
         surfaceAtFrame: buckler.getWorldParrySurface(),
         reactionIntentAppliedBeforeConstraint: false,
       });
-      updateLiveContactMarkers(latestGripConstraintReport);
-      if (latestGripConstraintReport?.holding) {
-        const passed = latestGripConstraintReport.inspectionPassed === true;
+      updateLiveContactMarkers(exchangeState.latestGripConstraintReport);
+      if (exchangeState.latestGripConstraintReport?.holding) {
+        const passed = exchangeState.latestGripConstraintReport.inspectionPassed === true;
         const release = step3AOwnsLiveContact() ? releaseLiveContactToOldB3() : null;
         if (!wasHolding || release?.accepted) {
           const waitingForDefenderImpulse = release?.reason === 'defender-deflect-marker-not-reached';
           const inspectionFallbackUsed = release?.couplingReport?.inspectionFallbackUsed === true;
           status.textContent = release?.accepted
             ? inspectionFallbackUsed
-              ? `PARRY CONFIRMED · ${selectedDirection.toUpperCase()} ${formatInspectionFailureSummary(latestGripConstraintReport)} · DEFLECT_IMPULSE fail-safe release · OLD B3 starts at 0ms`
+              ? `PARRY CONFIRMED · ${selectedDirection.toUpperCase()} ${formatInspectionFailureSummary(exchangeState.latestGripConstraintReport)} · DEFLECT_IMPULSE fail-safe release · OLD B3 starts at 0ms`
               : `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} DEFLECT_IMPULSE · releasing contact through 28ms bridge · OLD B3 starts at 0ms`
             : waitingForDefenderImpulse
-              ? `${passed ? 'LIVE CONTACT VERIFIED · 7/7 PASS' : `PARRY CONFIRMED · ${formatInspectionFailureSummary(latestGripConstraintReport)}`} · waiting for defender DEFLECT ${release.defenderReleaseGate.sourceTimeSeconds.toFixed(3)}s / ${release.defenderReleaseGate.requiredSourceTimeSeconds.toFixed(3)}s`
+              ? `${passed ? 'LIVE CONTACT VERIFIED · 7/7 PASS' : `PARRY CONFIRMED · ${formatInspectionFailureSummary(exchangeState.latestGripConstraintReport)}`} · waiting for defender DEFLECT ${release.defenderReleaseGate.sourceTimeSeconds.toFixed(3)}s / ${release.defenderReleaseGate.requiredSourceTimeSeconds.toFixed(3)}s`
               : passed
                 ? `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} weapon-arm handoff deferred while TOP/RIGHT are calibrated first`
-                : `STEP 3A HOLD · ${formatInspectionFailureSummary(latestGripConstraintReport)}`;
+                : `STEP 3A HOLD · ${formatInspectionFailureSummary(exchangeState.latestGripConstraintReport)}`;
           status.className = release?.accepted || passed ? 'good' : waitingForDefenderImpulse ? 'warn' : 'bad';
         }
       }
     }
     attackerSword.update(); defenderSword?.update();
-    recordVisibleOldB3Sample(latestCombatUpdate);
+    recordVisibleOldB3Sample(exchangeState.latestCombatUpdate);
 
-    if (!firstContact) {
+    if (!exchangeState.firstContact) {
       const currentBlade = captureBladePolyline();
       updatePreContact(snapshot, currentBlade, deltaSeconds);
       resolveContact(snapshot, currentBlade, deltaSeconds);
@@ -1766,17 +1704,17 @@ window.__G43B5R281_LAB__ = {
   triggerParryNow,
   dispatchParryInput,
   forceOldTwoActorB3,
-  get directOldB3Diagnostic() { return directOldB3Diagnostic; },
-  get latestPredictiveReport() { return latestPredictiveReport; },
-  get latestShieldLeadMotion() { return latestShieldLeadMotion; },
-  get latestLeadHandoff() { return latestLeadHandoff; },
-  get latestCombatResult() { return latestCombatResult; },
-  get latestParryInput() { return latestParryInput; },
-  get latestParryOpportunity() { return latestParryOpportunity; },
-  get latestParryConfirmation() { return latestParryConfirmation; },
-  get step3AContactTransfer() { return step3AContactTransfer; },
-  get latestGripConstraintReport() { return latestGripConstraintReport; },
-  get latestParryWhiff() { return latestParryWhiff; },
-  get latestInterceptDriveReport() { return latestInterceptDriveReport; },
-  get latestInputSignal() { return latestInputSignal; },
+  get directOldB3Diagnostic() { return exchangeState.directOldB3Diagnostic; },
+  get latestPredictiveReport() { return exchangeState.latestPredictiveReport; },
+  get latestShieldLeadMotion() { return exchangeState.latestShieldLeadMotion; },
+  get latestLeadHandoff() { return exchangeState.latestLeadHandoff; },
+  get latestCombatResult() { return exchangeState.latestCombatResult; },
+  get latestParryInput() { return exchangeState.latestParryInput; },
+  get latestParryOpportunity() { return exchangeState.latestParryOpportunity; },
+  get latestParryConfirmation() { return exchangeState.latestParryConfirmation; },
+  get step3AContactTransfer() { return exchangeState.step3AContactTransfer; },
+  get latestGripConstraintReport() { return exchangeState.latestGripConstraintReport; },
+  get latestParryWhiff() { return exchangeState.latestParryWhiff; },
+  get latestInterceptDriveReport() { return exchangeState.latestInterceptDriveReport; },
+  get latestInputSignal() { return exchangeState.latestInputSignal; },
 };
