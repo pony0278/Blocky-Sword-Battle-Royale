@@ -1,11 +1,15 @@
 name: R18M.5 Pre-contact Controller Migration
 
 on:
-  push:
+  pull_request:
     branches:
       - refactor/shield-parry-r18m-maintainability
     paths:
-      - .github/workflows/r18m5-precontact-migration.yml
+      - .r18m5-trigger
+
+concurrency:
+  group: r18m5-precontact-migration
+  cancel-in-progress: true
 
 permissions:
   contents: write
