@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const html = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 const source = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
+const preContactSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
 
 function functionBody(name, nextName) {
   const start = source.indexOf(`function ${name}(`);
@@ -11,6 +12,14 @@ function functionBody(name, nextName) {
   assert.notEqual(start, -1, `${name} must exist`);
   assert.notEqual(end, -1, `${nextName} must exist`);
   return source.slice(start, end);
+}
+
+function preContactFunctionBody(name, nextName) {
+  const start = preContactSource.indexOf(`function ${name}(`);
+  const end = preContactSource.indexOf(`function ${nextName}(`, start + 1);
+  assert.notEqual(start, -1, `${name} must exist in pre-contact controller`);
+  assert.notEqual(end, -1, `${nextName} must exist in pre-contact controller`);
+  return preContactSource.slice(start, end);
 }
 
 test('Step 2 exposes one manual Parry and removes Perfect from the Lab', () => {
@@ -22,7 +31,7 @@ test('Step 2 exposes one manual Parry and removes Perfect from the Lab', () => {
 });
 
 test('Step 2 does not auto-start Parry from predictive timing', () => {
-  const preContact = functionBody('updateParryPreContact', 'updatePreContact');
+  const preContact = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
   const manualInput = functionBody('triggerParryNow', 'forceOldTwoActorB3');
   assert.doesNotMatch(preContact, /predictivePresentation\.start/);
   assert.match(manualInput, /parryGate\.arm/);
@@ -58,7 +67,7 @@ test('Step 2 visibly captures F before evaluating the Parry gate', () => {
 });
 
 test('Step 2 previews the live gate without consuming input and gives an explicit retry', () => {
-  const preContact = functionBody('updateParryPreContact', 'updatePreContact');
+  const preContact = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
   const cue = functionBody('updateParryCue', 'updateHud');
   assert.match(html, /id="parryCue"/);
   assert.match(html, /id="retryAttack"/);
@@ -78,7 +87,7 @@ test('Step 2 keeps original Block at 1x while Parry review holds a valid prompt'
   assert.match(source, /const PARRY_PROMPT_HOLD_MS = 1500/);
   assert.match(source, /function isParryPreContactReviewActive/);
   assert.match(source, /const deltaMs = holdingParryPrompt \? 0 : rawDeltaMs \* reviewRate/);
-  assert.match(source, /(?:exchangeState\.)?parryPromptHoldSequence !== snapshot\.sequence/);
+  assert.match(preContactSource, /(?:exchangeState\.)?parryPromptHoldSequence !== snapshot\.sequence/);
   assert.match(html, /Block \+ Step 3A \+ direct OLD B3 stay 1\.00×/);
   assert.doesNotMatch(source, /rawDeltaMs \* \(slowReview\.checked/);
 });
@@ -92,7 +101,7 @@ test('Step 2 uses timing as input authority and treats predictive geometry as cl
 });
 
 test('Step 2 review slowdown ends before Step 3A transfer', () => {
-  const review = functionBody('isParryPreContactReviewActive', 'updateBlockPreContact');
+  const review = functionBody('isParryPreContactReviewActive', 'resolveContact');
   assert.match(review, /!(?:exchangeState\.)?firstContact/);
   assert.match(review, /snapshot\.elapsedSeconds < contactSeconds/);
   assert.match(source, /const parryReviewActive = isParryPreContactReviewActive\(preUpdateSnapshot\)/);

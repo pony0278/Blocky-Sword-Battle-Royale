@@ -8,6 +8,8 @@ import {
 } from '../tools/action-studio/shield-parry-r281/exchange-state.js';
 
 const entry = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
+const preContactController = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
+const exchangeOwnershipSources = `${entry}\n${preContactController}`;
 
 const EXPECTED_EXCHANGE_KEYS = [
   'previousShieldLeadSurface',
@@ -86,8 +88,8 @@ test('R18M.4 entry uses one explicit exchange owner while lab/runtime lifetime s
   assert.match(entry, /previousShieldLeadSurface: cloneSurface\(buckler\.getWorldParrySurface\(\)\)/);
 
   for (const key of EXPECTED_EXCHANGE_KEYS) {
-    assert.doesNotMatch(entry, new RegExp('\\blet\\s+' + key + '\\b'), 'loose exchange let remains: ' + key);
-    assert.match(entry, new RegExp('exchangeState\\.' + key + '\\b'), 'exchange owner is not used for: ' + key);
+    assert.doesNotMatch(exchangeOwnershipSources, new RegExp('\\blet\\s+' + key + '\\b'), 'loose exchange let remains: ' + key);
+    assert.match(exchangeOwnershipSources, new RegExp('exchangeState\\.' + key + '\\b'), 'exchange owner is not used for: ' + key);
   }
 
   for (const persistentName of [

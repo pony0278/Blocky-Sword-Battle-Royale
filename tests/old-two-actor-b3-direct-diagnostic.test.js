@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const html = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 const source = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
+const preContactSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
 
 function functionBody(name) {
   const start = source.indexOf(`function ${name}(`);
@@ -31,7 +32,7 @@ test('Step 1 publishes the unchanged legacy B3 handoff and bypasses the Parry mi
 });
 
 test('Step 1 diagnostic remains available after Step 2 replaces the active coupling path', () => {
-  assert.match(source, /function updateParryPreContact/);
+  assert.match(preContactSource, /function updateParryPreContact/);
   assert.match(source, /function triggerParryNow/);
   assert.match(source, /function forceOldTwoActorB3/);
   const resolveStart = source.indexOf('function resolveContact(');

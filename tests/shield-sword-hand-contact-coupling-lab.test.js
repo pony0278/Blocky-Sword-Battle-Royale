@@ -6,6 +6,10 @@ const source = readFileSync(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url),
   'utf8',
 );
+const preContactSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url),
+  'utf8',
+);
 const html = readFileSync(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url),
   'utf8',
@@ -21,6 +25,14 @@ function functionBody(name, nextName) {
   assert.notEqual(start, -1, `${name} must exist`);
   assert.notEqual(end, -1, `${nextName} must exist`);
   return source.slice(start, end);
+}
+
+function preContactFunctionBody(name, nextName) {
+  const start = preContactSource.indexOf(`function ${name}(`);
+  const end = preContactSource.indexOf(`function ${nextName}(`, start + 1);
+  assert.notEqual(start, -1, `${name} must exist in pre-contact controller`);
+  assert.notEqual(end, -1, `${nextName} must exist in pre-contact controller`);
+  return preContactSource.slice(start, end);
 }
 
 test('Step 3A exposes an explicit live contact inspection state and markers', () => {
@@ -207,7 +219,7 @@ test('Step 3A uses bounded lowerarm plus wrist hierarchy travel instead of a sch
 });
 
 test('Step 3A does not add the live grip constraint to the original Block pre-contact path', () => {
-  const block = functionBody('updateBlockPreContact', 'updateParryPreContact');
+  const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');
   assert.match(block, /planArticulatedImpactBracing/);
   assert.match(block, /planFineGuardTracking/);
   assert.doesNotMatch(block, /swordGripConstraint/);

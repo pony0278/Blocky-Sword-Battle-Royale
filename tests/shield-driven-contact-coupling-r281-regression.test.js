@@ -6,6 +6,10 @@ const source = await readFile(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url),
   'utf8',
 );
+const preContactSource = await readFile(
+  new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url),
+  'utf8',
+);
 const html = await readFile(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url),
   'utf8',
@@ -56,11 +60,11 @@ test('R18M.1 locks manual Parry input and authored commitment\/TTC authority', (
 });
 
 test('R18M.1 locks predictive\/measured pre-contact guidance without granting success authority', () => {
-  assert.match(source, /analyzePredictiveInterceptParry\(\{/);
-  assert.match(source, /selectReachableParryInterceptTarget\(\{/);
-  assert.match(source, /measureSweptSwordBucklerClosestApproach\(\{/);
-  assert.match(source, /residualBodyReachRuntime\.update\(\{/);
-  assert.match(source, /residualStanceReachRuntime\.update\(\{/);
+  assert.match(preContactSource, /analyzePredictiveInterceptParry\(\{/);
+  assert.match(preContactSource, /selectReachableParryInterceptTarget\(\{/);
+  assert.match(preContactSource, /measureSweptSwordBucklerClosestApproach\(\{/);
+  assert.match(preContactSource, /residualBodyReachRuntime\.update\(\{/);
+  assert.match(preContactSource, /residualStanceReachRuntime\.update\(\{/);
   assert.match(html, /unreachable linear target may fall back to measured current sweep/);
   assert.match(html, /guidance · cannot veto input/);
   assert.match(html, /Success authority<\/span><b>real swept Sword × Shield contact<\/b>/);
