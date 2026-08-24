@@ -1,0 +1,122 @@
+name: R18M.4 Exchange State Migration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/r18m4-exchange-state-migration.yml'
+      - 'scripts/r18m4-migrate-exchange-state.mjs'
+      - 'tools/action-studio/shield-driven-contact-coupling-lab-r281.js'
+      - 'tools/action-studio/shield-parry-r281/exchange-state.js'
+      - 'tests/shield-parry-r281-exchange-state.test.js'
+      - 'package.json'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-verify:
+    if: github.head_ref == 'refactor/shield-parry-r18m-maintainability'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout working branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install codemod parser only
+        run: npm install --no-save --package-lock=false acorn@8
+
+      - name: Apply guarded R18M.4 migration
+        run: node scripts/r18m4-migrate-exchange-state.mjs
+
+      - name: Syntax check migrated modules
+        run: |
+          node --check tools/action-studio/shield-driven-contact-coupling-lab-r281.js
+          node --check tools/action-studio/shield-parry-r281/exchange-state.js
+          node --check tools/action-studio/shield-parry-r281/lab-ui.js
+          node --check tools/action-studio/shield-parry-r281/diagnostic-telemetry.js
+
+      - name: Run focused R18M regression contracts
+        run: |
+          node --test \
+            tests/shield-driven-contact-coupling-r281-regression.test.js \
+            tests/shield-parry-r281-diagnostics.test.js \
+            tests/shield-parry-r281-ui.test.js \
+            tests/shield-parry-r281-exchange-state.test.js
+
+      - name: Rebuild standalone Action Studio
+        run: npm run build:action-studio
+
+      - name: Verify generated standalone files are current
+        run: |
+          npm run build:action-studio
+          git diff --exit-code -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+
+      - name: Verify Guard Runtime browser surface
+        run: bash tools/action-studio/verify-guard-runtime-surface.sh
+
+      - name: Compare full-suite failures with exact R18M.3 baseline
+        shell: bash
+        run: |
+          set +e
+          npm test > /tmp/r18m4-current.tap 2>&1
+          current_exit=$?
+          set -e
+
+          git worktree add --detach /tmp/r18m3-baseline a24eada6c4564a5cc724ce66661795dd7ba97233
+          set +e
+          (cd /tmp/r18m3-baseline && npm test > /tmp/r18m3-baseline.tap 2>&1)
+          baseline_exit=$?
+          set -e
+
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          def failures(path):
+              rows = []
+              for line in Path(path).read_text(errors='replace').splitlines():
+                  match = re.match(r'^\s*not ok \d+ - (.+)$', line)
+                  if match:
+                      rows.append(match.group(1).strip())
+              return sorted(rows)
+
+          current = failures('/tmp/r18m4-current.tap')
+          baseline = failures('/tmp/r18m3-baseline.tap')
+          print('R18M.4 failure titles:', len(current))
+          print('R18M.3 baseline failure titles:', len(baseline))
+          if current != baseline:
+              print('Only current:', sorted(set(current) - set(baseline)))
+              print('Only baseline:', sorted(set(baseline) - set(current)))
+              raise SystemExit('full-suite failure set changed during R18M.4')
+          PY
+
+          echo "current npm test exit=$current_exit baseline exit=$baseline_exit"
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Remove temporary migration machinery
+        run: |
+          git rm -- scripts/r18m4-migrate-exchange-state.mjs
+          git rm -- .github/workflows/r18m4-exchange-state-migration.yml
+
+      - name: Commit verified R18M.4 migration
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
+            tools/action-studio/action-studio.bundle.js \
+            tools/action-studio/index.html
+          git diff --cached --check
+          git commit -m 'R18M.4 consolidate per-exchange mutable state'
+          git push origin HEAD:${{ github.head_ref }}
