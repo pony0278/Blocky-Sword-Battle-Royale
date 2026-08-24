@@ -58,13 +58,15 @@ jobs:
           sed -i 's/[[:blank:]]\+$//' \
             tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
             tools/action-studio/shield-parry-r281/attacker-presentation.js \
-            tests/shield-parry-r281-attacker-presentation.test.js
+            tests/shield-parry-r281-attacker-presentation.test.js \
+            tests/shield-sword-hand-contact-coupling-lab.test.js
 
       - name: Syntax checks
         run: |
           node --check tools/action-studio/shield-driven-contact-coupling-lab-r281.js
           node --check tools/action-studio/shield-parry-r281/attacker-presentation.js
           node --check tests/shield-parry-r281-attacker-presentation.test.js
+          node --check tests/shield-sword-hand-contact-coupling-lab.test.js
 
       - name: R18M focused regression contracts
         run: |
@@ -114,7 +116,7 @@ jobs:
           rm -f r18mc2-baseline.log r18mc2-candidate.log r18mc2-baseline.failures r18mc2-candidate.failures package-lock.json
           rm -f tools/action-studio/r18mc2-attacker-presentation-migration.mjs
           rm -f .github/workflows/r18mc2-attacker-presentation-migration.yml
-          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/attacker-presentation\.js|tests/shield-parry-r281-attacker-presentation\.test\.js|tools/action-studio/r18mc2-attacker-presentation-migration\.mjs|\.github/workflows/r18mc2-attacker-presentation-migration\.yml)$'
+          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/attacker-presentation\.js|tests/shield-parry-r281-attacker-presentation\.test\.js|tests/shield-sword-hand-contact-coupling-lab\.test\.js|tools/action-studio/r18mc2-attacker-presentation-migration\.mjs|\.github/workflows/r18mc2-attacker-presentation-migration\.yml)$'
           git status --short
           UNEXPECTED=$(git status --short | grep -Ev "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
@@ -133,6 +135,7 @@ jobs:
             tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
             tools/action-studio/shield-parry-r281/attacker-presentation.js \
             tests/shield-parry-r281-attacker-presentation.test.js \
+            tests/shield-sword-hand-contact-coupling-lab.test.js \
             tools/action-studio/r18mc2-attacker-presentation-migration.mjs \
             .github/workflows/r18mc2-attacker-presentation-migration.yml
           git diff --cached --check
