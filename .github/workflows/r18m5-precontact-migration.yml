@@ -114,6 +114,7 @@ jobs:
         run: |
           git diff --check
           rm -f r18m5-baseline.log r18m5-candidate.log r18m5-baseline.failures r18m5-candidate.failures
+          rm -f package-lock.json
           rm -f tools/action-studio/r18m5-precontact-migration.mjs
           rm -f tools/action-studio/r18m5-contract-patch.mjs
           rm -f .github/workflows/r18m5-precontact-migration.yml
