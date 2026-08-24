@@ -867,14 +867,34 @@ function createKayKitV3LineAppearance(THREE, rig, inputStyle = {}) {
   const headCenterLocal = new THREE.Vector3();
   const rightWorld = new THREE.Vector3();
   const upWorld = new THREE.Vector3();
-  const polygonWorld = new THREE.Vector3();
+  const polygonFirstWorld = new THREE.Vector3();
+  const polygonSecondWorld = new THREE.Vector3();
+  const shoulderL = new THREE.Vector3();
+  const shoulderR = new THREE.Vector3();
+  const chestUpper = new THREE.Vector3();
+  const chestLower = new THREE.Vector3();
+  const spineBase = new THREE.Vector3();
+  const pelvisL = new THREE.Vector3();
+  const pelvisR = new THREE.Vector3();
+  const localPointEntries = Object.entries(localPoints);
+  const contourSegments = [
+    [shoulderL, shoulderR],
+    [shoulderL, chestUpper],
+    [chestUpper, shoulderR],
+    [shoulderL, chestLower],
+    [chestLower, shoulderR],
+    [pelvisL, pelvisR],
+    [pelvisL, spineBase],
+    [spineBase, pelvisR],
+    [chestLower, spineBase],
+  ];
 
   let nodesVisible = true;
   let glowVisible = true;
 
   function updateLocalBonePoints() {
     rig.root.updateMatrixWorld(true);
-    Object.entries(localPoints).forEach(([boneId, point]) => {
+    localPointEntries.forEach(([boneId, point]) => {
       rig.bones[boneId].getWorldPosition(point);
       rig.motionRoot.worldToLocal(point);
     });
@@ -899,30 +919,19 @@ function createKayKitV3LineAppearance(THREE, rig, inputStyle = {}) {
     const chest = localPoints.chest;
     const spine = localPoints.spine;
     const hips = localPoints.hips;
-    const shoulderL = localPoints['upperarm.l'].clone().sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
-    const shoulderR = localPoints['upperarm.r'].clone().sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
+    shoulderL.copy(localPoints['upperarm.l']).sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
+    shoulderR.copy(localPoints['upperarm.r']).sub(chest).multiplyScalar(style.shoulderWidth).add(chest);
     shoulderL.x -= style.armOutset;
     shoulderR.x += style.armOutset;
-    const chestUpper = chest.clone().lerp(localPoints.head, 0.12);
-    const chestLower = spine.clone().lerp(chest, 0.22);
-    const spineBase = hips.clone().lerp(spine, 0.20);
-    const pelvisL = localPoints['upperleg.l'].clone().sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
-    const pelvisR = localPoints['upperleg.r'].clone().sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
+    chestUpper.copy(chest).lerp(localPoints.head, 0.12);
+    chestLower.copy(spine).lerp(chest, 0.22);
+    spineBase.copy(hips).lerp(spine, 0.20);
+    pelvisL.copy(localPoints['upperleg.l']).sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
+    pelvisR.copy(localPoints['upperleg.r']).sub(hips).multiplyScalar(style.pelvisWidth).add(hips);
     pelvisL.x -= style.legOutset;
     pelvisR.x += style.legOutset;
-    const segments = [
-      [shoulderL, shoulderR],
-      [shoulderL, chestUpper],
-      [chestUpper, shoulderR],
-      [shoulderL, chestLower],
-      [chestLower, shoulderR],
-      [pelvisL, pelvisR],
-      [pelvisL, spineBase],
-      [spineBase, pelvisR],
-      [chestLower, spineBase],
-    ];
     const position = contourLine.geometry.attributes.position;
-    segments.forEach(([start, end], index) => {
+    contourSegments.forEach(([start, end], index) => {
       setPoint(position, index * 2, start);
       setPoint(position, index * 2 + 1, end);
     });
@@ -947,14 +956,12 @@ function createKayKitV3LineAppearance(THREE, rig, inputStyle = {}) {
       if (index < sides) {
         const firstAngle = (index / sides) * Math.PI * 2;
         const secondAngle = ((index + 1) / sides) * Math.PI * 2;
-        const first = polygonWorld.copy(headCenterWorld)
+        const first = polygonFirstWorld.copy(headCenterWorld)
           .addScaledVector(rightWorld, Math.cos(firstAngle) * radius)
-          .addScaledVector(upWorld, Math.sin(firstAngle) * radius)
-          .clone();
-        const second = polygonWorld.copy(headCenterWorld)
+          .addScaledVector(upWorld, Math.sin(firstAngle) * radius);
+        const second = polygonSecondWorld.copy(headCenterWorld)
           .addScaledVector(rightWorld, Math.cos(secondAngle) * radius)
-          .addScaledVector(upWorld, Math.sin(secondAngle) * radius)
-          .clone();
+          .addScaledVector(upWorld, Math.sin(secondAngle) * radius);
         rig.motionRoot.worldToLocal(first);
         rig.motionRoot.worldToLocal(second);
         setPoint(headPosition, index * 2, first);
@@ -4111,6 +4118,7 @@ function createProceduralV3Longsword(THREE, options = {}) {
   object3d.add(outlineLine, skeletonLine, glowLine);
   const jointNodes = JOINT_NODE_IDS.map((nodeId) => createJointNode(THREE, bones[nodeId], style));
   const localPoints = Object.fromEntries(V3_LONGSWORD_REQUIRED_NODE_IDS.map((nodeId) => [nodeId, new THREE.Vector3()]));
+  const skeletonSegments = SKELETON_LINKS.map(([startId, endId]) => [localPoints[startId], localPoints[endId]]);
   let nodesVisible = true;
   let glowVisible = true;
 
@@ -4123,9 +4131,8 @@ function createProceduralV3Longsword(THREE, options = {}) {
   }
 
   function updateSkeleton() {
-    const segments = SKELETON_LINKS.map(([startId, endId]) => [localPoints[startId], localPoints[endId]]);
-    writeSegments(skeletonLine, segments);
-    writeSegments(glowLine, segments);
+    writeSegments(skeletonLine, skeletonSegments);
+    writeSegments(glowLine, skeletonSegments);
   }
 
   function update() {
@@ -9166,6 +9173,11 @@ const DEFLECT_RATE = 0.95;
 const DEFLECT_RECOVERY_RATE = 1.0;
 const SHARED_CONTACT_HOLD_SECONDS = 0.05;
 const SHARED_BLEND_SECONDS = 0.055;
+// Calibrated presentation markers shared by predictive pre-roll, authoritative
+// contact handoff, and the attacker-release gate. Keeping them with the
+// composite reaction prevents those consumers from inventing separate clocks.
+const PRE_CONTACT_START_SECONDS = 0.205;
+const DEFLECT_IMPULSE_SECONDS = 0.35;
 
 const G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES = Object.freeze({
   spine: 42,
@@ -9213,6 +9225,12 @@ function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFLECT_VAR
   const blendEndSeconds = holdEndSeconds + base.blendSeconds;
   const deflectPowerEndAtSeconds = blendEndSeconds + deflectPowerPlaybackSeconds();
   const deflectRecoveryEndAtSeconds = deflectPowerEndAtSeconds + deflectRecoveryPlaybackSeconds();
+  const presentationMarkers = Object.freeze({
+    preContactStartSeconds: PRE_CONTACT_START_SECONDS,
+    contactPoseSeconds: DEFLECT_IMPULSE_SECONDS,
+    deflectImpulseSeconds: DEFLECT_IMPULSE_SECONDS,
+    attackerReleaseEligibleSeconds: DEFLECT_IMPULSE_SECONDS,
+  });
   return Object.freeze({
     ...base,
     stage: PRODUCTION_PARRY_DEFLECT_STAGE,
@@ -9234,6 +9252,7 @@ function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFLECT_VAR
     deflectRecoveryRate: DEFLECT_RECOVERY_RATE,
     deflectPowerEndAtSeconds,
     deflectRecoveryEndAtSeconds,
+    presentationMarkers,
     // Compatibility field: the complete Power Bash visual chain now ends only
     // after D's authored recovery tail, not at the end of the power phase.
     deflectEndAtSeconds: deflectRecoveryEndAtSeconds,
@@ -10881,9 +10900,21 @@ function getGuardReactionProfile(state, payload = {}) {
 function sampleGuardReactionProfile(state, elapsedMs = 0, payload = {}) {
   const profile = getGuardReactionProfile(state, payload);
   if (!profile) return null;
+
+  // G4.2.1 may visually pre-roll the Parry before authoritative contact. Keep
+  // gameplay reward windows contact-relative: only the presentation clock is
+  // offset, never the counter/follow-up timing clock.
   const elapsedSeconds = Math.max(0, Number(elapsedMs) || 0) / 1000;
+  const presentationOffsetSeconds = state === 'guard_parry'
+    ? clamp(Number(payload?.presentationOffsetSeconds) || 0, 0, profile.durationSeconds)
+    : 0;
+  const presentationElapsedSeconds = clamp(
+    elapsedSeconds + presentationOffsetSeconds,
+    0,
+    profile.durationSeconds,
+  );
   const progress = profile.durationSeconds > 0
-    ? clamp(elapsedSeconds / profile.durationSeconds, 0, 1)
+    ? clamp(presentationElapsedSeconds / profile.durationSeconds, 0, 1)
     : 1;
   const sourceTimeSeconds = profile.sourceWindow.startSeconds
     + profile.durationSeconds * progress;
@@ -10892,6 +10923,8 @@ function sampleGuardReactionProfile(state, elapsedMs = 0, payload = {}) {
     profile,
     progress,
     sourceTimeSeconds,
+    presentationOffsetSeconds,
+    presentationElapsedSeconds,
     complete: progress >= 1,
     // G3.4 compatibility signal. Do not use for new production follow-up logic.
     counterWindowOpen: elapsedSeconds >= counterStart && elapsedSeconds <= counterEnd,
