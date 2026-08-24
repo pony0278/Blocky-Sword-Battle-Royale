@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const entryPath = 'tools/action-studio/shield-driven-contact-coupling-lab-r281.js';
 const packagePath = 'package.json';
+const legacyTestPath = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
 let entry = fs.readFileSync(entryPath, 'utf8');
 
 function replaceExact(text, before, after, label) {
@@ -84,6 +85,22 @@ for (const required of [
 }
 
 fs.writeFileSync(entryPath, entry);
+
+let legacyTest = fs.readFileSync(legacyTestPath, 'utf8');
+const sceneSourceBlock = `const sceneCompositionSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/lab-scene.js', import.meta.url),\n  'utf8',\n);\n`;
+legacyTest = replaceExact(
+  legacyTest,
+  sceneSourceBlock,
+  `${sceneSourceBlock}const attackerPresentationSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/attacker-presentation.js', import.meta.url),\n  'utf8',\n);\n`,
+  'legacy presentation source binding',
+);
+legacyTest = replaceExact(
+  legacyTest,
+  `  assert.ok(source.includes('applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose)'));\n  assert.ok(source.includes('exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig)'));\n  assert.ok(source.includes('sampleCanonicalInterruptionPose(interruption)'));\n`,
+  `  assert.ok(attackerPresentationSource.includes('applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose)'));\n  assert.ok(attackerPresentationSource.includes('exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig)'));\n  assert.ok(attackerPresentationSource.includes('sampleCanonicalInterruptionPose(interruption)'));\n`,
+  'legacy live-contact presentation ownership assertions',
+);
+fs.writeFileSync(legacyTestPath, legacyTest);
 
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 const testToken = 'tests/shield-parry-r281-attacker-presentation.test.js';
