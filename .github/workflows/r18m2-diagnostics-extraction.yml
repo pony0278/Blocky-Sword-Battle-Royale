@@ -1,8 +1,8 @@
 name: R18M.2 Diagnostics Extraction
 
 on:
-  push:
-    branches: [refactor/shield-parry-r18m-maintainability]
+  pull_request:
+    branches: [main]
     paths:
       - 'tools/refactor/r18m2-extract-diagnostics.mjs'
       - '.github/workflows/r18m2-diagnostics-extraction.yml'
