@@ -32,7 +32,7 @@ test('Step 2 does not auto-start Parry from predictive timing', () => {
 test('Step 3A requires the gate and real swept contact before live wrist-grip transfer', () => {
   const resolve = functionBody('resolveContact', 'updateHud');
   assert.match(resolve, /probeSweptSwordBucklerContact/);
-  assert.match(resolve, /if \(!latestContact\.contact\) return/);
+  assert.match(resolve, /if \(!(?:exchangeState\.)?latestContact\.contact\) return/);
   assert.match(resolve, /parryGate\.confirm/);
   assert.match(resolve, /swordGripConstraint\.start/);
   assert.ok(resolve.indexOf('parryGate.confirm') < resolve.indexOf('swordGripConstraint.start'));
@@ -78,7 +78,7 @@ test('Step 2 keeps original Block at 1x while Parry review holds a valid prompt'
   assert.match(source, /const PARRY_PROMPT_HOLD_MS = 1500/);
   assert.match(source, /function isParryPreContactReviewActive/);
   assert.match(source, /const deltaMs = holdingParryPrompt \? 0 : rawDeltaMs \* reviewRate/);
-  assert.match(source, /parryPromptHoldSequence !== snapshot\.sequence/);
+  assert.match(source, /(?:exchangeState\.)?parryPromptHoldSequence !== snapshot\.sequence/);
   assert.match(html, /Block \+ Step 3A \+ direct OLD B3 stay 1\.00×/);
   assert.doesNotMatch(source, /rawDeltaMs \* \(slowReview\.checked/);
 });
@@ -93,7 +93,7 @@ test('Step 2 uses timing as input authority and treats predictive geometry as cl
 
 test('Step 2 review slowdown ends before Step 3A transfer', () => {
   const review = functionBody('isParryPreContactReviewActive', 'updateBlockPreContact');
-  assert.match(review, /!firstContact/);
+  assert.match(review, /!(?:exchangeState\.)?firstContact/);
   assert.match(review, /snapshot\.elapsedSeconds < contactSeconds/);
   assert.match(source, /const parryReviewActive = isParryPreContactReviewActive\(preUpdateSnapshot\)/);
   assert.match(source, /const reviewRate = parryReviewActive \? PARRY_REVIEW_RATE : 1/);
