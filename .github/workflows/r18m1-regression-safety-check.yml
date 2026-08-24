@@ -1,0 +1,27 @@
+name: R18M.1 Regression Safety Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/shield-driven-contact-coupling-r281-regression.test.js'
+      - 'package.json'
+      - '.github/workflows/r18m1-regression-safety-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  r281-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run R281 regression safety contract
+        run: node --test tests/shield-driven-contact-coupling-r281-regression.test.js
