@@ -16,6 +16,17 @@ function replaceOnce(source, needle, replacement, label = needle) {
   return source.replace(needle, replacement);
 }
 
+function replaceTestBlockSource(source, title, nextTitle, replacementName) {
+  const startMarker = `test('${title}', () => {`;
+  const endMarker = `test('${nextTitle}', () => {`;
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end <= start) throw new Error(`test block boundary missing: ${title}`);
+  const block = source.slice(start, end);
+  if (!block.includes('source,')) throw new Error(`test block has no source fixture: ${title}`);
+  return source.slice(0, start) + block.replaceAll('source,', `${replacementName},`) + source.slice(end);
+}
+
 const regressionPath = 'tests/shield-driven-contact-coupling-r281-regression.test.js';
 let regression = await readFile(regressionPath, 'utf8');
 regression = replaceOnce(
@@ -48,19 +59,12 @@ regression = replaceOnce(
   "assert.match(contactHandoffSource, /marker: 'deflect-impulse'/);",
   'R18M.1 deflect marker ownership',
 );
-for (const needle of [
-  "/proximalAssistBone: selectedDirection === 'top' \\|\\| selectedDirection === 'right' \\? 'upperarm\\.r' : null,/",
-  "/assistBone: selectedDirection === 'top' \\|\\| selectedDirection === 'right' \\? 'lowerarm\\.r' : null,/",
-  "/elbowPropagationActive: selectedDirection === 'top' \\|\\| selectedDirection === 'right',/",
-  "/shoulderPropagationActive: false,/",
-]) {
-  regression = replaceOnce(
-    regression,
-    `assert.match(source, ${needle});`,
-    `assert.match(contactHandoffSource, ${needle});`,
-    `R18M.1 TOP/RIGHT ownership ${needle}`,
-  );
-}
+regression = replaceTestBlockSource(
+  regression,
+  'R18M.1 locks TOP\\/RIGHT calibrated arm assistance while LEFT release remains deferred',
+  'R18M.1 locks current verification budget so extraction cannot silently expand telemetry',
+  'contactHandoffSource',
+);
 await writeFile(regressionPath, regression, 'utf8');
 
 const exchangePath = 'tests/shield-parry-r281-exchange-state.test.js';
