@@ -46,6 +46,22 @@ jobs:
       - name: Extract R18M.3 UI modules
         run: node tools/refactor/r18m3-extract-ui.mjs
 
+      - name: Normalize extracted whitespace
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for filename in [
+              'tools/action-studio/shield-parry-r281/lab-dom.js',
+              'tools/action-studio/shield-parry-r281/stance-debug-controls.js',
+              'tools/action-studio/shield-parry-r281/lab-ui.js',
+              'tools/action-studio/shield-driven-contact-coupling-lab-r281.js',
+              'tests/shield-parry-r281-ui.test.js',
+          ]:
+              path = Path(filename)
+              path.write_text('\n'.join(line.rstrip() for line in path.read_text().splitlines()) + '\n')
+          PY
+
       - name: Syntax check R18M.3 browser modules
         run: |
           node --check tools/action-studio/shield-parry-r281/lab-dom.js
