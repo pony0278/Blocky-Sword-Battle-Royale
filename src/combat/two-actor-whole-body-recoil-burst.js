@@ -1,5 +1,11 @@
 export const TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE = 'G4.3B.5R.2.7';
 
+export const TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS = Object.freeze({
+  CONTACT_RELEASE: 'contact-release',
+  PARRY_IMPACT: 'parry-impact',
+  DEFLECT_IMPULSE: 'deflect-impulse',
+});
+
 export const TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_PROFILES = Object.freeze({
   parry: Object.freeze({
     outcome: 'parry',
@@ -14,6 +20,7 @@ export const TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_PROFILES = Object.freeze({
     minimumPlanBackwardPitchDegrees: 25,
     pitchAmplification: 2.20,
     legStrengthScale: 1.45,
+    powerFrameHoldMs: 72,
     impulseEndMs: 112,
     recoilEndMs: 245,
     settleEndMs: 420,
@@ -31,6 +38,7 @@ export const TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_PROFILES = Object.freeze({
     minimumPlanBackwardPitchDegrees: 33,
     pitchAmplification: 2.35,
     legStrengthScale: 1.50,
+    powerFrameHoldMs: 84,
     impulseEndMs: 126,
     recoilEndMs: 295,
     settleEndMs: 520,
@@ -69,6 +77,16 @@ export function buildTwoActorWholeBodyRecoilBurst(input = {}) {
   const momentum = clamp(input.momentum, 0.75, 1.5);
   const weaponMomentum = clamp(input.weaponMomentum, 0.90, 1.12);
   const releaseDirection = input.releaseDirection || plan.weapon?.direction;
+  const requestedActivation = String(input.activation || '');
+  const activation = Object.values(TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS)
+    .includes(requestedActivation)
+    ? requestedActivation
+    : TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS.CONTACT_RELEASE;
+  const startsAtParryImpact = activation === TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS.PARRY_IMPACT;
+  const startsAtDeflectImpulse = activation
+    === TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS.DEFLECT_IMPULSE;
+  const startsAtTimelineOrigin = startsAtParryImpact || startsAtDeflectImpulse;
+  const initialElapsedMs = startsAtTimelineOrigin ? 0 : profile.initialElapsedMs;
   const sourcePitch = Math.abs(finite(plan.body?.pitchDegrees));
   const backwardPitchDegrees = Math.max(
     profile.minimumPlanBackwardPitchDegrees,
@@ -80,8 +98,16 @@ export function buildTwoActorWholeBodyRecoilBurst(input = {}) {
     direction: releaseDirection,
     strength: finite(plan.weapon?.strength) * profile.weaponStrengthScale * weaponMomentum,
     deflectDegrees: finite(plan.weapon?.deflectDegrees) * profile.weaponDeflectScale * weaponMomentum,
-    continuationSource: 'two-actor-whole-body-release-burst',
-    separationSource: 'shield-contact-release-power-frame',
+    continuationSource: startsAtDeflectImpulse
+      ? 'deflect-impulse-whole-body-reaction-activation'
+      : startsAtParryImpact
+        ? 'parry-impact-whole-body-reaction-definition'
+        : 'two-actor-whole-body-release-burst',
+    separationSource: startsAtDeflectImpulse
+      ? 'defender-deflect-impulse-after-contact-release'
+      : startsAtParryImpact
+        ? 'authoritative-parry-impact'
+        : 'shield-contact-release-power-frame',
   });
 
   const body = Object.freeze({
@@ -102,10 +128,15 @@ export function buildTwoActorWholeBodyRecoilBurst(input = {}) {
   return Object.freeze({
     stage: TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE,
     accepted: true,
-    reason: 'two-actor-whole-body-recoil-burst-ready',
+    reason: startsAtDeflectImpulse
+      ? 'deflect-impulse-whole-body-recoil-ready'
+      : startsAtParryImpact
+        ? 'impact-time-whole-body-recoil-ready'
+        : 'two-actor-whole-body-recoil-burst-ready',
     outcome,
+    activation,
     plan: transformedPlan,
-    initialElapsedMs: profile.initialElapsedMs,
+    initialElapsedMs,
     profileOverrides: Object.freeze({
       releaseSeparationWindowMs: profile.releaseSeparationWindowMs,
       releaseSeparationDistanceMeters: profile.releaseSeparationDistanceMeters,
@@ -113,16 +144,24 @@ export function buildTwoActorWholeBodyRecoilBurst(input = {}) {
       recoilEndMs: profile.recoilEndMs,
       settleEndMs: profile.settleEndMs,
       legStrengthScale: profile.legStrengthScale,
+      powerFrameHoldMs: profile.powerFrameHoldMs,
     }),
     powerFrame: Object.freeze({
-      entryElapsedMs: profile.initialElapsedMs,
+      entryElapsedMs: initialElapsedMs,
       impulseEndMs: profile.impulseEndMs,
+      holdDurationMs: profile.powerFrameHoldMs,
       separationBypassed: true,
+      startsAtParryImpact,
+      startsAtDeflectImpulse,
       oldTwoActorArmAuthorityRestored: true,
       parentChainFreeArmMotion: true,
       minimumChestBackwardDegreesAtFullTorsoWeight: backwardPitchDegrees * 0.46,
     }),
     rootMotion: false,
-    authority: 'old-two-actor-b3-whole-body-impulse-at-shield-contact-release',
+    authority: startsAtDeflectImpulse
+      ? 'old-two-actor-b3-whole-body-impulse-at-defender-deflect-marker'
+      : startsAtParryImpact
+        ? 'old-two-actor-b3-whole-body-impulse-at-authoritative-parry-impact'
+        : 'old-two-actor-b3-whole-body-impulse-at-shield-contact-release',
   });
 }

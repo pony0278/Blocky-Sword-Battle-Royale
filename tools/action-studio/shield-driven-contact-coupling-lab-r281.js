@@ -11,6 +11,7 @@ import { loadUal1AnimationLibrary } from '../../src/animation/ual1-animation-lib
 import { loadUal2AnimationLibrary } from '../../src/animation/ual2-animation-library.js';
 import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
 import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
+import { getProductionParryDeflectProfile } from '../../src/animation/parry-contact-deflect-runtime-clip.js?v=g43b5r281-parry-sync-r2';
 import { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } from '../../src/combat/guard-state-machine.js';
 import { createGuardPresentationRuntime } from '../../src/combat/guard-presentation-runtime.js';
 import { createLongswordDirectionalAttackRuntime, LONGSWORD_ATTACK_PHASES } from '../../src/combat/longsword-directional-attack-runtime.js';
@@ -33,14 +34,18 @@ import { createArticulatedImpactBracingRuntime, planArticulatedImpactBracing } f
 import {
   analyzePredictiveInterceptParry,
   createPredictiveInterceptParryPresentationRuntime,
-} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r281';
+} from '../../src/combat/predictive-intercept-parry.js?v=g43b5r281-parry-sync-r2';
 import { sampleActiveShieldLeadMotion } from '../../src/combat/active-shield-lead-parry.js?v=g43b5r281';
-import { createTwoActorCombatIntegration } from '../../src/combat/two-actor-combat-integration.js?v=g43b5r281';
+import {
+  TWO_ACTOR_PARRY_REACTION_CHANNELS,
+  TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES,
+  createTwoActorCombatIntegration,
+} from '../../src/combat/two-actor-combat-integration.js?v=g43b5r281-closed-loop-old-b3-r18i5';
 import {
   LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE,
   LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE,
   publishPostCouplingRecoilStaggerHandoff,
-} from '../../src/combat/post-coupling-recoil-stagger-handoff.js?v=g43b5r281';
+} from '../../src/combat/post-coupling-recoil-stagger-handoff.js';
 import {
   COMMITTED_PARRY_CONTACT_GATE_STAGE,
   createCommittedParryContactGate,
@@ -49,11 +54,14 @@ import {
 import {
   LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
   createLiveShieldSwordGripContactRuntime,
-} from '../../src/combat/live-shield-sword-grip-contact-constraint.js?v=g43b5r281-top-right-forearm-r18e4';
+} from '../../src/combat/live-shield-sword-grip-contact-constraint.js?v=g43b5r281-closed-loop-old-b3-r18i5';
 import {
   buildLiveParryOldB3Handoff,
   sampleLiveParryOldB3ReleaseBlend,
-} from '../../src/combat/live-parry-old-b3-handoff.js?v=g43b5r281-top-right-old-b3-r18e';
+} from '../../src/combat/live-parry-old-b3-handoff.js?v=g43b5r281-closed-loop-old-b3-r18i5';
+import {
+  measureAttackerRecoilWorldSilhouette,
+} from '../../src/combat/attacker-recoil-world-silhouette.js?v=g43b5r281-closed-loop-old-b3-r18i5';
 
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
 const RECOIL_STAGE = LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE;
@@ -62,9 +70,13 @@ if (!THREE?.WebGLRenderer || !THREE?.GLTFLoader) throw new Error(`${LAB_STAGE} r
 
 const TIMING_AGE_MS = Object.freeze({ block: 260, parry: 120 });
 const HUD_INTERVAL_MS = 50;
-const REPORT_INTERVAL_MS = 160;
+const REPORT_INTERVAL_MS = 240;
+const MAX_REPORT_DOM_CHARACTERS = 60000;
+const RECENT_COMPACT_TRACE_FRAMES = 8;
 const PARRY_REVIEW_RATE = 0.12;
 const PARRY_PROMPT_HOLD_MS = 1500;
+const PARRY_PRESENTATION_MARKERS = getProductionParryDeflectProfile('parry').presentationMarkers;
+const PARRY_ATTACKER_RELEASE_SOURCE_SECONDS = PARRY_PRESENTATION_MARKERS.attackerReleaseEligibleSeconds;
 const DEBUG_QUERY = new URLSearchParams(window.location.search);
 const DEBUG_MODE = DEBUG_QUERY.get('debug') === '1';
 
@@ -155,21 +167,73 @@ const residualBodyReachRuntime = createGuardResidualBodyReachRuntime(THREE, { ri
 const residualStanceReachRuntime = createGuardResidualStanceReachRuntime(THREE, { rig: defender.rig, buckler });
 const predictivePresentation = createPredictiveInterceptParryPresentationRuntime(THREE, { character: defender });
 const parryGate = createCommittedParryContactGate();
-function sampleOriginalContactPose(interruption) {
+let frozenAttackerContactPose = null;
+let canonicalAttackerOldB3Pose = null;
+let canonicalAttackerOldB3WorldSilhouette = null;
+
+function captureAttackerWorldSilhouette() {
+  attacker.rig.root?.updateMatrixWorld?.(true);
+  const read = (boneName) => {
+    const position = new THREE.Vector3();
+    attacker.rig.bones[boneName]?.getWorldPosition(position);
+    return Object.freeze({ x: position.x, y: position.y, z: position.z });
+  };
+  const leftShoulder = read('upperarm.l');
+  const rightShoulder = read('upperarm.r');
+  return Object.freeze({
+    hips: read('hips'),
+    chest: read('chest'),
+    head: read('head'),
+    shoulders: Object.freeze({
+      x: (leftShoulder.x + rightShoulder.x) * 0.5,
+      y: (leftShoulder.y + rightShoulder.y) * 0.5,
+      z: (leftShoulder.z + rightShoulder.z) * 0.5,
+    }),
+  });
+}
+
+function sampleCanonicalInterruptionPose(interruption) {
   attacker.sampleAnimation(interruption.clipId, interruption.sourceTimeSeconds, {
     loop: false,
     inPlace: interruption.inPlace !== false,
     rootRotationPolicy: interruption.rootRotationPolicy,
   });
   attacker.update(0, camera);
-  if (step3AReleaseBlend) {
+}
+
+function captureCanonicalAttackerOldB3Base(interruption) {
+  if (!interruption) return false;
+  const visiblePose = captureRigPose(attacker.rig);
+  sampleCanonicalInterruptionPose(interruption);
+  canonicalAttackerOldB3Pose = captureRigPose(attacker.rig);
+  canonicalAttackerOldB3WorldSilhouette = captureAttackerWorldSilhouette();
+  applyRigPose(attacker.rig, visiblePose);
+  attacker.update(0, camera);
+  return true;
+}
+
+function sampleOriginalContactPose(interruption) {
+  if (step3AOwnsLiveContact() && frozenAttackerContactPose) {
+    applyRigPose(attacker.rig, frozenAttackerContactPose);
+  } else if (step3AReleaseBlend?.sourcePose && step3AReleaseBlend?.targetPose) {
     const releaseSample = sampleLiveParryOldB3ReleaseBlend(
       step3AReleaseBlend.elapsedMs,
       step3AReleaseBlend.durationMs,
     );
-    swordGripConstraint.applyHeldPose(releaseSample.contactPoseWeight);
+    applyRigPose(attacker.rig, blendRecoveryPose(
+      step3AReleaseBlend.sourcePose,
+      step3AReleaseBlend.sourcePose,
+      step3AReleaseBlend.targetPose,
+      releaseSample.progress,
+      { durationMs: step3AReleaseBlend.durationMs, sampleDeltaMs: 0, momentumScale: 0 },
+    ));
     step3AReleaseBlend.sample = releaseSample;
+  } else if (canonicalAttackerOldB3Pose) {
+    applyRigPose(attacker.rig, canonicalAttackerOldB3Pose);
+  } else {
+    sampleCanonicalInterruptionPose(interruption);
   }
+  attacker.update(0, camera);
 }
 
 const combat = createTwoActorCombatIntegration({
@@ -302,6 +366,8 @@ let step3AContactTransfer = null;
 let latestGripConstraintReport = null;
 let latestLiveSurfaceAtContact = null;
 let step3AReleaseBlend = null;
+let visibleOldB3Peak = null;
+let latchedDefenderDeflectReleaseGate = null;
 let latestParryWhiff = null;
 let whiffProbeFrames = 0;
 let closestWhiffApproach = null;
@@ -350,6 +416,365 @@ function cloneSurface(surface = {}) {
 
 function magnitude(v) {
   return v ? Math.hypot(Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0) : 0;
+}
+
+function compactVector(value) {
+  if (!value) return null;
+  return Object.freeze({
+    x: Number(value.x) || 0,
+    y: Number(value.y) || 0,
+    z: Number(value.z) || 0,
+  });
+}
+
+function compactGap(value) {
+  if (!value) return null;
+  return Object.freeze({
+    planeGapMeters: value.planeGapMeters ?? null,
+    radialGapMeters: value.radialGapMeters ?? null,
+    combinedGapMeters: value.combinedGapMeters ?? null,
+  });
+}
+
+function compactThreat(value) {
+  if (!value) return null;
+  return Object.freeze({
+    zone: value.zone ?? null,
+    pointY: value.pointY ?? null,
+    shieldBottomY: value.shieldBottomY ?? null,
+    kneeLeftY: value.kneeLeftY ?? null,
+    kneeRightY: value.kneeRightY ?? null,
+    verticalGapBelowShieldMeters: value.verticalGapBelowShieldMeters ?? null,
+    kneeLineDistanceMeters: value.kneeLineDistanceMeters ?? null,
+    planeNear: value.planeNear === true,
+    stronglyDownward: value.stronglyDownward === true,
+    belowShield: value.belowShield === true,
+    aboveFeet: value.aboveFeet === true,
+    kneeLineThreat: value.kneeLineThreat === true,
+    lowGuardGapThreat: value.lowGuardGapThreat === true,
+  });
+}
+
+function compactAnticipatedPlan(value) {
+  if (!value) return null;
+  return Object.freeze({
+    threat: compactThreat(value.threat),
+    metrics: compactGap(value.metrics),
+    arm: value.arm
+      ? Object.freeze({
+          attempted: value.arm.attempted === true,
+          stalled: value.arm.stalled === true,
+          saturated: value.arm.saturated === true,
+        })
+      : null,
+  });
+}
+
+function compactThreatSelection(value) {
+  if (!value) return null;
+  return Object.freeze({
+    source: value.source ?? null,
+    anticipatedLeadSeconds: value.anticipatedLeadSeconds ?? null,
+    anticipatedEligibilityReason: value.anticipatedEligibilityReason ?? null,
+    selectedThreat: compactThreat(value.selectedThreat),
+  });
+}
+
+function compactBodyReach(value) {
+  if (!value) return null;
+  return Object.freeze({
+    active: value.active === true,
+    armExtensionRatio: value.armExtensionRatio ?? null,
+    wristAppliedDegrees: value.wristAppliedDegrees ?? null,
+    planeGapBeforeMeters: value.planeGapBeforeMeters ?? null,
+    planeGapAfterWristMeters: value.planeGapAfterWristMeters ?? null,
+    appliedDegrees: value.appliedDegrees
+      ? Object.freeze({
+          chest: value.appliedDegrees.chest ?? 0,
+          spine: value.appliedDegrees.spine ?? 0,
+        })
+      : null,
+    bodyReachOffsetBefore: compactVector(value.bodyReachOffsetBefore),
+    bodyReachDistance: value.bodyReachDistance ?? null,
+    bodyDirectionDot: value.bodyDirectionDot ?? null,
+  });
+}
+
+function compactStanceReach(value) {
+  if (!value) return null;
+  return Object.freeze({
+    active: value.active === true,
+    stanceHeld: value.stanceHeld === true,
+    stanceConfirmed: value.stanceConfirmed === true,
+    earlyLowThreatRecruitment: value.earlyLowThreatRecruitment === true,
+    armStalled: value.armStalled === true,
+    activationSource: value.activationSource ?? null,
+    anticipatedLeadSeconds: value.anticipatedLeadSeconds ?? null,
+    engagedTargetCrouchMeters: value.engagedTargetCrouchMeters ?? null,
+    downwardRatio: value.downwardRatio ?? null,
+    crouchBeforeMeters: value.crouchBeforeMeters ?? null,
+    crouchMeters: value.crouchMeters ?? null,
+    hipsAppliedDegrees: value.hipsAppliedDegrees ?? null,
+    feetPlanted: value.feetPlanted ?? null,
+    footPlant: value.footPlant
+      ? Object.freeze({
+          l: Object.freeze({ driftMeters: value.footPlant.l?.driftMeters ?? null }),
+          r: Object.freeze({ driftMeters: value.footPlant.r?.driftMeters ?? null }),
+        })
+      : null,
+    threat: compactThreat(value.threat),
+    threatSelection: compactThreatSelection(value.threatSelection),
+    anticipatedPlan: compactAnticipatedPlan(value.anticipatedPlan),
+  });
+}
+
+function compactInterceptDriveTelemetry(value) {
+  if (!value) return null;
+  return Object.freeze({
+    telemetryDetail: 'compact-scalar-frame',
+    attackPhase: value.attackPhase ?? null,
+    elapsedSeconds: value.elapsedSeconds ?? null,
+    timeToContactSeconds: value.timeToContactSeconds ?? null,
+    presentationActive: value.presentationActive === true,
+    selectionSource: value.selectionSource ?? null,
+    drivePlanSource: value.drivePlanSource ?? null,
+    fallbackApplied: value.fallbackApplied === true,
+    predictedReachable: value.predictedReachable ?? null,
+    measuredReachable: value.measuredReachable ?? null,
+    measuredInsideAcquisitionBand: value.measuredInsideAcquisitionBand ?? null,
+    predictedRequiredDistanceMeters: value.predictedRequiredDistanceMeters ?? null,
+    measuredRequiredDistanceMeters: value.measuredRequiredDistanceMeters ?? null,
+    measuredRadialContactCorrectionMeters: value.measuredRadialContactCorrectionMeters ?? null,
+    measuredContactCorrectionMeters: value.measuredContactCorrectionMeters ?? null,
+    planRequiredDistanceMeters: value.planRequiredDistanceMeters ?? null,
+    planAppliedDistanceMeters: value.planAppliedDistanceMeters ?? null,
+    planReachable: value.planReachable ?? null,
+    trackingAchievedDistanceMeters: value.trackingAchievedDistanceMeters ?? null,
+    residualCarryBeforeMeters: value.residualCarryBeforeMeters ?? null,
+    residualCarryAfterMeters: value.residualCarryAfterMeters ?? null,
+    residualEdgeReductionMeters: value.residualEdgeReductionMeters ?? null,
+    residualPlaneReductionMeters: value.residualPlaneReductionMeters ?? null,
+    bodyEdgeReductionMeters: value.bodyEdgeReductionMeters ?? null,
+    bodyPlaneReductionMeters: value.bodyPlaneReductionMeters ?? null,
+    stanceEdgeReductionMeters: value.stanceEdgeReductionMeters ?? null,
+    stancePlaneReductionMeters: value.stancePlaneReductionMeters ?? null,
+    plannedCorrectionMeters: value.plannedCorrectionMeters ?? null,
+    shieldStepTranslationMeters: value.shieldStepTranslationMeters ?? null,
+    correctionDirectionDot: value.correctionDirectionDot ?? null,
+    residualBeforeRefinement: compactGap(value.residualBeforeRefinement),
+    residualAfterArmRefinement: compactGap(value.residualAfterArmRefinement),
+    residualAfterBodyReach: compactGap(value.residualAfterBodyReach),
+    residualAfterRefinement: compactGap(value.residualAfterRefinement),
+    residualRefinement: value.residualRefinement
+      ? Object.freeze({
+          achievedDistance: value.residualRefinement.achievedDistance ?? null,
+          directionDot: value.residualRefinement.directionDot ?? null,
+        })
+      : null,
+    residualBodyReach: compactBodyReach(value.residualBodyReach),
+    residualStanceReach: compactStanceReach(value.residualStanceReach),
+    authority: 'compact-parry-review-telemetry-no-solver-object-graph',
+  });
+}
+
+function compactInterceptDriveTraceFrame(value) {
+  if (!value) return null;
+  const stance = value.residualStanceReach;
+  return Object.freeze({
+    telemetryDetail: 'compact-scalar-frame',
+    attackPhase: value.attackPhase ?? null,
+    elapsedSeconds: value.elapsedSeconds ?? null,
+    timeToContactSeconds: value.timeToContactSeconds ?? null,
+    selectionSource: value.selectionSource ?? null,
+    drivePlanSource: value.drivePlanSource ?? null,
+    fallbackApplied: value.fallbackApplied === true,
+    predictedReachable: value.predictedReachable ?? null,
+    measuredReachable: value.measuredReachable ?? null,
+    measuredInsideAcquisitionBand: value.measuredInsideAcquisitionBand ?? null,
+    planAppliedDistanceMeters: value.planAppliedDistanceMeters ?? null,
+    residualAfterArmRefinement: compactGap(value.residualAfterArmRefinement),
+    residualAfterBodyReach: compactGap(value.residualAfterBodyReach),
+    residualAfterRefinement: compactGap(value.residualAfterRefinement),
+    stance: stance
+      ? Object.freeze({
+          active: stance.active === true,
+          held: stance.stanceHeld === true,
+          activationSource: stance.activationSource ?? null,
+          crouchMeters: stance.crouchMeters ?? null,
+          feetPlanted: stance.feetPlanted ?? null,
+        })
+      : null,
+  });
+}
+
+function compactPredictiveThreat(value) {
+  if (!value) return null;
+  return Object.freeze({
+    worldPoint: compactVector(value.worldPoint),
+    signedDistance: value.signedDistance ?? null,
+    radialDistance: value.radialDistance ?? null,
+    outsideDisc: value.outsideDisc ?? null,
+    futureSeconds: value.futureSeconds ?? null,
+    bladeFraction: value.bladeFraction ?? null,
+    source: value.source ?? null,
+  });
+}
+
+function compactTrackingPlan(value) {
+  if (!value) return null;
+  return Object.freeze({
+    mode: value.mode ?? null,
+    reachable: value.reachable ?? null,
+    requiredDistance: value.requiredDistance ?? null,
+    appliedDistance: value.appliedDistance ?? null,
+    correction: compactVector(value.correction),
+    reason: value.reason ?? null,
+  });
+}
+
+function compactPredictiveAnalysis(value) {
+  if (!value) return null;
+  return Object.freeze({
+    stage: value.stage ?? null,
+    rhythmStage: value.rhythmStage ?? null,
+    available: value.available === true,
+    reason: value.reason ?? null,
+    geometryReason: value.geometryReason ?? null,
+    requestedGrade: value.requestedGrade ?? null,
+    timingGrade: value.timingGrade ?? null,
+    timeToContactSeconds: value.timeToContactSeconds ?? null,
+    predictedTimeToContactSeconds: value.predictedTimeToContactSeconds ?? null,
+    triggerTtcSeconds: value.triggerTtcSeconds ?? null,
+    planeCapturable: value.planeCapturable ?? null,
+    interceptable: value.interceptable ?? null,
+    shouldTrigger: value.shouldTrigger ?? null,
+    threat: compactPredictiveThreat(value.threat),
+    trackingPlan: compactTrackingPlan(value.trackingPlan),
+    authority: value.authority ?? null,
+  });
+}
+
+function compactParryGateAttempt(value) {
+  if (!value) return null;
+  return Object.freeze({
+    stage: value.stage ?? null,
+    accepted: value.accepted === true,
+    reason: value.reason ?? null,
+    sequence: value.sequence ?? null,
+    source: value.source ?? value.input?.source ?? null,
+    timeToContactSeconds: value.timeToContactSeconds ?? null,
+    requiredShieldTravelMeters: value.requiredShieldTravelMeters ?? null,
+    predictedPlaneDistanceMeters: value.predictedPlaneDistanceMeters ?? null,
+    gates: value.gates
+      ? Object.freeze({
+          attackCommitted: value.gates.attackCommitted ?? null,
+          timingInsideWindow: value.gates.timingInsideWindow ?? null,
+          trackingClamped: value.gates.trackingClamped ?? null,
+          geometryGuidanceAvailable: value.gates.geometryGuidanceAvailable ?? null,
+          geometryGuidanceCanVetoInput: value.gates.geometryGuidanceCanVetoInput ?? null,
+          realSweptContact: value.gates.realSweptContact ?? null,
+        })
+      : null,
+  });
+}
+
+function compactReachableInterceptTarget(value) {
+  if (!value) return null;
+  return Object.freeze({
+    stage: value.stage ?? null,
+    source: value.source ?? null,
+    reason: value.reason ?? null,
+    fallbackApplied: value.fallbackApplied === true,
+    predictedReachable: value.predictedReachable ?? null,
+    measuredReachable: value.measuredReachable ?? null,
+    measuredInsideAcquisitionBand: value.measuredInsideAcquisitionBand ?? null,
+    predictedRequiredDistanceMeters: value.predictedRequiredDistanceMeters ?? null,
+    measuredRequiredDistanceMeters: value.measuredRequiredDistanceMeters ?? null,
+    measuredRadialContactCorrectionMeters: value.measuredRadialContactCorrectionMeters ?? null,
+    measuredContactCorrectionMeters: value.measuredContactCorrectionMeters ?? null,
+    threat: compactPredictiveThreat(value.threat),
+    trackingPlan: compactTrackingPlan(value.trackingPlan),
+    authority: value.authority ?? null,
+  });
+}
+
+function compactLiveContactConstraint(value) {
+  if (!value) return null;
+  const clearance = value.attackLineClearance;
+  const assessment = value.inspectionAssessment;
+  return Object.freeze({
+    accepted: value.accepted === true,
+    active: value.active === true,
+    holding: value.holding === true,
+    complete: value.complete === true,
+    inspectionPassed: value.inspectionPassed === true,
+    phase: value.phase ?? null,
+    stage: value.stage ?? null,
+    elapsedMs: value.elapsedMs ?? null,
+    terminalReason: value.terminalReason ?? null,
+    targetContactPoint: compactVector(value.targetContactPoint),
+    actualContactPoint: compactVector(value.actualContactPoint),
+    actualContactOffset: compactVector(value.actualContactOffset),
+    actualHandOffset: compactVector(value.actualHandOffset),
+    actualGripOffset: compactVector(value.actualGripOffset),
+    peakTargetTravelMeters: value.peakTargetTravelMeters ?? null,
+    peakOfflineTravelMeters: value.peakOfflineTravelMeters ?? null,
+    actualContactTravelMeters: value.actualContactTravelMeters ?? null,
+    actualHandTravelMeters: value.actualHandTravelMeters ?? null,
+    actualGripTravelMeters: value.actualGripTravelMeters ?? null,
+    liveContactErrorMeters: value.liveContactErrorMeters ?? null,
+    directionAgreement: value.directionAgreement ?? null,
+    appliedUpperarmCorrectionDegrees: value.appliedUpperarmCorrectionDegrees ?? null,
+    appliedForearmDegrees: value.appliedForearmDegrees ?? null,
+    appliedWristDegrees: value.appliedWristDegrees ?? null,
+    residualCorrectionPasses: value.residualCorrectionPasses ?? 0,
+    appliedResidualForearmDegrees: value.appliedResidualForearmDegrees ?? 0,
+    appliedResidualWristDegrees: value.appliedResidualWristDegrees ?? 0,
+    residualHiltCorrection: value.residualHiltCorrection
+      ? Object.freeze({
+          accepted: value.residualHiltCorrection.accepted === true,
+          correctionRequired: value.residualHiltCorrection.correctionRequired === true,
+          reason: value.residualHiltCorrection.reason ?? null,
+          currentOfflineTravelMeters:
+            value.residualHiltCorrection.currentOfflineTravelMeters ?? null,
+          targetOfflineTravelMeters:
+            value.residualHiltCorrection.targetOfflineTravelMeters ?? null,
+          appliedDegrees: value.residualHiltCorrection.appliedDegrees ?? 0,
+        })
+      : null,
+    attackLineClearance: clearance
+      ? Object.freeze({
+          pass: clearance.pass === true,
+          swordAxisClearanceDegrees: clearance.swordAxisClearanceDegrees ?? null,
+          hiltOfflineTravelMeters: clearance.hiltOfflineTravelMeters ?? null,
+          wristGripClearanceDegrees: clearance.wristGripClearanceDegrees ?? null,
+        })
+      : null,
+    inspectionAssessment: assessment
+      ? Object.freeze({
+          pass: assessment.pass === true,
+          holding: assessment.holding === true,
+          gates: assessment.gates,
+          failedGateKeys: assessment.failedGateKeys,
+          failedGateCount: assessment.failedGateCount,
+          terminalReason: assessment.terminalReason,
+          terminalIsExpectedHold: assessment.terminalIsExpectedHold,
+        })
+      : null,
+    modifiedBones: value.modifiedBones ?? null,
+    propagatedBones: value.propagatedBones ?? null,
+    proximalAssistBone: value.proximalAssistBone ?? null,
+    assistBone: value.assistBone ?? null,
+    proximalArmCorrectionActive: value.proximalArmCorrectionActive === true,
+    elbowPropagationActive: value.elbowPropagationActive === true,
+    shoulderPropagationActive: value.shoulderPropagationActive === true,
+    rigidSwordGrip: value.rigidSwordGrip === true,
+    b3BodyClockCanAdvance: value.b3BodyClockCanAdvance === true,
+    weaponArmContactConstrained: value.weaponArmContactConstrained === true,
+    reactionIntentAppliedBeforeConstraint: value.reactionIntentAppliedBeforeConstraint === true,
+    constraintApplicationOrder: value.constraintApplicationOrder ?? null,
+    authority: 'compact-live-contact-gate-telemetry',
+  });
 }
 
 function setInspectionLine(line, start, end) {
@@ -470,10 +895,15 @@ function resetExchange() {
   latestParryInput = null;
   latestParryOpportunity = null;
   latestParryConfirmation = null;
+  frozenAttackerContactPose = null;
+  canonicalAttackerOldB3Pose = null;
+  canonicalAttackerOldB3WorldSilhouette = null;
   step3AContactTransfer = null;
   latestGripConstraintReport = null;
   latestLiveSurfaceAtContact = null;
   step3AReleaseBlend = null;
+  visibleOldB3Peak = null;
+  latchedDefenderDeflectReleaseGate = null;
   updateLiveContactMarkers(null);
   latestParryWhiff = null;
   whiffProbeFrames = 0;
@@ -514,16 +944,66 @@ function step3AOwnsLiveContact() {
   );
 }
 
+function currentDefenderDeflectReleaseGate() {
+  const report = guardRuntime.report;
+  const sourceTimeSeconds = Math.max(0, Number(report?.sourceTimeSeconds) || 0);
+  const passed = report?.state === GUARD_STATES.PARRY
+    && sourceTimeSeconds + 1e-4 >= PARRY_ATTACKER_RELEASE_SOURCE_SECONDS;
+  return Object.freeze({
+    passed,
+    state: report?.state || null,
+    sourceTimeSeconds,
+    requiredSourceTimeSeconds: PARRY_ATTACKER_RELEASE_SOURCE_SECONDS,
+    marker: 'deflect-impulse',
+    latched: false,
+    authority: 'defender-reaction-marker-gates-attacker-release',
+  });
+}
+
+function updateDefenderDeflectReleaseGate() {
+  if (latchedDefenderDeflectReleaseGate) return latchedDefenderDeflectReleaseGate;
+  const current = currentDefenderDeflectReleaseGate();
+  if (!current.passed) return current;
+  latchedDefenderDeflectReleaseGate = Object.freeze({
+    ...current,
+    latched: true,
+    authority: 'latched-defender-deflect-marker-gates-attacker-release',
+  });
+  return latchedDefenderDeflectReleaseGate;
+}
+
+function defenderDeflectReleaseGate() {
+  return latchedDefenderDeflectReleaseGate || currentDefenderDeflectReleaseGate();
+}
+
 function releaseLiveContactToOldB3() {
   if (!step3AOwnsLiveContact()) {
     return Object.freeze({ accepted: false, reason: 'live-contact-no-longer-owns-presentation' });
+  }
+  const defenderReleaseGate = defenderDeflectReleaseGate();
+  if (!defenderReleaseGate.passed) {
+    return Object.freeze({
+      accepted: false,
+      reason: 'defender-deflect-marker-not-reached',
+      defenderReleaseGate,
+    });
   }
   const handoff = buildLiveParryOldB3Handoff({
     attackDirection: selectedDirection,
     contactReport: latestGripConstraintReport,
     surfaceAtContact: latestLiveSurfaceAtContact,
+    confirmedParry: latestParryConfirmation?.accepted === true
+      && firstContact?.eligible === true,
+    allowConfirmedParryFallback: true,
   });
   if (!handoff.accepted) return handoff;
+  const visibleReleasePose = captureRigPose(attacker.rig);
+  const recoilPoseAtRelease = combat.snapshot.attackerRecoil?.sample?.pose || null;
+  const appliedBodyChainPitchAtReleaseDegrees = recoilPoseAtRelease
+    ? (Number(recoilPoseAtRelease.chestPitchDegrees) || 0)
+      + (Number(recoilPoseAtRelease.spinePitchDegrees) || 0)
+      + (Number(recoilPoseAtRelease.hipsPitchDegrees) || 0)
+    : null;
 
   const handoffPublished = publishPostCouplingRecoilStaggerHandoff(attacker.rig, {
     couplingReport: handoff.couplingReport,
@@ -537,15 +1017,69 @@ function releaseLiveContactToOldB3() {
     elapsedMs: 0,
     durationMs: handoff.releaseBlendMs,
     sample: sampleLiveParryOldB3ReleaseBlend(0, handoff.releaseBlendMs),
+    sourcePose: visibleReleasePose,
+    targetPose: canonicalAttackerOldB3Pose || frozenAttackerContactPose,
+    authority: 'full-rig-live-contact-pose-to-canonical-interruption-pose',
   };
   step3AContactTransfer = Object.freeze({
     ...step3AContactTransfer,
     releasedToOldB3: true,
     releaseHandoff: handoff,
+    defenderReleaseGate,
     handoffPublished: true,
-    b3ClockFrozen: false,
+    handoffConsumedByOldB3: false,
+    b3BodyClockStartedAtImpact: false,
+    oldB3ReleaseStartPresentationMs:
+      combat.snapshot.attackerRecoil?.phaseClock?.latchPointMs ?? null,
+    continuityBridgeMs: handoff.releaseBlendMs,
+    visibleOldB3StartsAtDeflectImpulse: true,
+    oldB3AppliedBodyChainPitchAtReleaseDegrees:
+      appliedBodyChainPitchAtReleaseDegrees,
+    continuationStartedAtPresentationMs: null,
+    continuationStartedAtImpactClockMs: null,
+    bodyRestartedAtRelease: false,
+    continuationPlanIdentityPreserved: null,
+    continuationElapsedPreserved: null,
+    weaponArmContactConstrained: false,
   });
   return Object.freeze({ ...handoff, handoffPublished: true });
+}
+
+function recordVisibleOldB3Sample(combatUpdate) {
+  if (step3AContactTransfer?.releasedToOldB3 !== true) return;
+  const recoilUpdate = combatUpdate?.recoilUpdate || null;
+  const sample = recoilUpdate?.sample
+    || recoilUpdate?.snapshot?.sample
+    || combatUpdate?.attackerRecoil?.sample
+    || null;
+  if (!sample?.pose || sample.phase === 'contact-hold') return;
+  const requestedLocalChainPitchDegrees = (Number(sample.pose.chestPitchDegrees) || 0)
+    + (Number(sample.pose.spinePitchDegrees) || 0)
+    + (Number(sample.pose.hipsPitchDegrees) || 0);
+  const measurement = measureAttackerRecoilWorldSilhouette({
+    baseline: canonicalAttackerOldB3WorldSilhouette,
+    current: captureAttackerWorldSilhouette(),
+    backwardDirection: latestCombatResult?.attackerReaction?.plan?.body?.direction,
+    requestedLocalChainPitchDegrees,
+  });
+  if (!measurement.accepted) return;
+  const readabilityScore = measurement.worldBackwardLeanDegrees
+    + Math.max(0, measurement.headBackwardMeters) * 100
+    + Math.max(0, measurement.shouldersBackwardMeters) * 100;
+  if (
+    visibleOldB3Peak
+    && visibleOldB3Peak.readabilityScore >= readabilityScore
+  ) return;
+  const phaseClock = recoilUpdate?.phaseClock || recoilUpdate?.snapshot?.phaseClock || null;
+  visibleOldB3Peak = Object.freeze({
+    ...measurement,
+    phase: sample.phase,
+    presentationElapsedMs: phaseClock?.elapsedMs ?? null,
+    readabilityScore,
+    armWeight: sample.weights?.armWeight ?? null,
+    torsoWeight: sample.weights?.torsoWeight ?? null,
+    legWeight: sample.weights?.legWeight ?? null,
+  });
 }
 
 
@@ -665,11 +1199,14 @@ function forceOldTwoActorB3(direction = selectedDirection) {
     authority: 'step1-synthetic-authoritative-contact-for-old-b3-only',
   });
   firstContact = latestContact;
+  frozenAttackerContactPose = captureRigPose(attacker.rig);
   latestCombatResult = combat.resolveContact({ contact: latestContact, guardIntentAgeMs: TIMING_AGE_MS.parry });
   if (!latestCombatResult.accepted) {
+    frozenAttackerContactPose = null;
     directOldB3Diagnostic = Object.freeze({ accepted: false, reason: latestCombatResult.reason || 'diagnostic-contact-rejected' });
     return directOldB3Diagnostic;
   }
+  captureCanonicalAttackerOldB3Base(attackRuntime.snapshot.interruption);
   guardRuntime.sync(camera);
 
   const handoffPublished = publishPostCouplingRecoilStaggerHandoff(attacker.rig, {
@@ -689,6 +1226,10 @@ function forceOldTwoActorB3(direction = selectedDirection) {
     handoffPublished,
     handoffStage: handoff?.stage || null,
     handoffAccepted: handoff?.accepted === true,
+    reactionDefinitionId: latestCombatResult.attackerReaction?.id || null,
+    reactionPlanBackwardPitchDegrees:
+      latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
+    reactionInitialElapsedMs: latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
     authority: 'direct-existing-old-two-actor-b3-diagnostic',
   });
   status.textContent = directOldB3Diagnostic.accepted
@@ -978,7 +1519,7 @@ function updateParryPreContact(snapshot, currentBlade, deltaSeconds) {
       correctionDirectionDot,
       authority: 'persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic',
     });
-    interceptDriveTrace.push(latestInterceptDriveReport);
+    interceptDriveTrace.push(compactInterceptDriveTraceFrame(latestInterceptDriveReport));
     if (interceptDriveTrace.length > 96) interceptDriveTrace.shift();
   } else {
     residualBodyReachRuntime.reset();
@@ -1033,7 +1574,7 @@ function recordWhiffProbe(snapshot, probe) {
     interceptFallbackApplied: latestReachableInterceptTarget?.fallbackApplied === true,
     predictedRequiredDistanceMeters: latestReachableInterceptTarget?.predictedRequiredDistanceMeters ?? null,
     measuredRequiredDistanceMeters: latestReachableInterceptTarget?.measuredRequiredDistanceMeters ?? null,
-    interceptDriveReport: latestInterceptDriveReport,
+    interceptDriveReport: compactInterceptDriveTelemetry(latestInterceptDriveReport),
   });
   if (!closestWhiffApproach
     || record.combinedGapMeters < closestWhiffApproach.combinedGapMeters
@@ -1070,11 +1611,19 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
   const parryConfirmed = latestParryConfirmation?.accepted === true;
   const guardIntentAgeMs = parryConfirmed ? TIMING_AGE_MS.parry : TIMING_AGE_MS.block;
 
+  frozenAttackerContactPose = captureRigPose(attacker.rig);
   latestCombatResult = combat.resolveContact({
     contact: latestContact,
     guardIntentAgeMs,
+    defenderPresentationOffsetSeconds: latestPredictiveHandoff?.accepted
+      ? latestPredictiveHandoff.defenderPresentationOffsetSeconds
+      : undefined,
   });
-  if (!latestCombatResult.accepted) return;
+  if (!latestCombatResult.accepted) {
+    frozenAttackerContactPose = null;
+    return;
+  }
+  captureCanonicalAttackerOldB3Base(attackRuntime.snapshot.interruption);
   guardRuntime.sync(camera);
   const outcome = latestCombatResult.resolution.outcome;
 
@@ -1086,6 +1635,7 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
       surfaceAtContact,
       shieldLeadMotion: latestShieldLeadMotion,
       attackDirection: selectedDirection,
+      reactionIntentActiveAtImpact: false,
     });
     latestLeadHandoff = Object.freeze({
       stage: COMMITTED_PARRY_CONTACT_GATE_STAGE,
@@ -1095,13 +1645,31 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
       realSweptContact: true,
       shieldSwordGripStage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
       modifiedBone: 'wrist.r',
+      proximalAssistBone: selectedDirection === 'top' || selectedDirection === 'right' ? 'upperarm.r' : null,
       assistBone: selectedDirection === 'top' || selectedDirection === 'right' ? 'lowerarm.r' : null,
       propagatedBones: Object.freeze(['hand.r', 'handslot.r']),
       elbowPropagationActive: selectedDirection === 'top' || selectedDirection === 'right',
       shoulderPropagationActive: false,
-      b3ClockFrozen: true,
+      b3BodyClockStartedAtImpact: false,
+      oldB3ReleaseStartPresentationMs: null,
+      attackerReactionDefinitionId: latestCombatResult.attackerReaction?.id || null,
+      oldB3PlanBackwardPitchDegrees:
+        latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
+      oldB3ImpulsePeakMs: latestCombatResult.attackerReaction?.timeline?.impulsePeakMs ?? null,
+      oldB3InitialElapsedMs: latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
+      reactionDefinitionSelectedAtImpact: true,
+      fullOldB3ReactionIntentActiveAtImpact: false,
+      contactConstraintOwnsUntilDeflectImpulse: true,
+      handoffConsumedByOldB3: false,
+      continuationStartedAtPresentationMs: null,
+      continuationStartedAtImpactClockMs: null,
+      bodyRestartedAtRelease: false,
+      continuationPlanIdentityPreserved: null,
+      continuationElapsedPreserved: null,
+      weaponArmContactConstrained: true,
+      contactBasePoseAuthority: 'authoritative-impact-rig-snapshot',
       noPresetMotionCurve: true,
-      authority: 'confirmed-real-contact-to-live-shield-sword-wrist-grip-constraint',
+      authority: 'confirmed-impact-selects-old-b3-contact-holds-until-deflect-impulse',
     });
     step3AContactTransfer = Object.freeze({
       accepted: latestGripConstraintReport.accepted === true,
@@ -1110,7 +1678,19 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
       tangentAuthority: latestGripConstraintReport.plan?.tangentAuthority || null,
       initialDeflectionDirection: latestGripConstraintReport.plan?.initialDeflectionDirection || null,
       modifiedBone: latestGripConstraintReport.modifiedBone || null,
+      proximalAssistBone: latestGripConstraintReport.proximalAssistBone || null,
       propagatedBones: latestGripConstraintReport.propagatedBones || null,
+      b3BodyClockStartedAtImpact: false,
+      attackerReactionDefinitionId: latestCombatResult.attackerReaction?.id || null,
+      oldB3PlanBackwardPitchDegrees:
+        latestCombatResult.attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
+      oldB3ImpulsePeakMs: latestCombatResult.attackerReaction?.timeline?.impulsePeakMs ?? null,
+      oldB3InitialElapsedMs: latestCombatResult.attackerReaction?.initialElapsedMs ?? null,
+      reactionDefinitionSelectedAtImpact: true,
+      fullOldB3ReactionIntentActiveAtImpact: false,
+      contactConstraintOwnsUntilDeflectImpulse: true,
+      weaponArmContactConstrained: true,
+      contactBasePoseAuthority: 'authoritative-impact-rig-snapshot',
       noPresetMotionCurve: true,
       authority: latestLeadHandoff.authority,
     });
@@ -1118,7 +1698,7 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
     residualBodyReachRuntime.reset();
     residualStanceReachRuntime.reset();
     status.textContent = step3AContactTransfer.accepted
-      ? `STEP 3A ACTIVE · live shield surface is constraining sword contact through ${selectedDirection === 'left' ? 'wrist.r' : 'lowerarm.r → wrist.r'} → hand.r → grip · shoulder OFF · OLD B3 frozen until 7/7`
+      ? `STEP 3A ACTIVE · ParryImpact selected OLD B3 · live shield owns contact until DEFLECT_IMPULSE · then 28ms bridge → canonical OLD B3 from 0ms`
       : `STEP 3A FAIL · ${step3AContactTransfer.reason || 'live grip contact constraint rejected'}`;
     status.className = step3AContactTransfer.accepted ? 'good' : 'bad';
   } else if (selectedMode === 'parry') {
@@ -1546,10 +2126,20 @@ function updateHud(snapshot, combatSnapshot) {
   hudLineClearance.textContent = lineClearance
     ? `LINE CLEAR ${lineGate(lineClearance.pass)} · sword axis ${lineGate(lineClearance.swordAxisPassed)} ${lineClearance.swordAxisClearanceDegrees.toFixed(1)}° / ${lineClearance.minimumSwordAxisClearanceDegrees.toFixed(1)}° · hilt ${lineGate(lineClearance.hiltOfflinePassed)} ${(lineClearance.hiltOfflineTravelMeters * 100).toFixed(1)}cm / ${(lineClearance.minimumHiltOfflineTravelMeters * 100).toFixed(1)}cm · wrist→grip ${lineGate(lineClearance.wristGripLinePassed)} ${lineClearance.wristGripClearanceDegrees.toFixed(1)}° / ${lineClearance.minimumWristGripClearanceDegrees.toFixed(1)}°`
     : 'LINE CLEAR: waiting for live contact · red original axis / green current axis / purple wrist→grip';
+  const defenderReleaseGate = defenderDeflectReleaseGate();
+  const reactionClockMs = combatSnapshot.parryReactionClock?.elapsedMs;
+  const recoilPhaseClock = combatSnapshot.attackerRecoil?.phaseClock || null;
+  const reactionPlanPitchDegrees = latestCombatResult?.attackerReaction
+    ?.silhouette?.backwardPitchDegrees;
+  const appliedChainPitchDegrees = recoil?.pose
+    ? (Number(recoil.pose.chestPitchDegrees) || 0)
+      + (Number(recoil.pose.spinePitchDegrees) || 0)
+      + (Number(recoil.pose.hipsPitchDegrees) || 0)
+    : null;
   hudRecoil.textContent = step3AOwnsLiveContact()
-    ? 'OLD B3 recoil: FROZEN AT CONTACT · Step 3A owns the sword/hand inspection pose'
+    ? `OLD B3 selected at impact ${reactionClockMs == null ? '—' : `${reactionClockMs.toFixed(0)}ms`} · strong plan ${reactionPlanPitchDegrees?.toFixed(1) ?? '—'}° · presentation ${recoilPhaseClock?.elapsedMs?.toFixed(0) ?? '0'}ms ${recoilPhaseClock?.latched ? 'PARKED AT CONTACT ORIGIN' : 'WAITING'} · CONTACT OWNS FINAL POSE · ${defenderReleaseGate.passed ? 'DEFLECT_IMPULSE READY' : `waiting DEFLECT ${defenderReleaseGate.sourceTimeSeconds.toFixed(3)}s / ${defenderReleaseGate.requiredSourceTimeSeconds.toFixed(3)}s`}`
     : recoil
-      ? `OLD B3 recoil: ${recoil.phase} · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · legs ${recoil.weights?.legWeight?.toFixed(2) ?? '—'}`
+      ? `OLD B3 recoil: ${recoil.phase} · presentation ${recoilPhaseClock?.elapsedMs?.toFixed(0) ?? '—'}ms · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · legs ${recoil.weights?.legWeight?.toFixed(2) ?? '—'}`
       : 'OLD B3 recoil: —';
   const inspectionAssessment = latestGripConstraintReport?.inspectionAssessment;
   hudDiagnostic.textContent = directOldB3Diagnostic
@@ -1568,6 +2158,14 @@ function updateHud(snapshot, combatSnapshot) {
 
 function buildReport(combatSnapshot = combat.snapshot) {
   const handoff = combatSnapshot.attackerRecoil?.postCouplingHandoff || null;
+  const recoilSample = combatSnapshot.attackerRecoil?.sample || null;
+  const recoilPose = recoilSample?.pose || null;
+  const appliedBodyChainPitchDegrees = recoilPose
+    ? (Number(recoilPose.chestPitchDegrees) || 0)
+      + (Number(recoilPose.spinePitchDegrees) || 0)
+      + (Number(recoilPose.hipsPitchDegrees) || 0)
+    : null;
+  const attackerReaction = latestCombatResult?.attackerReaction || null;
   const report = {
     stage: LAB_STAGE,
     recoilStage: RECOIL_STAGE,
@@ -1577,49 +2175,107 @@ function buildReport(combatSnapshot = combat.snapshot) {
     outcome: latestCombatResult?.resolution?.outcome || null,
     parryGate: {
       profile: parryGate.profile,
-      opportunity: latestParryOpportunity,
-      input: latestParryInput,
-      confirmation: latestParryConfirmation,
+      opportunity: compactParryGateAttempt(latestParryOpportunity),
+      input: compactParryGateAttempt(latestParryInput),
+      confirmation: compactParryGateAttempt(latestParryConfirmation),
       manualInputRequired: true,
       commitmentSource: 'attack.action.runtime.movementStartSeconds',
       successAuthority: 'eligible real swept Sword × Shield contact during attack_active',
     },
     contact: firstContact,
     contactGeometryDiagnostic: describeContactGeometry(firstContact),
-    predictiveAnalysis: latestPredictiveAnalysis,
+    predictiveAnalysis: compactPredictiveAnalysis(latestPredictiveAnalysis),
+    predictiveHandoff: latestPredictiveHandoff,
+    defenderPresentationContinuity: latestCombatResult?.defenderPayload
+      ? Object.freeze({
+          source: latestCombatResult.defenderPayload.presentationContinuitySource || null,
+          predictiveSourceTimeSeconds: latestPredictiveHandoff?.defenderPresentationOffsetSeconds ?? null,
+          authoritativeSourceTimeSeconds: latestCombatResult.defenderPayload.presentationOffsetSeconds ?? null,
+        })
+      : null,
+    defenderDeflectReleaseGate: defenderDeflectReleaseGate(),
+    parryImpactEvent: combatSnapshot.parryImpactEvent || latestCombatResult?.parryImpactEvent || null,
+    parryReactionClock: combatSnapshot.parryReactionClock || null,
+    recoilPhaseClock: combatSnapshot.attackerRecoil?.phaseClock || null,
+    attackerParriedReactionDefinition: attackerReaction
+      ? Object.freeze({
+          stage: attackerReaction.stage,
+          id: attackerReaction.id,
+          activation: attackerReaction.sourceBurst?.activation || null,
+          initialElapsedMs: attackerReaction.initialElapsedMs,
+          planBackwardPitchDegrees: attackerReaction.silhouette?.backwardPitchDegrees ?? null,
+          appliedBodyChainPitchDegrees:
+            step3AContactTransfer?.oldB3AppliedBodyChainPitchAtReleaseDegrees
+              ?? appliedBodyChainPitchDegrees,
+          impulsePeakMs: attackerReaction.timeline?.impulsePeakMs ?? null,
+          separateBalanceBreakRuntime: attackerReaction.channelPolicy?.separateBalanceBreakRuntime,
+          authority: attackerReaction.authority,
+        })
+      : null,
+    visibleOldB3Peak,
+    oldB3Continuation: Object.freeze({
+      handoffPublished: step3AContactTransfer?.handoffPublished === true,
+      handoffConsumed: step3AContactTransfer?.handoffConsumedByOldB3 === true,
+      releaseStartPresentationMs:
+        step3AContactTransfer?.oldB3ReleaseStartPresentationMs ?? null,
+      continuityBridgeMs: step3AContactTransfer?.continuityBridgeMs ?? null,
+      visibleOldB3StartsAtDeflectImpulse:
+        step3AContactTransfer?.visibleOldB3StartsAtDeflectImpulse === true,
+      continuationStartedAtPresentationMs:
+        step3AContactTransfer?.continuationStartedAtPresentationMs ?? null,
+      continuationStartedAtImpactClockMs:
+        step3AContactTransfer?.continuationStartedAtImpactClockMs ?? null,
+      bodyRestartedAtRelease: step3AContactTransfer?.bodyRestartedAtRelease ?? false,
+      planIdentityPreserved:
+        step3AContactTransfer?.continuationPlanIdentityPreserved ?? null,
+      presentationElapsedPreserved:
+        step3AContactTransfer?.continuationElapsedPreserved ?? null,
+      authority: 'deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero',
+    }),
+    contactPoseLifecycle: Object.freeze({
+      capturedAtAuthoritativeImpact: Boolean(frozenAttackerContactPose),
+      restoredBeforeEveryBodyOverlay: Boolean(frozenAttackerContactPose && combatSnapshot.activeExchange),
+      attackerReactionComplete: combatSnapshot.attackerReactionComplete === true,
+      interruptionHeldForWeaponContact: combatSnapshot.attackerReactionComplete === true
+        && step3AOwnsLiveContact(),
+      authority: 'authoritative-impact-rig-snapshot-plus-independent-contact-release',
+    }),
     predictiveShieldLead: {
       active: Boolean(latestPredictiveReport?.active),
       progress: latestPredictiveReport?.progress ?? null,
       motion: latestShieldLeadMotion,
-      interceptTarget: latestReachableInterceptTarget,
-      interceptDrive: latestInterceptDriveReport,
+      interceptTarget: compactReachableInterceptTarget(latestReachableInterceptTarget),
+      interceptDrive: compactInterceptDriveTelemetry(latestInterceptDriveReport),
       interceptDriveTrace: Object.freeze({
         frameCount: interceptDriveTrace.length,
         fallbackFrames: interceptDriveTrace.filter((frame) => frame.fallbackApplied).length,
         measuredReachableFrames: interceptDriveTrace.filter((frame) => frame.measuredReachable).length,
         acquisitionFrames: interceptDriveTrace.filter((frame) => frame.measuredInsideAcquisitionBand).length,
-        recentFrames: Object.freeze(interceptDriveTrace.slice(-16)),
+        recentFrames: Object.freeze(interceptDriveTrace.slice(-RECENT_COMPACT_TRACE_FRAMES)),
+        telemetryDetail: 'compact-scalar-frames-only',
       }),
     },
     step3AContactTransfer,
     inspectionCamera: freeCamera.snapshot(),
-    liveShieldSwordGripContactConstraint: latestGripConstraintReport,
+    liveShieldSwordGripContactConstraint: compactLiveContactConstraint(latestGripConstraintReport),
     latestInputSignal,
     parryWhiff: latestParryWhiff,
     whiffTelemetry: Object.freeze({
       probeFrames: whiffProbeFrames,
-      closestApproachRecord: closestWhiffApproach,
-      outsideActiveContact,
+      closestApproachRecord: latestParryWhiff ? closestWhiffApproach : null,
+      outsideActiveContact: latestParryWhiff ? outsideActiveContact : null,
       authority: 'presentation-diagnostic-only-no-combat-authority',
     }),
     postCouplingStage: handoff?.stage || null,
     postCouplingReason: handoff?.reason || null,
-    recoil: combatSnapshot.attackerRecoil?.sample || null,
+    recoil: recoilSample,
     directOldB3Diagnostic,
     debugLowStance: Object.freeze({
       enabled: DEBUG_MODE,
       profile: DEBUG_MODE ? Object.freeze({ ...debugStanceProfile }) : null,
-      latestThreatSelection: latestInterceptDriveReport?.residualStanceReach?.threatSelection ?? null,
+      latestThreatSelection: compactThreatSelection(
+        latestInterceptDriveReport?.residualStanceReach?.threatSelection,
+      ),
       authority: 'debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority',
     }),
     invariants: {
@@ -1641,6 +2297,10 @@ function buildReport(combatSnapshot = combat.snapshot) {
       boundedForearmThenWristForTopRight: ['top', 'right'].includes(selectedDirection)
         ? latestGripConstraintReport?.assistBone === 'lowerarm.r'
         : true,
+      boundedProximalArmCorrectionBeforeForearmAndWrist: ['top', 'right'].includes(selectedDirection)
+        ? latestGripConstraintReport?.proximalAssistBone === 'upperarm.r'
+          && latestGripConstraintReport?.proximalArmCorrectionActive === true
+        : true,
       handAndSocketFollowWristHierarchy: latestGripConstraintReport?.propagatedBones?.join(',') === 'hand.r,handslot.r',
       elbowPropagationMatchesDirectionPolicy: latestGripConstraintReport?.elbowPropagationActive === ['top', 'right'].includes(selectedDirection) || !step3AContactTransfer,
       shoulderPropagationDeferred: latestGripConstraintReport?.shoulderPropagationActive === false || !step3AContactTransfer,
@@ -1650,18 +2310,100 @@ function buildReport(combatSnapshot = combat.snapshot) {
       attackLineClearanceRequired: true,
       attackLineClearancePassed: latestGripConstraintReport?.attackLineClearance?.pass ?? null,
       freeInspectionCameraDoesNotMutateCombat: true,
-      b3ClockFrozenDuringStep3A: step3AOwnsLiveContact(),
-      oldB3ReleasedOnlyAfterSevenOfSeven: step3AContactTransfer?.releasedToOldB3
-        ? latestGripConstraintReport?.inspectionPassed === true
+      parryImpactSelectsReactionWhileDefenderClockRuns: combatSnapshot.parryReactionClock
+        ? combatSnapshot.parryReactionClock.defenderReactionStarted === true
+          && combatSnapshot.parryReactionClock.attackerReactionDefinitionSelected === true
         : true,
-      oldB3CoreModulesUnchanged: true,
+      parryImpactSelectsExaggeratedOldB3ReactionDefinition: attackerReaction
+        ? attackerReaction.initialElapsedMs === 0
+          && attackerReaction.sourceBurst?.activation === 'deflect-impulse'
+          && attackerReaction.sourceBurst?.powerFrame?.startsAtDeflectImpulse === true
+          && attackerReaction.silhouette?.backwardPitchDegrees >= 25
+          && attackerReaction.channelPolicy?.contactConstraintRunsBeforeVisibleReaction === true
+          && attackerReaction.channelPolicy?.separateBalanceBreakRuntime === false
+        : true,
+      contactOwnsFinalPoseBeforeVisibleOldB3: step3AOwnsLiveContact()
+        ? combatSnapshot.attackerRecoil?.appliedChannels?.torso === false
+          && combatSnapshot.attackerRecoil?.appliedChannels?.weaponArm === false
+          && latestGripConstraintReport?.reactionIntentAppliedBeforeConstraint === false
+        : true,
+      b3PresentationParkedAtOriginDuringLiveContact: step3AOwnsLiveContact()
+        ? combatSnapshot.attackerRecoil?.phaseClock?.phaseLatch
+            === TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT
+          && combatSnapshot.attackerRecoil?.phaseClock?.latchPointMs === 0
+          && combatSnapshot.attackerRecoil?.phaseClock?.elapsedMs === 0
+        : true,
+      weaponArmRemainsContactConstrainedDuringStep3A: step3AOwnsLiveContact()
+        ? step3AContactTransfer?.weaponArmContactConstrained === true
+        : true,
+      frozenContactPoseRestoredBeforeEveryBodyOverlay: step3AContactTransfer
+        ? Boolean(frozenAttackerContactPose)
+        : true,
+      bodyCompletionCannotReleaseContactOwnedPose: step3AContactTransfer
+        ? step3AContactTransfer.releasedToOldB3 === true
+          || combatSnapshot.attackerReactionComplete !== true
+          || combatSnapshot.attack?.interrupted === true
+        : true,
+      oldB3WeaponArmReleasedAfterInspectionOrConfirmedFallback: step3AContactTransfer?.releasedToOldB3
+        ? latestGripConstraintReport?.inspectionPassed === true
+          || step3AContactTransfer?.releaseHandoff?.couplingReport?.inspectionFallbackUsed === true
+        : true,
+      defenderParryPresentationNeverRewindsAtContact: latestPredictiveHandoff?.accepted && latestCombatResult?.accepted
+        ? latestCombatResult.defenderPayload?.presentationOffsetSeconds + 1e-4
+          >= latestPredictiveHandoff.defenderPresentationOffsetSeconds
+        : true,
+      oldB3WeaponArmReleasedOnlyAfterDefenderDeflectMarker: step3AContactTransfer?.releasedToOldB3
+        ? step3AContactTransfer.defenderReleaseGate?.passed === true
+        : true,
+      deflectImpulseStartsOldB3FromZeroWithoutBodyRestart: step3AContactTransfer?.handoffConsumedByOldB3
+        ? step3AContactTransfer.bodyRestartedAtRelease === false
+          && step3AContactTransfer.continuationPlanIdentityPreserved === true
+          && step3AContactTransfer.continuationElapsedPreserved === true
+          && step3AContactTransfer.continuationStartedAtPresentationMs === 0
+          && step3AContactTransfer.continuityBridgeMs === 28
+          && step3AContactTransfer.defenderReleaseGate?.passed === true
+        : true,
+      visibleOldB3ReachedHistoricalBackwardPeak: step3AContactTransfer?.handoffConsumedByOldB3
+        ? visibleOldB3Peak?.readable === true
+        : true,
+      contactQaCannotPermanentlySuppressConfirmedParryOldB3: step3AContactTransfer?.releasedToOldB3
+        ? latestParryConfirmation?.accepted === true
+        : true,
+      compactTelemetryDoesNotRetainSolverGraphs: interceptDriveTrace.every(
+        (frame) => frame?.telemetryDetail === 'compact-scalar-frame',
+      ),
       blockPathPreserved: true,
       noRootTranslation: true,
     },
   };
-  reportNode.textContent = JSON.stringify(report, null, 2);
+  const reportText = JSON.stringify(report, null, 2);
+  const reportWithinDomBudget = reportText.length <= MAX_REPORT_DOM_CHARACTERS;
+  const oversizedSectionCharacters = reportWithinDomBudget
+    ? null
+    : Object.freeze(Object.fromEntries(
+        Object.entries(report).map(([key, value]) => [key, JSON.stringify(value)?.length ?? 0]),
+      ));
+  reportNode.textContent = reportWithinDomBudget
+    ? reportText
+    : JSON.stringify({
+        stage: LAB_STAGE,
+        pass: false,
+        reason: 'verification-report-exceeded-dom-budget',
+        reportCharacters: reportText.length,
+        maximumCharacters: MAX_REPORT_DOM_CHARACTERS,
+        traceFrames: interceptDriveTrace.length,
+        oversizedSectionCharacters,
+      }, null, 2);
   document.documentElement.dataset.g43b5r281 = report.pass ? 'pass' : 'fail';
   window.__G43B5R281_RESULT__ = report;
+  window.__G43B5R281_PERF__ = Object.freeze({
+    reportCharacters: reportText.length,
+    maximumCharacters: MAX_REPORT_DOM_CHARACTERS,
+    reportWithinDomBudget,
+    traceFrames: interceptDriveTrace.length,
+    recentTraceFrames: Math.min(interceptDriveTrace.length, RECENT_COMPACT_TRACE_FRAMES),
+    telemetryDetail: 'compact-scalar-frames-only',
+  });
   return report;
 }
 async function main() {
@@ -1742,10 +2484,44 @@ function frame(timestamp) {
     let step3ALiveConstraintNeedsUpdate = false;
     if (combat.active) {
       if (step3AOwnsLiveContact()) {
-        latestCombatUpdate = combat.update(0, { camera });
+        latestCombatUpdate = combat.update(deltaSeconds, {
+          camera,
+          attackerRecoilChannels: TWO_ACTOR_PARRY_REACTION_CHANNELS.LIVE_CONTACT_HOLD,
+          attackerRecoilPhaseLatch: TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT,
+          holdAttackerInterruption: true,
+        });
         step3ALiveConstraintNeedsUpdate = swordGripConstraint.active;
       } else {
         latestCombatUpdate = combat.update(deltaSeconds, { camera });
+        const handoffConsumed = latestCombatUpdate?.recoilUpdate?.postCouplingHandoffApplied === true;
+        if (
+          handoffConsumed
+          && step3AContactTransfer?.releasedToOldB3 === true
+          && step3AContactTransfer.handoffConsumedByOldB3 !== true
+        ) {
+          const phaseClock = latestCombatUpdate.recoilUpdate.phaseClock
+            || latestCombatUpdate.recoilUpdate.snapshot?.phaseClock
+            || null;
+          const appliedHandoff = latestCombatUpdate.recoilUpdate.postCouplingHandoff
+            || latestCombatUpdate.recoilUpdate.snapshot?.postCouplingHandoff
+            || null;
+          step3AContactTransfer = Object.freeze({
+            ...step3AContactTransfer,
+            handoffConsumedByOldB3: true,
+            continuationStartedAtPresentationMs: phaseClock?.previousElapsedMs ?? null,
+            continuationStartedAtImpactClockMs:
+              latestCombatUpdate.parryReactionClock?.elapsedMs ?? null,
+            bodyRestartedAtRelease: false,
+            continuationPlanIdentityPreserved:
+              appliedHandoff?.planIdentityPreserved === true,
+            continuationElapsedPreserved:
+              appliedHandoff?.presentationElapsedPreserved === true,
+            visibleOldB3StartedAtDeflectImpulse: true,
+            authority: 'deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero',
+          });
+          status.textContent = `OLD B3 STARTED · ${selectedDirection.toUpperCase()} DEFLECT_IMPULSE released contact · ${step3AReleaseBlend?.durationMs ?? 28}ms continuity bridge · canonical OLD B3 from ${phaseClock?.previousElapsedMs?.toFixed(0) ?? '0'}ms`;
+          status.className = 'good';
+        }
         if (step3AReleaseBlend) step3AReleaseBlend.elapsedMs += deltaMs;
         if (latestCombatUpdate?.justCompleted && !attackerRecovery) beginAttackRecovery(selectedDirection);
       }
@@ -1754,24 +2530,35 @@ function frame(timestamp) {
     }
 
     guardRuntime.update(deltaMs, camera);
+    updateDefenderDeflectReleaseGate();
     if (step3ALiveConstraintNeedsUpdate) {
       const wasHolding = latestGripConstraintReport?.holding === true;
       latestGripConstraintReport = swordGripConstraint.update(deltaSeconds, {
         surfaceAtFrame: buckler.getWorldParrySurface(),
+        reactionIntentAppliedBeforeConstraint: false,
       });
       updateLiveContactMarkers(latestGripConstraintReport);
-      if (!wasHolding && latestGripConstraintReport?.holding) {
+      if (latestGripConstraintReport?.holding) {
         const passed = latestGripConstraintReport.inspectionPassed === true;
-        const release = passed ? releaseLiveContactToOldB3() : null;
-        status.textContent = release?.accepted
-          ? `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} lowerarm/wrist push complete → OLD B3 released`
-          : passed
-            ? `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} OLD B3 handoff deferred while TOP/RIGHT are calibrated first`
-            : `STEP 3A HOLD · ${formatInspectionFailureSummary(latestGripConstraintReport)}`;
-        status.className = release?.accepted || passed ? 'good' : 'bad';
+        const release = step3AOwnsLiveContact() ? releaseLiveContactToOldB3() : null;
+        if (!wasHolding || release?.accepted) {
+          const waitingForDefenderImpulse = release?.reason === 'defender-deflect-marker-not-reached';
+          const inspectionFallbackUsed = release?.couplingReport?.inspectionFallbackUsed === true;
+          status.textContent = release?.accepted
+            ? inspectionFallbackUsed
+              ? `PARRY CONFIRMED · ${selectedDirection.toUpperCase()} ${formatInspectionFailureSummary(latestGripConstraintReport)} · DEFLECT_IMPULSE fail-safe release · OLD B3 starts at 0ms`
+              : `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} DEFLECT_IMPULSE · releasing contact through 28ms bridge · OLD B3 starts at 0ms`
+            : waitingForDefenderImpulse
+              ? `${passed ? 'LIVE CONTACT VERIFIED · 7/7 PASS' : `PARRY CONFIRMED · ${formatInspectionFailureSummary(latestGripConstraintReport)}`} · waiting for defender DEFLECT ${release.defenderReleaseGate.sourceTimeSeconds.toFixed(3)}s / ${release.defenderReleaseGate.requiredSourceTimeSeconds.toFixed(3)}s`
+              : passed
+                ? `LIVE CONTACT VERIFIED · 7/7 PASS · ${selectedDirection.toUpperCase()} weapon-arm handoff deferred while TOP/RIGHT are calibrated first`
+                : `STEP 3A HOLD · ${formatInspectionFailureSummary(latestGripConstraintReport)}`;
+          status.className = release?.accepted || passed ? 'good' : waitingForDefenderImpulse ? 'warn' : 'bad';
+        }
       }
     }
     attackerSword.update(); defenderSword?.update();
+    recordVisibleOldB3Sample(latestCombatUpdate);
 
     if (!firstContact) {
       const currentBlade = captureBladePolyline();

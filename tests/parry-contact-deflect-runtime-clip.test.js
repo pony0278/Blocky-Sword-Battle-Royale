@@ -61,6 +61,13 @@ test('G3.6.3 Parry Advantage and Perfect Parry share the exact D production timi
   assert.equal(parry.deflectRate, 0.95);
   assert.equal(parry.deflectRecoveryRate, 1.0);
   assert.equal(parry.reactionDurationSeconds, 0.96);
+  assert.deepEqual(parry.presentationMarkers, {
+    preContactStartSeconds: 0.205,
+    contactPoseSeconds: 0.35,
+    deflectImpulseSeconds: 0.35,
+    attackerReleaseEligibleSeconds: 0.35,
+  });
+  assert.deepEqual(perfect.presentationMarkers, parry.presentationMarkers);
   assert.ok(Math.abs(parry.deflectPowerEndAtSeconds - 0.7597368421052632) < 1e-9);
   assert.ok(Math.abs(parry.deflectRecoveryEndAtSeconds - 0.9097368421052632) < 1e-9);
   assert.ok(parry.reactionDurationSeconds - parry.deflectRecoveryEndAtSeconds > 0.05 - 1e-9);

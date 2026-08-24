@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 
-test('G4.3B.5R.2 Lab uses real swept Sword × Buckler contact as the authority gate', () => {
+test('G4.3B.5R.2 Lab uses real swept Sword x Buckler contact as the authority gate', () => {
   assert.match(source, /probeSweptSwordBucklerContact\(/);
   assert.match(source, /if \(!latestContact\.contact\) return;/);
   assert.match(source, /combat\.resolveContact\(\{ contact: latestContact, guardIntentAgeMs \}\)/);
@@ -46,10 +46,10 @@ test('G4.3B.5R.2.7 preserves terminal hand constraint and neutral release base b
   assert.match(source, /terminalHandConstraintReappliedForNeutralB3Base: true/);
 });
 
-test('historical .2.7 source remains covered while current Lab releases verified TOP/RIGHT live contact', () => {
-  assert.match(html, /Success authority<\/span><b>real swept Sword × Shield contact<\/b>/);
-  assert.match(html, /After success<\/span><b>live-contact inspection hold.*TOP\/RIGHT 7\/7.*OLD B3<\/b>/);
-  assert.match(html, /shoulder off.*LEFT deferred/);
+test('historical .2.7 source remains covered while current Lab selects at impact and starts at deflect', () => {
+  assert.match(html, /Success authority<\/span><b>real swept Sword .* Shield contact<\/b>/);
+  assert.match(html, /After success<\/span><b>ParryImpact selects one 25.* OLD B3 plan.*contact holds presentation at 0ms.*DEFLECT_IMPULSE.*28ms continuity bridge.*OLD B3 runs from elapsed 0<\/b>/);
+  assert.match(html, /contact correction fades to zero before visible OLD B3 arm sweep.*separate shoulder\/clavicle helper off.*LEFT release deferred/);
   assert.match(source, /WHOLE-BODY BURST: ACTIVE/);
   assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
   assert.match(source, /weaponShouldersTorsoHipsLegsShareBurstClock: true/);

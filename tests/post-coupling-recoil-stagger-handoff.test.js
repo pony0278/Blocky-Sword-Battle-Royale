@@ -162,12 +162,15 @@ test('G4.3B.5R.2.7 release signal is one-shot per attacker rig', () => {
   assert.equal(second, null);
 });
 
-test('source contract injects .2.7 handoff before B3 elapsed advances', () => {
+test('source contract injects .2.7 handoff before the B3 phase clock advances', () => {
   const couplingSource = fs.readFileSync(new URL('../src/combat/shield-driven-contact-coupling.js', import.meta.url), 'utf8');
   const recoilSource = fs.readFileSync(new URL('../src/combat/attacker-recoil-presentation.js', import.meta.url), 'utf8');
   assert.match(couplingSource, /publishPostCouplingRecoilStaggerHandoff\(attackerRig/);
-  assert.match(recoilSource, /const handoff = applyPendingPostCouplingHandoff\(\);\s*elapsedMs \+=/);
-  assert.match(recoilSource, /elapsedMs = Math\.max\(elapsedMs, handoff\.initialElapsedMs\)/);
-  assert.match(recoilSource, /activePlan = handoff\.plan/);
-  assert.match(recoilSource, /handoff\.separation\?\.releaseWindowMs/);
+  assert.match(recoilSource, /const handoff = applyPendingPostCouplingHandoff\(\);\s*const phaseClock = advanceAttackerRecoilPresentationClock\(/);
+  assert.match(recoilSource, /elapsedMs = Math\.max\(elapsedMs, builtHandoff\.initialElapsedMs\)/);
+  assert.match(recoilSource, /activePlan = builtHandoff\.plan/);
+  assert.match(recoilSource, /builtHandoff\.separation\?\.releaseWindowMs/);
+  assert.match(recoilSource, /planIdentityPreserved: activePlan === planBeforeHandoff/);
+  assert.match(recoilSource, /presentationElapsedPreserved: elapsedMs === elapsedBeforeHandoffMs/);
+  assert.match(recoilSource, /bodyRestartedAtHandoff: false/);
 });

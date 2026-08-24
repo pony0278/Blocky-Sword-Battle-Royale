@@ -35,6 +35,11 @@ const DEFLECT_RATE = 0.95;
 const DEFLECT_RECOVERY_RATE = 1.0;
 const SHARED_CONTACT_HOLD_SECONDS = 0.05;
 const SHARED_BLEND_SECONDS = 0.055;
+// Calibrated presentation markers shared by predictive pre-roll, authoritative
+// contact handoff, and the attacker-release gate. Keeping them with the
+// composite reaction prevents those consumers from inventing separate clocks.
+const PRE_CONTACT_START_SECONDS = 0.205;
+const DEFLECT_IMPULSE_SECONDS = 0.35;
 
 export const G36_POWER_PARRY_TORSO_SAFETY_LIMITS_DEGREES = Object.freeze({
   spine: 42,
@@ -82,6 +87,12 @@ export function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFL
   const blendEndSeconds = holdEndSeconds + base.blendSeconds;
   const deflectPowerEndAtSeconds = blendEndSeconds + deflectPowerPlaybackSeconds();
   const deflectRecoveryEndAtSeconds = deflectPowerEndAtSeconds + deflectRecoveryPlaybackSeconds();
+  const presentationMarkers = Object.freeze({
+    preContactStartSeconds: PRE_CONTACT_START_SECONDS,
+    contactPoseSeconds: DEFLECT_IMPULSE_SECONDS,
+    deflectImpulseSeconds: DEFLECT_IMPULSE_SECONDS,
+    attackerReleaseEligibleSeconds: DEFLECT_IMPULSE_SECONDS,
+  });
   return Object.freeze({
     ...base,
     stage: PRODUCTION_PARRY_DEFLECT_STAGE,
@@ -103,6 +114,7 @@ export function getProductionParryDeflectProfile(variant = PRODUCTION_PARRY_DEFL
     deflectRecoveryRate: DEFLECT_RECOVERY_RATE,
     deflectPowerEndAtSeconds,
     deflectRecoveryEndAtSeconds,
+    presentationMarkers,
     // Compatibility field: the complete Power Bash visual chain now ends only
     // after D's authored recovery tail, not at the end of the power phase.
     deflectEndAtSeconds: deflectRecoveryEndAtSeconds,

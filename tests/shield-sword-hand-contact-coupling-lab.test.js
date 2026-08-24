@@ -27,8 +27,8 @@ test('Step 3A exposes an explicit live contact inspection state and markers', ()
   assert.match(html, /Live Shield → Sword → Wrist-Grip Constraint/);
   assert.match(html, /Cyan = shield target/);
   assert.match(html, /yellow = sword contact/);
-  assert.match(html, /LIVE CONTACT VERIFIED/);
-  assert.match(html, /all seven inspection gates pass/);
+  assert.match(html, /confirmed real Parry uses the same bridge as a fail-safe and cannot remain frozen/);
+  assert.match(html, /TOP\/RIGHT 7\/7/);
   assert.match(source, /STEP 3A HOLD · LIVE CONTACT VERIFIED/);
   assert.match(source, /formatInspectionFailureSummary/);
   assert.match(source, /failedGateCount/);
@@ -103,34 +103,106 @@ test('Step 3A starts only after the manual gate confirms eligible real contact',
   assert.doesNotMatch(resolve, /publishPostCouplingRecoilStaggerHandoff/);
 });
 
-test('Step 3A freezes OLD B3 during live contact, then a passing TOP or RIGHT release resumes it', () => {
+test('R18I lets live contact own the final pose while OLD B3 waits at presentation origin', () => {
   const frameStart = source.indexOf('function frame(');
   const frameEnd = source.indexOf('requestAnimationFrame(frame);', frameStart);
   assert.ok(frameStart >= 0 && frameEnd > frameStart);
   const frame = source.slice(frameStart, frameEnd);
   const ownership = frame.indexOf('if (step3AOwnsLiveContact())');
-  const freeze = frame.indexOf('combat.update(0, { camera })', ownership);
-  const guardUpdate = frame.indexOf('guardRuntime.update(deltaMs, camera)', freeze);
+  const bodyRecoil = frame.indexOf('combat.update(deltaSeconds', ownership);
+  const channelMask = frame.indexOf('TWO_ACTOR_PARRY_REACTION_CHANNELS.LIVE_CONTACT_HOLD', bodyRecoil);
+  const guardUpdate = frame.indexOf('guardRuntime.update(deltaMs, camera)', channelMask);
   const liveUpdate = frame.indexOf('swordGripConstraint.update(deltaSeconds', guardUpdate);
   const release = frame.indexOf('releaseLiveContactToOldB3()', liveUpdate);
   const swordUpdate = frame.indexOf('attackerSword.update(); defenderSword?.update();', liveUpdate);
 
-  assert.ok(ownership >= 0 && freeze > ownership);
-  assert.ok(guardUpdate > freeze && liveUpdate > guardUpdate && release > liveUpdate && swordUpdate > release);
+  assert.ok(ownership >= 0 && bodyRecoil > ownership && channelMask > bodyRecoil);
+  assert.ok(guardUpdate > channelMask && liveUpdate > guardUpdate && release > liveUpdate && swordUpdate > release);
   assert.match(frame, /surfaceAtFrame: buckler\.getWorldParrySurface\(\)/);
+  assert.match(frame, /reactionIntentAppliedBeforeConstraint: false/);
   assert.match(source, /publishPostCouplingRecoilStaggerHandoff/);
   assert.match(source, /releasedToOldB3/);
-  assert.match(source, /b3ClockFrozenDuringStep3A: step3AOwnsLiveContact\(\)/);
+  assert.match(source, /b3BodyClockStartedAtImpact: false/);
+  assert.match(source, /fullOldB3ReactionIntentActiveAtImpact: false/);
+  assert.match(source, /contactConstraintOwnsUntilDeflectImpulse: true/);
+  assert.match(source, /boundedProximalArmCorrectionBeforeForearmAndWrist/);
+  assert.match(source, /proximalAssistBone/);
+  assert.match(source, /weaponArmRemainsContactConstrainedDuringStep3A/);
+  assert.match(source, /frozenAttackerContactPose = captureRigPose\(attacker\.rig\)/);
+  assert.match(source, /applyRigPose\(attacker\.rig, frozenAttackerContactPose\)/);
+  assert.match(source, /canonicalAttackerOldB3Pose = captureRigPose\(attacker\.rig\)/);
+  assert.match(source, /sampleCanonicalInterruptionPose\(interruption\)/);
+  assert.match(frame, /holdAttackerInterruption: true/);
+  assert.match(source, /frozenContactPoseRestoredBeforeEveryBodyOverlay/);
+  assert.match(source, /bodyCompletionCannotReleaseContactOwnedPose/);
+  assert.match(source, /contactOwnsFinalPoseBeforeVisibleOldB3/);
+  assert.match(source, /b3PresentationParkedAtOriginDuringLiveContact/);
+});
+
+test('R18I preserves predictive defender time and latches the defender deflect marker', () => {
+  const resolve = functionBody('resolveContact', 'showParryCue');
+  const release = functionBody('releaseLiveContactToOldB3', 'forceOldTwoActorB3');
+
+  assert.match(resolve, /latestPredictiveHandoff\.defenderPresentationOffsetSeconds/);
+  assert.match(resolve, /defenderPresentationOffsetSeconds:/);
+  assert.match(source, /function defenderDeflectReleaseGate\(\)/);
+  assert.match(source, /function updateDefenderDeflectReleaseGate\(\)/);
+  assert.match(source, /latchedDefenderDeflectReleaseGate/);
+  assert.match(source, /latched-defender-deflect-marker-gates-attacker-release/);
+  assert.match(source, /PARRY_ATTACKER_RELEASE_SOURCE_SECONDS/);
+  assert.match(release, /if \(!defenderReleaseGate\.passed\)/);
+  assert.match(release, /defender-deflect-marker-not-reached/);
+  assert.match(release, /allowConfirmedParryFallback: true/);
+  assert.match(source, /defenderParryPresentationNeverRewindsAtContact/);
+  assert.match(source, /oldB3WeaponArmReleasedOnlyAfterDefenderDeflectMarker/);
+});
+
+test('R18I releases contact through 28ms continuity and starts canonical OLD B3 from zero', () => {
+  const frameStart = source.indexOf('function frame(');
+  const frameEnd = source.indexOf('requestAnimationFrame(frame);', frameStart);
+  const frame = source.slice(frameStart, frameEnd);
+  const liveContact = frame.indexOf('if (step3AOwnsLiveContact())');
+  const latch = frame.indexOf('TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT', liveContact);
+  const releaseUpdate = frame.indexOf('combat.update(deltaSeconds, { camera })', latch);
+  const consume = frame.indexOf('postCouplingHandoffApplied === true', releaseUpdate);
+
+  assert.ok(liveContact >= 0 && latch > liveContact && releaseUpdate > latch && consume > releaseUpdate);
+  assert.match(source, /oldB3ReleaseStartPresentationMs/);
+  assert.match(source, /continuityBridgeMs/);
+  assert.match(source, /handoffConsumedByOldB3/);
+  assert.match(source, /continuationStartedAtPresentationMs/);
+  assert.match(source, /bodyRestartedAtRelease: false/);
+  assert.match(source, /continuationPlanIdentityPreserved/);
+  assert.match(source, /continuationElapsedPreserved/);
+  assert.match(source, /attackerReactionDefinitionId/);
+  assert.match(source, /oldB3PlanBackwardPitchDegrees/);
+  assert.match(source, /oldB3AppliedBodyChainPitchAtReleaseDegrees/);
+  assert.match(source, /oldB3InitialElapsedMs/);
+  assert.match(source, /parryImpactSelectsExaggeratedOldB3ReactionDefinition/);
+  assert.match(source, /deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero/);
+  assert.match(source, /from '\.\.\/\.\.\/src\/combat\/post-coupling-recoil-stagger-handoff\.js';/);
+  assert.doesNotMatch(source, /post-coupling-recoil-stagger-handoff\.js\?v=/);
+  assert.match(source, /OLD B3 STARTED/);
+  assert.match(source, /deflectImpulseStartsOldB3FromZeroWithoutBodyRestart/);
+  assert.match(source, /full-rig-live-contact-pose-to-canonical-interruption-pose/);
+  assert.match(source, /measureAttackerRecoilWorldSilhouette/);
+  assert.match(source, /visibleOldB3Peak\?\.readable === true/);
+  assert.doesNotMatch(source, /visibleOldB3Peak\?\.backwardChainPitchDegrees/);
+  assert.match(html, /canonical OLD B3.*elapsed 0/);
 });
 
 test('Step 3A uses bounded lowerarm plus wrist hierarchy travel instead of a scheduled target angle', () => {
   assert.match(source, /modifiedBone: 'wrist\.r'/);
   assert.match(source, /propagatedBones: Object\.freeze\(\['hand\.r', 'handslot\.r'\]\)/);
   assert.match(source, /assistBone:[^\n]*'lowerarm\.r'/);
-  assert.match(source, /applyHeldPose/);
+  assert.match(source, /blendRecoveryPose/);
   assert.match(source, /noPresetMotionCurve: true/);
   assert.match(source, /actualHandTravelMeters/);
   assert.match(source, /actualGripTravelMeters/);
+  assert.match(source, /residualCorrectionPasses/);
+  assert.match(source, /appliedResidualForearmDegrees/);
+  assert.match(source, /oldB3WeaponArmReleasedAfterInspectionOrConfirmedFallback/);
+  assert.match(source, /contactQaCannotPermanentlySuppressConfirmedParryOldB3/);
   assert.doesNotMatch(source, /targetHandDegrees|driveDurationMs|smoothstep/);
 });
 
@@ -192,7 +264,7 @@ test('armed Parry samples a continuous post-tracking shield surface before selec
   assert.match(source, /measuredRadialContactCorrectionMeters/);
   assert.match(source, /if \(selectedMode !== 'parry' \|\| !parryGate\.armed/);
   assert.match(source, /selector NO ARMED DRIVE FRAME/);
-  assert.match(html, /BEST PARRY TIMING · R18E/);
+  assert.match(html, /BEST PARRY TIMING · R18I/);
 });
 test('armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority', () => {
   const updateStart = source.indexOf('function updateParryPreContact(');
@@ -268,4 +340,24 @@ test('F review batches presentation rebuilds and avoids dynamic debug bounds wor
   const cue = functionBody('showParryCue', 'updateParryCue');
   assert.ok(cue.includes('state === parryCueState'));
   assert.ok(cue.includes(') return;'));
+});
+
+test('R18I keeps Parry review telemetry compact and caps Verification DOM work', () => {
+  const compact = functionBody('compactInterceptDriveTelemetry', 'setInspectionLine');
+  const traceCompact = functionBody('compactInterceptDriveTraceFrame', 'compactPredictiveThreat');
+  assert.match(source, /const MAX_REPORT_DOM_CHARACTERS = 60000/);
+  assert.match(source, /const RECENT_COMPACT_TRACE_FRAMES = 8/);
+  assert.match(source, /interceptDriveTrace\.push\(compactInterceptDriveTraceFrame\(latestInterceptDriveReport\)\)/);
+  assert.match(source, /recentFrames: Object\.freeze\(interceptDriveTrace\.slice\(-RECENT_COMPACT_TRACE_FRAMES\)\)/);
+  assert.match(compact, /telemetryDetail: 'compact-scalar-frame'/);
+  assert.match(compact, /compactGap\(value\.residualAfterRefinement\)/);
+  assert.match(compact, /compactBodyReach\(value\.residualBodyReach\)/);
+  assert.match(compact, /compactStanceReach\(value\.residualStanceReach\)/);
+  assert.doesNotMatch(traceCompact, /anticipatedPlan|threatSelection|residualRefinement|residualBodyReach/);
+  assert.match(source, /liveShieldSwordGripContactConstraint: compactLiveContactConstraint\(latestGripConstraintReport\)/);
+  assert.match(source, /predictiveAnalysis: compactPredictiveAnalysis\(latestPredictiveAnalysis\)/);
+  assert.match(source, /interceptTarget: compactReachableInterceptTarget\(latestReachableInterceptTarget\)/);
+  assert.match(source, /reason: 'verification-report-exceeded-dom-budget'/);
+  assert.match(source, /window\.__G43B5R281_PERF__/);
+  assert.match(html, /Verification report .* 60,000 characters.*compact scalar frames only/);
 });

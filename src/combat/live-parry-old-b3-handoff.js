@@ -1,7 +1,7 @@
 import { LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE } from './post-coupling-recoil-stagger-handoff.js';
 
 export const LIVE_PARRY_OLD_B3_HANDOFF_STAGE = 'G4.3B.5R.3.2';
-export const LIVE_PARRY_OLD_B3_RELEASE_BLEND_MS = 120;
+export const LIVE_PARRY_OLD_B3_RELEASE_BLEND_MS = 28;
 
 const ENABLED_ATTACK_DIRECTIONS = Object.freeze(new Set(['top', 'right']));
 
@@ -45,8 +45,11 @@ export function buildLiveParryOldB3Handoff(input = {}) {
   if (contactReport.accepted !== true || contactReport.holding !== true) {
     return rejection('completed-live-contact-hold-required', attackDirection);
   }
-  if (contactReport.inspectionPassed !== true
-    || contactReport.inspectionAssessment?.failedGateCount !== 0) {
+  const inspectionPassed = contactReport.inspectionPassed === true
+    && contactReport.inspectionAssessment?.failedGateCount === 0;
+  const confirmedParryFallback = input.allowConfirmedParryFallback === true
+    && input.confirmedParry === true;
+  if (!inspectionPassed && !confirmedParryFallback) {
     return rejection('seven-of-seven-inspection-required', attackDirection);
   }
 
@@ -73,19 +76,27 @@ export function buildLiveParryOldB3Handoff(input = {}) {
     attackerArmOffset,
     shieldTangent: vec(contactReport.mappedSurfaceTarget?.deflectionDirection),
     inspectionGateCount: 7,
-    inspectionPassed: true,
+    inspectionPassed,
+    inspectionFallbackUsed: !inspectionPassed,
+    failedInspectionGateKeys: Object.freeze([
+      ...(contactReport.inspectionAssessment?.failedGateKeys || []),
+    ]),
     liveContactErrorMeters: finite(contactReport.liveContactErrorMeters),
     profile: Object.freeze({
       durationMs: elapsedMs,
       recoilHandoffMode: LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE,
     }),
-    authority: 'verified-live-shield-sword-arm-contact-release-to-old-two-actor-b3',
+    authority: inspectionPassed
+      ? 'verified-live-shield-sword-arm-contact-release-to-old-two-actor-b3'
+      : 'confirmed-real-parry-fail-safe-release-to-old-two-actor-b3',
   });
 
   return Object.freeze({
     accepted: true,
     stage: LIVE_PARRY_OLD_B3_HANDOFF_STAGE,
-    reason: 'verified-live-contact-ready-for-old-b3',
+    reason: inspectionPassed
+      ? 'verified-live-contact-ready-for-old-b3'
+      : 'confirmed-real-parry-fail-safe-ready-for-old-b3',
     attackDirection,
     couplingReport,
     surfaceAtContact,
@@ -107,6 +118,6 @@ export function sampleLiveParryOldB3ReleaseBlend(
     contactPoseWeight: 1 - easedProgress,
     oldB3Weight: easedProgress,
     durationMs: duration,
-    authority: 'contact-arm-pose-fades-as-old-b3-rises',
+    authority: 'old-two-actor-contact-pose-continuity-bridge-before-visible-b3-impulse',
   });
 }

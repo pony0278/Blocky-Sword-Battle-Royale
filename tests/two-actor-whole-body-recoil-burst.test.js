@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS,
   TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE,
   TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_PROFILES,
   buildTwoActorWholeBodyRecoilBurst,
 } from '../src/combat/two-actor-whole-body-recoil-burst.js';
 import { buildPostCouplingRecoilStaggerHandoff } from '../src/combat/post-coupling-recoil-stagger-handoff.js';
+import {
+  PARRIED_REACTION_DEFINITION_IDS,
+  PARRIED_REACTION_DEFINITION_STAGE,
+  buildParriedReactionDefinition,
+} from '../src/combat/parried-reaction-definition.js';
+import { sampleAttackerRecoilPresentation } from '../src/combat/attacker-recoil-presentation.js';
 
 function parryPlan(responseClass = 'parry-directional-recoil') {
   return Object.freeze({
@@ -42,6 +49,8 @@ test('G4.3B.5R.2.7 enters old Two-Actor late impulse immediately after Parry rel
   assert.equal(result.profileOverrides.releaseSeparationWindowMs, 0);
   assert.equal(result.profileOverrides.releaseSeparationDistanceMeters, 0);
   assert.equal(result.powerFrame.separationBypassed, true);
+  assert.equal(result.profileOverrides.powerFrameHoldMs, 72);
+  assert.equal(result.powerFrame.holdDurationMs, 72);
   assert.equal(result.powerFrame.oldTwoActorArmAuthorityRestored, true);
   assert.equal(result.plan.weapon.deflectDegrees, 30);
   assert.ok(result.plan.body.pitchDegrees <= -25);
@@ -103,4 +112,66 @@ test('post-coupling Parry handoff bypasses explicit separation and keeps absolut
   assert.equal(handoff.profileOverrides.legStrengthScale, 1.45, 'historical 0.78 leg scale must not attenuate .2.7');
   assert.equal(handoff.wholeBodyBurst.powerFrame.oldTwoActorArmAuthorityRestored, true);
   assert.equal(handoff.channelIntent.freeArm, 'parent-chain-motion-no-explicit-flail');
+});
+
+test('R18I selects the exaggerated OLD B3 plan at impact for deflect activation from zero', () => {
+  const source = parryPlan();
+  const reaction = buildParriedReactionDefinition({ plan: source, outcome: 'parry' });
+
+  assert.equal(reaction.accepted, true);
+  assert.equal(reaction.stage, PARRIED_REACTION_DEFINITION_STAGE);
+  assert.equal(reaction.id, PARRIED_REACTION_DEFINITION_IDS.PARRY);
+  assert.strictEqual(reaction.basePlan, source);
+  assert.equal(reaction.initialElapsedMs, 0);
+  assert.equal(
+    reaction.sourceBurst.activation,
+    TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS.DEFLECT_IMPULSE,
+  );
+  assert.equal(reaction.sourceBurst.powerFrame.entryElapsedMs, 0);
+  assert.equal(reaction.sourceBurst.powerFrame.startsAtParryImpact, false);
+  assert.equal(reaction.sourceBurst.powerFrame.startsAtDeflectImpulse, true);
+  assert.ok(reaction.plan.body.pitchDegrees <= -25);
+  assert.equal(reaction.profileOverrides.impulseEndMs, 112);
+  assert.equal(reaction.profileOverrides.recoilEndMs, 245);
+  assert.equal(reaction.profileOverrides.settleEndMs, 420);
+  assert.equal(reaction.profileOverrides.powerFrameHoldMs, 72);
+  assert.equal(reaction.profileOverrides.legStrengthScale, 1.45);
+  assert.equal(reaction.timeline.releaseRestartsBody, false);
+  assert.equal(
+    reaction.channelPolicy.atImpact,
+    'contact-pose-held-while-reaction-definition-is-selected',
+  );
+  assert.equal(
+    reaction.channelPolicy.atDeflectImpulse,
+    'canonical-full-body-old-b3-from-elapsed-zero',
+  );
+  assert.equal(reaction.channelPolicy.contactConstraintRunsBeforeVisibleReaction, true);
+  assert.deepEqual(reaction.channelPolicy.contactCorrectionBones, ['upperarm.r', 'lowerarm.r', 'wrist.r']);
+  assert.equal(reaction.channelPolicy.separateBalanceBreakRuntime, false);
+});
+
+test('R18I reaches the historical exaggerated silhouette on the deflect-started impulse peak', () => {
+  const reaction = buildParriedReactionDefinition({ plan: parryPlan(), outcome: 'parry' });
+  const peak = sampleAttackerRecoilPresentation(
+    reaction.plan,
+    reaction.timeline.impulsePeakMs,
+    reaction.profileOverrides,
+  );
+  const chainPitchDegrees = peak.pose.chestPitchDegrees
+    + peak.pose.spinePitchDegrees
+    + peak.pose.hipsPitchDegrees;
+
+  assert.equal(peak.phase, 'impulse');
+  assert.ok(chainPitchDegrees <= -24.4);
+  assert.ok(peak.pose.rightKneeBendDegrees >= 7);
+  assert.ok(peak.pose.leftKneeBendDegrees > 3);
+});
+
+test('R18I keeps Block outside the Parried ReactionDefinition', () => {
+  const reaction = buildParriedReactionDefinition({
+    plan: parryPlan('blocked-weapon-bounce'),
+    outcome: 'block',
+  });
+  assert.equal(reaction.accepted, false);
+  assert.equal(reaction.reason, 'non-parry-outcome');
 });

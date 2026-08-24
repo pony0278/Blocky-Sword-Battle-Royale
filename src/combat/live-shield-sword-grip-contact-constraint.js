@@ -14,10 +14,13 @@ export const LIVE_SHIELD_SWORD_GRIP_CONTACT_PROFILE = Object.freeze({
   minimumHiltOfflineTravelMeters: 0.025,
   minimumWristGripClearanceDegrees: 7,
   maximumContactTargetTravelMeters: 0.24,
-  maximumForearmDegrees: 8,
-  forearmHiltClearanceScale: 1.35,
+  maximumUpperarmCorrectionDegrees: 28,
+  maximumForearmDegrees: 10,
+  forearmHiltClearanceScale: 1.50,
+  hiltOfflineReleaseMarginMeters: 0.004,
+  maximumResidualCorrectionPasses: 3,
   maximumWristDegrees: 38,
-  maximumWristAttackLineTwistDegrees: 6,
+  maximumWristAttackLineTwistDegrees: 7,
   releaseHysteresisMeters: 0.012,
   settledTargetSpeedMps: 0.025,
   settledFrameCount: 3,
@@ -137,12 +140,27 @@ function resolveProfile(overrides = {}) {
       overrides.minimumInspectionOfflineTravelMeters ?? base.minimumInspectionOfflineTravelMeters,
       0.5,
     ),
+    maximumUpperarmCorrectionDegrees: clamp(
+      overrides.maximumUpperarmCorrectionDegrees ?? base.maximumUpperarmCorrectionDegrees,
+      0,
+      36,
+    ),
     maximumForearmDegrees: clamp(overrides.maximumForearmDegrees ?? base.maximumForearmDegrees, 0, 16),
     forearmHiltClearanceScale: clamp(
       overrides.forearmHiltClearanceScale ?? base.forearmHiltClearanceScale,
       1,
       1.8,
     ),
+    hiltOfflineReleaseMarginMeters: clamp(
+      overrides.hiltOfflineReleaseMarginMeters ?? base.hiltOfflineReleaseMarginMeters,
+      0,
+      0.02,
+    ),
+    maximumResidualCorrectionPasses: Math.round(clamp(
+      overrides.maximumResidualCorrectionPasses ?? base.maximumResidualCorrectionPasses,
+      0,
+      6,
+    )),
     maximumWristDegrees: clamp(overrides.maximumWristDegrees ?? base.maximumWristDegrees, 5, 60),
     maximumWristAttackLineTwistDegrees: clamp(
       overrides.maximumWristAttackLineTwistDegrees ?? base.maximumWristAttackLineTwistDegrees,
@@ -266,7 +284,10 @@ export function buildLiveShieldSwordGripContactPlan(input = {}) {
     propagatedBones: Object.freeze(['hand.r', 'handslot.r']),
     elbowPropagationActive: false,
     shoulderPropagationActive: false,
-    b3ClockFrozen: true,
+    proximalArmCorrectionAvailable: true,
+    contactCorrectionBones: Object.freeze(['upperarm.r', 'lowerarm.r', 'wrist.r']),
+    b3BodyClockCanAdvance: false,
+    weaponArmContactConstrained: true,
     profile,
     authority: 'live-shield-surface-contact-anchor-constrains-sword-through-wrist-grip',
   });
@@ -426,6 +447,111 @@ export function planLiveForearmHiltAssist(input = {}) {
   });
 }
 
+export function planLiveHiltOfflineResidualCorrection(input = {}) {
+  const attackDirection = String(input.attackDirection || '').toLowerCase();
+  if (attackDirection !== 'top' && attackDirection !== 'right') {
+    return Object.freeze({
+      accepted: false,
+      stage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
+      reason: 'attack-direction-deferred',
+      attackDirection: attackDirection || null,
+    });
+  }
+
+  const profile = resolveProfile(input.profile);
+  const initialGripPoint = vec(input.initialGripPoint);
+  const currentGripPoint = vec(input.currentGripPoint);
+  const forearmPivotPoint = vec(input.forearmPivotPoint);
+  const initialSwordAxis = normalize(subtract(
+    vec(input.initialSwordTipPoint),
+    vec(input.initialSwordBasePoint),
+  ));
+  const currentGripOffset = subtract(currentGripPoint, initialGripPoint);
+  const currentOfflineOffset = projectOnPlane(currentGripOffset, initialSwordAxis);
+  const currentOfflineTravelMeters = length(currentOfflineOffset);
+  const targetOfflineTravelMeters = profile.minimumHiltOfflineTravelMeters
+    + profile.hiltOfflineReleaseMarginMeters;
+  if (currentOfflineTravelMeters >= targetOfflineTravelMeters) {
+    return Object.freeze({
+      accepted: true,
+      correctionRequired: false,
+      stage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
+      reason: 'final-hilt-offline-clearance-already-sufficient',
+      attackDirection,
+      currentOfflineTravelMeters,
+      targetOfflineTravelMeters,
+      appliedDegrees: 0,
+      authority: 'final-world-hilt-clearance-closed-loop',
+    });
+  }
+
+  const preferredOfflineOffset = projectOnPlane(
+    vec(input.contactTargetOffset),
+    initialSwordAxis,
+  );
+  const offlineDirection = normalize(
+    currentOfflineOffset,
+    normalize(preferredOfflineOffset),
+  );
+  if (length(offlineDirection) <= 1e-6) {
+    return Object.freeze({
+      accepted: false,
+      correctionRequired: true,
+      stage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
+      reason: 'final-hilt-offline-direction-degenerate',
+      attackDirection,
+      currentOfflineTravelMeters,
+      targetOfflineTravelMeters,
+    });
+  }
+
+  const alongAttackLineOffset = scale(initialSwordAxis, dot(currentGripOffset, initialSwordAxis));
+  const targetGripPoint = add(
+    initialGripPoint,
+    add(alongAttackLineOffset, scale(offlineDirection, targetOfflineTravelMeters)),
+  );
+  const remainingForearmDegrees = clamp(
+    input.remainingForearmDegrees ?? profile.maximumForearmDegrees,
+    0,
+    profile.maximumForearmDegrees,
+  );
+  if (remainingForearmDegrees <= 1e-5) {
+    return Object.freeze({
+      accepted: false,
+      correctionRequired: true,
+      stage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
+      reason: 'final-hilt-offline-forearm-budget-exhausted',
+      attackDirection,
+      currentOfflineTravelMeters,
+      targetOfflineTravelMeters,
+      remainingForearmDegrees,
+    });
+  }
+
+  const constraint = solveLiveSwordContactConstraint({
+    pivotWorldPoint: forearmPivotPoint,
+    currentContactPoint: currentGripPoint,
+    targetContactPoint: targetGripPoint,
+    maximumDegrees: remainingForearmDegrees,
+  });
+  return Object.freeze({
+    accepted: constraint.accepted === true,
+    correctionRequired: true,
+    stage: LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE,
+    reason: constraint.accepted
+      ? 'final-hilt-offline-residual-correction-ready'
+      : constraint.reason,
+    attackDirection,
+    currentOfflineTravelMeters,
+    targetOfflineTravelMeters,
+    targetGripPoint: freezeVector(targetGripPoint),
+    remainingForearmDegrees,
+    constraint,
+    appliedDegrees: constraint.appliedDegrees ?? 0,
+    authority: 'final-world-hilt-clearance-closed-loop',
+  });
+}
+
 export function solveLiveSwordContactConstraint(input = {}) {
   const pivot = vec(input.pivotWorldPoint);
   const contact = vec(input.currentContactPoint);
@@ -559,8 +685,8 @@ export function planLiveWristAttackLineTwist(input = {}) {
         predictedClearanceDegrees / minimumSwordDegrees,
         predictedWristGripClearanceDegrees / minimumWristGripDegrees,
       );
-      const passesWithMargin = predictedClearanceDegrees >= minimumSwordDegrees + 0.15
-        && predictedWristGripClearanceDegrees >= minimumWristGripDegrees + 0.15;
+      const passesWithMargin = predictedClearanceDegrees >= minimumSwordDegrees + 0.50
+        && predictedWristGripClearanceDegrees >= minimumWristGripDegrees + 0.50;
       if (passesWithMargin || score > best.score) {
         best = { appliedDegrees, predictedClearanceDegrees, predictedWristGripClearanceDegrees, score };
       }
@@ -738,11 +864,12 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
   }
   const attackerRig = options.attackerRig;
   const attackerSword = options.attackerSword;
+  const upperarmBone = attackerRig?.bones?.['upperarm.r'];
   const lowerarmBone = attackerRig?.bones?.['lowerarm.r'];
   const wristBone = attackerRig?.bones?.['wrist.r'];
   const handBone = attackerRig?.bones?.['hand.r'];
-  if (!lowerarmBone || !wristBone || !handBone) {
-    throw new Error(`${LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE} requires attacker lowerarm.r + wrist.r + hand.r`);
+  if (!upperarmBone || !lowerarmBone || !wristBone || !handBone) {
+    throw new Error(`${LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE} requires attacker upperarm.r + lowerarm.r + wrist.r + hand.r`);
   }
   if (!attackerSword?.object3d?.worldToLocal || !attackerSword?.object3d?.localToWorld
     || !attackerSword?.bladeBase?.getWorldPosition || !attackerSword?.tip?.getWorldPosition) {
@@ -753,6 +880,7 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
   let lastReport = null;
 
   function reset() {
+    if (active?.baseUpperarmQuaternion) upperarmBone.quaternion.copy(active.baseUpperarmQuaternion);
     if (active?.baseLowerarmQuaternion) lowerarmBone.quaternion.copy(active.baseLowerarmQuaternion);
     if (active?.baseWristQuaternion) wristBone.quaternion.copy(active.baseWristQuaternion);
     attackerRig.root?.updateMatrixWorld?.(true);
@@ -804,10 +932,14 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       elapsedMs: 0,
       holding: false,
       terminalReason: null,
+      baseUpperarmQuaternion: upperarmBone.quaternion.clone(),
       baseLowerarmQuaternion: lowerarmBone.quaternion.clone(),
       baseWristQuaternion: wristBone.quaternion.clone(),
       heldLowerarmQuaternion: lowerarmBone.quaternion.clone(),
       heldWristQuaternion: wristBone.quaternion.clone(),
+      heldUpperarmCorrectionQuaternion: new THREE.Quaternion(),
+      lastReactionIntentUpperarmQuaternion: null,
+      lastFinalUpperarmQuaternion: null,
       contactLocal,
       initialContactWorld: initialTarget.clone(),
       initialHandWorld: handWorld.clone(),
@@ -837,7 +969,14 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       actualContactTravelMeters: 0,
       actualHandTravelMeters: 0,
       actualGripTravelMeters: 0,
-      b3ClockFrozen: true,
+      b3BodyClockCanAdvance: false,
+      weaponArmContactConstrained: true,
+      reactionIntentActiveAtImpact: input.reactionIntentActiveAtImpact === true,
+      contactCorrectionRunsAfterReactionIntent: input.reactionIntentActiveAtImpact === true,
+      proximalArmCorrectionActive: false,
+      constraintApplicationOrder: input.reactionIntentActiveAtImpact === true
+        ? 'full-old-b3-reaction-intent-then-upperarm-lowerarm-wrist-contact-correction'
+        : 'contact-hold-upperarm-lowerarm-wrist-correction-before-visible-old-b3',
     });
     return lastReport;
   }
@@ -903,8 +1042,53 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       }
     }
 
+    const reactionIntentAppliedBeforeConstraint = input.reactionIntentAppliedBeforeConstraint === true;
+    if (
+      reactionIntentAppliedBeforeConstraint
+      && active.lastFinalUpperarmQuaternion
+      && upperarmBone.quaternion.angleTo(active.lastFinalUpperarmQuaternion) <= 1e-5
+    ) {
+      upperarmBone.quaternion.copy(active.lastReactionIntentUpperarmQuaternion);
+    } else if (!reactionIntentAppliedBeforeConstraint) {
+      upperarmBone.quaternion.copy(active.baseUpperarmQuaternion);
+    }
+    const reactionIntentUpperarmQuaternion = upperarmBone.quaternion.clone();
     lowerarmBone.quaternion.copy(active.baseLowerarmQuaternion);
     wristBone.quaternion.copy(active.baseWristQuaternion);
+    attackerRig.root?.updateMatrixWorld?.(true);
+    attackerSword.object3d.updateMatrixWorld(true);
+
+    const proximalArmCorrectionActive = active.attackDirection === 'top'
+      || active.attackDirection === 'right';
+    const upperarmPivotWorld = new THREE.Vector3();
+    const upperarmContactWorld = active.contactLocal.clone();
+    upperarmBone.getWorldPosition(upperarmPivotWorld);
+    attackerSword.object3d.localToWorld(upperarmContactWorld);
+    const upperarmConstraint = proximalArmCorrectionActive
+      ? solveLiveSwordContactConstraint({
+          pivotWorldPoint: upperarmPivotWorld,
+          currentContactPoint: upperarmContactWorld,
+          targetContactPoint: active.peakTarget,
+          maximumDegrees: active.plan.profile.maximumUpperarmCorrectionDegrees,
+        })
+      : null;
+    const appliedUpperarmCorrectionDegrees = upperarmConstraint?.accepted
+      ? applyWorldAxisRotation(
+          THREE,
+          upperarmBone,
+          upperarmConstraint.axis,
+          upperarmConstraint.appliedRadians,
+        )
+      : 0;
+    if (upperarmConstraint?.accepted) {
+      active.heldUpperarmCorrectionQuaternion.copy(upperarmBone.quaternion)
+        .multiply(reactionIntentUpperarmQuaternion.clone().invert())
+        .normalize();
+    } else {
+      active.heldUpperarmCorrectionQuaternion.identity();
+    }
+    active.lastReactionIntentUpperarmQuaternion = reactionIntentUpperarmQuaternion;
+    active.lastFinalUpperarmQuaternion = upperarmBone.quaternion.clone();
     attackerRig.root?.updateMatrixWorld?.(true);
     attackerSword.object3d.updateMatrixWorld(true);
 
@@ -955,7 +1139,7 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       maximumDegrees: active.plan.profile.maximumWristDegrees,
     });
     if (!constraint.accepted) return constraint;
-    const appliedWristContactDegrees = applyWorldAxisRotation(
+    let appliedWristContactDegrees = applyWorldAxisRotation(
       THREE,
       wristBone,
       constraint.axis,
@@ -985,7 +1169,7 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
           contactPoint: preTwistContactWorld,
         })
       : null;
-    const appliedWristTwistDegrees = wristAttackLineTwist?.accepted
+    let appliedWristTwistDegrees = wristAttackLineTwist?.accepted
       ? applyWorldAxisRotation(
           THREE,
           wristBone,
@@ -993,9 +1177,87 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
           wristAttackLineTwist.appliedDegrees * Math.PI / 180,
         )
       : 0;
-    const appliedWristDegrees = appliedWristContactDegrees + Math.abs(appliedWristTwistDegrees);
+    let appliedWristDegrees = appliedWristContactDegrees + Math.abs(appliedWristTwistDegrees);
     attackerRig.root?.updateMatrixWorld?.(true);
     attackerSword.object3d.updateMatrixWorld(true);
+
+    let residualHiltCorrection = null;
+    let residualCorrectionPasses = 0;
+    let appliedResidualForearmDegrees = 0;
+    let appliedResidualWristDegrees = 0;
+    if (forearmAssist.accepted) {
+      for (
+        let pass = 0;
+        pass < active.plan.profile.maximumResidualCorrectionPasses;
+        pass += 1
+      ) {
+        const residualForearmPivotWorld = new THREE.Vector3();
+        const residualGripWorld = new THREE.Vector3();
+        lowerarmBone.getWorldPosition(residualForearmPivotWorld);
+        attackerSword.object3d.getWorldPosition(residualGripWorld);
+        const remainingForearmDegrees = Math.max(
+          0,
+          active.plan.profile.maximumForearmDegrees
+            - Math.abs(appliedForearmDegrees)
+            - Math.abs(appliedResidualForearmDegrees),
+        );
+        residualHiltCorrection = planLiveHiltOfflineResidualCorrection({
+          attackDirection: active.attackDirection,
+          profile: active.plan.profile,
+          forearmPivotPoint: residualForearmPivotWorld,
+          initialGripPoint: active.initialGripWorld,
+          currentGripPoint: residualGripWorld,
+          initialSwordBasePoint: active.initialSwordBaseWorld,
+          initialSwordTipPoint: active.initialSwordTipWorld,
+          contactTargetOffset,
+          remainingForearmDegrees,
+        });
+        if (!residualHiltCorrection.accepted || !residualHiltCorrection.correctionRequired) break;
+
+        const residualForearmDegrees = applyWorldAxisRotation(
+          THREE,
+          lowerarmBone,
+          residualHiltCorrection.constraint.axis,
+          residualHiltCorrection.constraint.appliedRadians,
+        );
+        if (Math.abs(residualForearmDegrees) <= 1e-6) break;
+        residualCorrectionPasses += 1;
+        appliedResidualForearmDegrees += residualForearmDegrees;
+        attackerRig.root?.updateMatrixWorld?.(true);
+        attackerSword.object3d.updateMatrixWorld(true);
+
+        const residualWristPivotWorld = new THREE.Vector3();
+        const residualContactWorld = active.contactLocal.clone();
+        wristBone.getWorldPosition(residualWristPivotWorld);
+        attackerSword.object3d.localToWorld(residualContactWorld);
+        const remainingWristDegrees = Math.max(
+          0,
+          active.plan.profile.maximumWristDegrees
+            - Math.abs(appliedWristContactDegrees)
+            - Math.abs(appliedResidualWristDegrees),
+        );
+        const residualContactConstraint = solveLiveSwordContactConstraint({
+          pivotWorldPoint: residualWristPivotWorld,
+          currentContactPoint: residualContactWorld,
+          targetContactPoint: active.peakTarget,
+          maximumDegrees: remainingWristDegrees,
+        });
+        if (residualContactConstraint.accepted) {
+          const residualWristDegrees = applyWorldAxisRotation(
+            THREE,
+            wristBone,
+            residualContactConstraint.axis,
+            residualContactConstraint.appliedRadians,
+          );
+          appliedResidualWristDegrees += Math.abs(residualWristDegrees);
+          attackerRig.root?.updateMatrixWorld?.(true);
+          attackerSword.object3d.updateMatrixWorld(true);
+        }
+      }
+    }
+    appliedForearmDegrees += appliedResidualForearmDegrees;
+    appliedWristContactDegrees += appliedResidualWristDegrees;
+    appliedWristDegrees += appliedResidualWristDegrees;
     active.heldLowerarmQuaternion.copy(lowerarmBone.quaternion);
     active.heldWristQuaternion.copy(wristBone.quaternion);
 
@@ -1065,8 +1327,14 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       rawTargetSpeedMps,
       constraint,
       forearmAssist,
+      upperarmConstraint,
+      appliedUpperarmCorrectionDegrees,
       forearmConstraint,
       appliedForearmDegrees,
+      residualHiltCorrection,
+      residualCorrectionPasses,
+      appliedResidualForearmDegrees,
+      appliedResidualWristDegrees,
       appliedWristContactDegrees,
       wristAttackLineTwist,
       appliedWristTwistDegrees,
@@ -1089,16 +1357,28 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
       liveContactErrorMeters,
       directionAgreement,
       modifiedBone: 'wrist.r',
+      proximalAssistBone: proximalArmCorrectionActive ? 'upperarm.r' : null,
       assistBone: forearmAssist.accepted ? 'lowerarm.r' : null,
-      modifiedBones: Object.freeze(forearmAssist.accepted
-        ? ['lowerarm.r', 'wrist.r']
-        : ['wrist.r']),
+      modifiedBones: Object.freeze(proximalArmCorrectionActive
+        ? forearmAssist.accepted
+          ? ['upperarm.r', 'lowerarm.r', 'wrist.r']
+          : ['upperarm.r', 'wrist.r']
+        : forearmAssist.accepted
+          ? ['lowerarm.r', 'wrist.r']
+          : ['wrist.r']),
       propagatedBones: active.plan.propagatedBones,
       gripChainOnly: !forearmAssist.accepted,
       rigidSwordGrip: true,
       elbowPropagationActive: forearmAssist.accepted,
       shoulderPropagationActive: false,
-      b3ClockFrozen: true,
+      proximalArmCorrectionActive,
+      b3BodyClockCanAdvance: false,
+      weaponArmContactConstrained: true,
+      reactionIntentAppliedBeforeConstraint,
+      contactCorrectionRunsAfterReactionIntent: reactionIntentAppliedBeforeConstraint,
+      constraintApplicationOrder: reactionIntentAppliedBeforeConstraint
+        ? 'full-old-b3-reaction-intent-then-upperarm-lowerarm-wrist-contact-correction'
+        : 'contact-hold-upperarm-lowerarm-wrist-correction-before-visible-old-b3',
       authority: active.plan.authority,
     });
     return lastReport;
@@ -1107,6 +1387,13 @@ export function createLiveShieldSwordGripContactRuntime(THREE, options = {}) {
   function applyHeldPose(weight = 1) {
     if (!active?.heldLowerarmQuaternion || !active?.heldWristQuaternion) return false;
     const poseWeight = clamp(weight, 0, 1);
+    const upperarmCorrection = new THREE.Quaternion().slerp(
+      active.heldUpperarmCorrectionQuaternion,
+      poseWeight,
+    );
+    upperarmBone.quaternion.copy(active.baseUpperarmQuaternion)
+      .premultiply(upperarmCorrection)
+      .normalize();
     lowerarmBone.quaternion.copy(active.baseLowerarmQuaternion).slerp(active.heldLowerarmQuaternion, poseWeight);
     wristBone.quaternion.copy(active.baseWristQuaternion).slerp(active.heldWristQuaternion, poseWeight);
     attackerRig.root?.updateMatrixWorld?.(true);

@@ -15,6 +15,26 @@ export const ATTACKER_RECOIL_PRESENTATION_PHASES = Object.freeze({
   COMPLETE: 'complete',
 });
 
+export const ATTACKER_RECOIL_PRESENTATION_PHASE_LATCHES = Object.freeze({
+  CONTACT_ORIGIN: 'contact-origin',
+  IMPULSE_PEAK: 'impulse-peak',
+});
+
+export const ATTACKER_RECOIL_PRESENTATION_CHANNELS = Object.freeze({
+  FULL: Object.freeze({
+    torso: true,
+    torsoYawRoll: true,
+    legs: true,
+    weaponArm: true,
+  }),
+  BODY_WITH_CONTACT_ARM: Object.freeze({
+    torso: true,
+    torsoYawRoll: false,
+    legs: true,
+    weaponArm: false,
+  }),
+});
+
 export const ATTACKER_RECOIL_PRESENTATION_PROFILES = Object.freeze({
   'blocked-weapon-bounce': Object.freeze({
     contactHoldMs: 18,
@@ -62,6 +82,16 @@ function clamp(value, min, max) {
 
 function clamp01(value) {
   return clamp(value, 0, 1);
+}
+
+export function resolveAttackerRecoilPresentationChannels(value = {}) {
+  const channels = value?.channels || value;
+  return Object.freeze({
+    torso: channels?.torso !== false,
+    torsoYawRoll: channels?.torsoYawRoll !== false,
+    legs: channels?.legs !== false,
+    weaponArm: channels?.weaponArm !== false,
+  });
 }
 
 function smoothstep01(value) {
@@ -113,6 +143,7 @@ function resolveProfile(plan, overrides = {}) {
     recoilEndMs + 1,
     800,
   );
+  const powerFrameHoldMs = clamp(overrides.powerFrameHoldMs ?? 0, 0, 160);
   return Object.freeze({
     ...base,
     ...overrides,
@@ -122,15 +153,74 @@ function resolveProfile(plan, overrides = {}) {
     impulseEndMs,
     recoilEndMs,
     settleEndMs,
+    powerFrameHoldMs,
+    powerFrameEndMs: impulseEndMs + powerFrameHoldMs,
+    visibleRecoilEndMs: recoilEndMs + powerFrameHoldMs,
+    visibleSettleEndMs: settleEndMs + powerFrameHoldMs,
     armDeflectScale: clamp(overrides.armDeflectScale ?? base.armDeflectScale, 0, 1.5),
     forearmDeflectScale: clamp(overrides.forearmDeflectScale ?? base.forearmDeflectScale, 0, 1.5),
     legStrengthScale: clamp(overrides.legStrengthScale ?? base.legStrengthScale, 0, 1.5),
   });
 }
 
+export function advanceAttackerRecoilPresentationClock(
+  plan,
+  currentElapsedMs = 0,
+  deltaSeconds = 1 / 60,
+  overrides = {},
+  context = {},
+) {
+  const profile = resolveProfile(plan, overrides.profile || overrides);
+  if (!profile) return null;
+  const previousElapsedMs = Math.max(0, finite(currentElapsedMs));
+  const requestedElapsedMs = previousElapsedMs
+    + Math.max(0, finite(deltaSeconds, 1 / 60)) * 1000;
+  const phaseLatch = String(context.phaseLatch || '');
+  const latchPointMs = phaseLatch === ATTACKER_RECOIL_PRESENTATION_PHASE_LATCHES.CONTACT_ORIGIN
+    ? 0
+    : phaseLatch === ATTACKER_RECOIL_PRESENTATION_PHASE_LATCHES.IMPULSE_PEAK
+      ? profile.impulseEndMs
+      : null;
+  const latchCanStillOwnClock = latchPointMs != null
+    && previousElapsedMs <= latchPointMs + 1e-6;
+  const latched = latchCanStillOwnClock && requestedElapsedMs >= latchPointMs;
+  // Preserve authored power frames even when a slow browser frame would step
+  // completely across the impulse peak. This is a presentation-clock rule for
+  // every recoil definition, rather than direction-specific animation timing.
+  const snappedToImpulsePeak = !latched
+    && previousElapsedMs < profile.impulseEndMs
+    && requestedElapsedMs > profile.impulseEndMs;
+  const elapsedMs = latched
+    ? latchPointMs
+    : snappedToImpulsePeak
+      ? profile.impulseEndMs
+      : requestedElapsedMs;
+  return Object.freeze({
+    previousElapsedMs,
+    requestedElapsedMs,
+    elapsedMs,
+    phaseLatch: phaseLatch || null,
+    latchPointMs,
+    latched,
+    snappedToImpulsePeak,
+    presentationClockPausedByContact: latched,
+    authority: latched
+      ? latchPointMs === 0
+        ? 'impact-selects-reaction-while-contact-parks-visible-old-b3-at-origin'
+        : 'impact-clock-advances-while-contact-latches-recoil-at-impulse-peak'
+      : snappedToImpulsePeak
+        ? 'presentation-clock-preserves-authored-impulse-power-frame'
+      : 'unlatched-attacker-recoil-presentation-clock',
+  });
+}
+
 function sampleWeights(profile, elapsedMs) {
   const elapsed = Math.max(0, finite(elapsedMs));
-  if (elapsed >= profile.settleEndMs) {
+  const powerFrameHoldMs = Math.max(0, finite(profile.powerFrameHoldMs));
+  const powerFrameEndMs = profile.impulseEndMs + powerFrameHoldMs;
+  const visibleRecoilEndMs = profile.recoilEndMs + powerFrameHoldMs;
+  const visibleSettleEndMs = profile.settleEndMs + powerFrameHoldMs;
+  if (elapsed >= visibleSettleEndMs) {
     return Object.freeze({
       phase: ATTACKER_RECOIL_PRESENTATION_PHASES.COMPLETE,
       armWeight: 0,
@@ -192,8 +282,23 @@ function sampleWeights(profile, elapsedMs) {
     });
   }
 
-  if (elapsed <= profile.recoilEndMs) {
-    const t = smoothstep01((elapsed - profile.impulseEndMs) / (profile.recoilEndMs - profile.impulseEndMs));
+  if (powerFrameHoldMs > 0 && elapsed <= powerFrameEndMs) {
+    return Object.freeze({
+      phase: ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE,
+      armWeight: 1,
+      torsoWeight: 1,
+      legWeight: 1,
+      separationWeight: 0,
+      powerFrameHeld: true,
+      complete: false,
+    });
+  }
+
+  if (elapsed <= visibleRecoilEndMs) {
+    const authoredElapsed = elapsed - powerFrameHoldMs;
+    const t = smoothstep01(
+      (authoredElapsed - profile.impulseEndMs) / (profile.recoilEndMs - profile.impulseEndMs),
+    );
     return Object.freeze({
       phase: ATTACKER_RECOIL_PRESENTATION_PHASES.RECOIL,
       armWeight: 1 - 0.22 * t,
@@ -204,7 +309,10 @@ function sampleWeights(profile, elapsedMs) {
     });
   }
 
-  const t = smoothstep01((elapsed - profile.recoilEndMs) / (profile.settleEndMs - profile.recoilEndMs));
+  const authoredElapsed = elapsed - powerFrameHoldMs;
+  const t = smoothstep01(
+    (authoredElapsed - profile.recoilEndMs) / (profile.settleEndMs - profile.recoilEndMs),
+  );
   return Object.freeze({
     phase: ATTACKER_RECOIL_PRESENTATION_PHASES.SETTLE,
     armWeight: 0.78 * (1 - t),
@@ -264,6 +372,7 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
       pose: zeroPose(),
       complete: true,
       readyForAttackHandoff: true,
+      profile,
       authority: 'attacker-recoil-presentation-only',
     });
   }
@@ -397,6 +506,9 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
   let elapsedMs = 0;
   let lastCompleted = null;
   let postCouplingHandoff = null;
+  let lastAppliedChannels = ATTACKER_RECOIL_PRESENTATION_CHANNELS.FULL;
+  let lastPhaseClock = null;
+  let activeReactionDefinition = null;
 
   function snapshot() {
     const sample = activePlan
@@ -409,12 +521,15 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
       elapsedMs,
       plan: activePlan,
       sample,
+      appliedChannels: lastAppliedChannels,
+      phaseClock: lastPhaseClock,
+      reactionDefinition: activeReactionDefinition,
       postCouplingHandoff,
       lastCompleted,
     });
   }
 
-  function start(plan) {
+  function start(plan, startOptions = {}) {
     if (activePlan) {
       return Object.freeze({ accepted: false, reason: 'attacker-recoil-already-active', snapshot: snapshot() });
     }
@@ -426,9 +541,15 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     }
     consumePostCouplingRecoilStaggerHandoff(rig);
     activePlan = plan;
-    activeProfile = { ...(options.profile || {}) };
-    elapsedMs = 0;
+    activeProfile = {
+      ...(options.profile || {}),
+      ...(startOptions.profileOverrides || {}),
+    };
+    elapsedMs = Math.max(0, finite(startOptions.initialElapsedMs));
+    activeReactionDefinition = startOptions.reactionDefinition || null;
     postCouplingHandoff = null;
+    lastAppliedChannels = ATTACKER_RECOIL_PRESENTATION_CHANNELS.FULL;
+    lastPhaseClock = null;
     return Object.freeze({ accepted: true, snapshot: snapshot() });
   }
 
@@ -437,51 +558,92 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     const pending = consumePostCouplingRecoilStaggerHandoff(rig);
     if (!pending) return null;
     const baseProfile = resolveProfile(activePlan, activeProfile);
-    const handoff = buildPostCouplingRecoilStaggerHandoff({
+    const planBeforeHandoff = activePlan;
+    const elapsedBeforeHandoffMs = elapsedMs;
+    const builtHandoff = buildPostCouplingRecoilStaggerHandoff({
       plan: activePlan,
       couplingReport: pending.couplingReport,
       surfaceAtContact: pending.surfaceAtContact,
       baseProfile,
     });
-    postCouplingHandoff = handoff;
-    if (!handoff.accepted) return handoff;
-    activePlan = handoff.plan;
-    const releaseSeparationWindowMs = Math.max(0, finite(handoff.separation?.releaseWindowMs));
+    postCouplingHandoff = builtHandoff;
+    if (!builtHandoff.accepted) return builtHandoff;
+    activePlan = builtHandoff.plan;
+    const releaseSeparationWindowMs = Math.max(0, finite(builtHandoff.separation?.releaseWindowMs));
     const releaseSeparationDistanceMeters = releaseSeparationWindowMs > 0
       ? finite(RELEASE_SEPARATION_DISTANCE_METERS[activePlan.responseClass], 0)
       : 0;
     activeProfile = {
       ...activeProfile,
-      ...handoff.profileOverrides,
+      ...builtHandoff.profileOverrides,
       releaseSeparationWindowMs,
       releaseSeparationDistanceMeters,
     };
-    elapsedMs = Math.max(elapsedMs, handoff.initialElapsedMs);
+    elapsedMs = Math.max(elapsedMs, builtHandoff.initialElapsedMs);
+    const handoff = Object.freeze({
+      ...builtHandoff,
+      planIdentityPreserved: activePlan === planBeforeHandoff,
+      presentationElapsedBeforeHandoffMs: elapsedBeforeHandoffMs,
+      presentationElapsedAfterHandoffMs: elapsedMs,
+      presentationElapsedPreserved: elapsedMs === elapsedBeforeHandoffMs,
+      bodyRestartedAtHandoff: false,
+    });
+    postCouplingHandoff = handoff;
     return handoff;
   }
 
-  function applyPose(sample) {
-    if (!sample || sample.complete) return Object.freeze({ upperArmAimDegrees: 0, lowerArmAimDegrees: 0 });
+  function applyPose(sample, channels = ATTACKER_RECOIL_PRESENTATION_CHANNELS.FULL) {
+    const appliedChannels = resolveAttackerRecoilPresentationChannels(channels);
+    if (!sample || sample.complete) {
+      return Object.freeze({
+        upperArmAimDegrees: 0,
+        lowerArmAimDegrees: 0,
+        channels: appliedChannels,
+      });
+    }
     const pose = sample.pose;
 
-    applyLocalAxisAngle(THREE, rig.bones.hips, axisY, pose.hipsYawDegrees);
-    applyLocalAxisAngle(THREE, rig.bones.hips, axisX, pose.hipsPitchDegrees);
-    applyLocalAxisAngle(THREE, rig.bones.hips, axisZ, pose.hipsRollDegrees);
+    if (appliedChannels.torso) {
+      if (appliedChannels.torsoYawRoll) {
+        applyLocalAxisAngle(THREE, rig.bones.hips, axisY, pose.hipsYawDegrees);
+      }
+      applyLocalAxisAngle(THREE, rig.bones.hips, axisX, pose.hipsPitchDegrees);
+      if (appliedChannels.torsoYawRoll) {
+        applyLocalAxisAngle(THREE, rig.bones.hips, axisZ, pose.hipsRollDegrees);
+      }
 
-    applyLocalAxisAngle(THREE, rig.bones.spine, axisY, pose.spineYawDegrees);
-    applyLocalAxisAngle(THREE, rig.bones.spine, axisX, pose.spinePitchDegrees);
-    applyLocalAxisAngle(THREE, rig.bones.spine, axisZ, pose.spineRollDegrees);
+      if (appliedChannels.torsoYawRoll) {
+        applyLocalAxisAngle(THREE, rig.bones.spine, axisY, pose.spineYawDegrees);
+      }
+      applyLocalAxisAngle(THREE, rig.bones.spine, axisX, pose.spinePitchDegrees);
+      if (appliedChannels.torsoYawRoll) {
+        applyLocalAxisAngle(THREE, rig.bones.spine, axisZ, pose.spineRollDegrees);
+      }
 
-    applyLocalAxisAngle(THREE, rig.bones.chest, axisY, pose.chestYawDegrees);
-    applyLocalAxisAngle(THREE, rig.bones.chest, axisX, pose.chestPitchDegrees);
-    applyLocalAxisAngle(THREE, rig.bones.chest, axisZ, pose.chestRollDegrees);
+      if (appliedChannels.torsoYawRoll) {
+        applyLocalAxisAngle(THREE, rig.bones.chest, axisY, pose.chestYawDegrees);
+      }
+      applyLocalAxisAngle(THREE, rig.bones.chest, axisX, pose.chestPitchDegrees);
+      if (appliedChannels.torsoYawRoll) {
+        applyLocalAxisAngle(THREE, rig.bones.chest, axisZ, pose.chestRollDegrees);
+      }
+    }
 
-    applyLocalAxisAngle(THREE, rig.bones['upperleg.l'], axisX, pose.leftThighBendDegrees);
-    applyLocalAxisAngle(THREE, rig.bones['upperleg.r'], axisX, pose.rightThighBendDegrees);
-    applyLocalAxisAngle(THREE, rig.bones['lowerleg.l'], axisX, -pose.leftKneeBendDegrees);
-    applyLocalAxisAngle(THREE, rig.bones['lowerleg.r'], axisX, -pose.rightKneeBendDegrees);
+    if (appliedChannels.legs) {
+      applyLocalAxisAngle(THREE, rig.bones['upperleg.l'], axisX, pose.leftThighBendDegrees);
+      applyLocalAxisAngle(THREE, rig.bones['upperleg.r'], axisX, pose.rightThighBendDegrees);
+      applyLocalAxisAngle(THREE, rig.bones['lowerleg.l'], axisX, -pose.leftKneeBendDegrees);
+      applyLocalAxisAngle(THREE, rig.bones['lowerleg.r'], axisX, -pose.rightKneeBendDegrees);
+    }
 
     rig.root?.updateMatrixWorld?.(true);
+    if (!appliedChannels.weaponArm) {
+      return Object.freeze({
+        upperArmAimDegrees: 0,
+        lowerArmAimDegrees: 0,
+        channels: appliedChannels,
+      });
+    }
     rig.bones['hand.r'].getWorldPosition(handWorld);
     aimOffset.set(
       pose.weaponAimOffsetMeters.x,
@@ -508,15 +670,24 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     );
     rig.root?.updateMatrixWorld?.(true);
 
-    return Object.freeze({ upperArmAimDegrees, lowerArmAimDegrees });
+    return Object.freeze({ upperArmAimDegrees, lowerArmAimDegrees, channels: appliedChannels });
   }
 
-  function update(deltaSeconds = 1 / 60) {
+  function update(deltaSeconds = 1 / 60, context = {}) {
     if (!activePlan) return snapshot();
     const handoff = applyPendingPostCouplingHandoff();
-    elapsedMs += Math.max(0, finite(deltaSeconds, 1 / 60)) * 1000;
+    const phaseClock = advanceAttackerRecoilPresentationClock(
+      activePlan,
+      elapsedMs,
+      deltaSeconds,
+      activeProfile,
+      context,
+    );
+    elapsedMs = phaseClock?.elapsedMs ?? elapsedMs;
+    lastPhaseClock = phaseClock;
     const sample = sampleAttackerRecoilPresentation(activePlan, elapsedMs, activeProfile);
-    const appliedAim = applyPose(sample);
+    lastAppliedChannels = resolveAttackerRecoilPresentationChannels(context.channels);
+    const appliedAim = applyPose(sample, lastAppliedChannels);
 
     if (sample?.complete) {
       lastCompleted = Object.freeze({
@@ -525,16 +696,20 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
         sequence: activePlan.sequence ?? null,
         responseClass: activePlan.responseClass,
         attackDirection: activePlan.attackDirection,
-        durationMs: sample.profile?.settleEndMs
+        durationMs: sample.profile?.visibleSettleEndMs
+          ?? sample.profile?.settleEndMs
           ?? ATTACKER_RECOIL_PRESENTATION_PROFILES[activePlan.responseClass].settleEndMs,
         postCouplingStage: postCouplingHandoff?.stage || null,
         couplingMomentum: postCouplingHandoff?.couplingMomentum || null,
+        reactionDefinitionId: activeReactionDefinition?.id || null,
         readyForAttackHandoff: true,
       });
       activePlan = null;
       activeProfile = { ...(options.profile || {}) };
       elapsedMs = 0;
       postCouplingHandoff = null;
+      activeReactionDefinition = null;
+      lastAppliedChannels = ATTACKER_RECOIL_PRESENTATION_CHANNELS.FULL;
       return Object.freeze({
         ...snapshot(),
         justCompleted: true,
@@ -558,6 +733,9 @@ export function createAttackerRecoilPresentationRuntime(THREE, options = {}) {
     activeProfile = { ...(options.profile || {}) };
     elapsedMs = 0;
     postCouplingHandoff = null;
+    lastAppliedChannels = ATTACKER_RECOIL_PRESENTATION_CHANNELS.FULL;
+    lastPhaseClock = null;
+    activeReactionDefinition = null;
     consumePostCouplingRecoilStaggerHandoff(rig);
     return snapshot();
   }

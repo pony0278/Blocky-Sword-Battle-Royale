@@ -2,16 +2,52 @@ import { createLongswordDirectionalAttackRuntime } from './longsword-directional
 import { createGuardStateMachine, GUARD_EVENTS, GUARD_STATES } from './guard-state-machine.js';
 import { createGuardOutcomeResolutionGate } from './guard-outcome-resolution.js';
 import { createDirectionalRecoilPlanner } from './directional-recoil-planner.js';
-import { createAttackerRecoilPresentationRuntime } from './attacker-recoil-presentation.js';
+import {
+  ATTACKER_RECOIL_PRESENTATION_PHASE_LATCHES,
+  createAttackerRecoilPresentationRuntime,
+} from './attacker-recoil-presentation.js?v=g43b5r281-closed-loop-old-b3-r18i5';
+import { buildParriedReactionDefinition } from './parried-reaction-definition.js?v=g43b5r281-closed-loop-old-b3-r18i5';
 
 export const TWO_ACTOR_COMBAT_INTEGRATION_STAGE = 'G4.3B.4';
 export const TWO_ACTOR_PARRY_SYNC_STAGE = 'G4.3B.5';
 export const TWO_ACTOR_RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';
+export const TWO_ACTOR_PARRY_IMPACT_REACTION_STAGE = 'G4.3B.5R.3.3';
+
+export const TWO_ACTOR_PARRY_REACTION_CHANNELS = Object.freeze({
+  FULL_RECOIL: Object.freeze({
+    torso: true,
+    torsoYawRoll: true,
+    legs: true,
+    weaponArm: true,
+  }),
+  LIVE_CONTACT_BODY: Object.freeze({
+    torso: true,
+    torsoYawRoll: false,
+    legs: true,
+    weaponArm: false,
+  }),
+  LIVE_CONTACT_REACTION_INTENT: Object.freeze({
+    torso: true,
+    torsoYawRoll: true,
+    legs: true,
+    weaponArm: true,
+  }),
+  LIVE_CONTACT_HOLD: Object.freeze({
+    torso: false,
+    torsoYawRoll: false,
+    legs: false,
+    weaponArm: false,
+  }),
+});
+
+export const TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES = Object.freeze({
+  LIVE_CONTACT: ATTACKER_RECOIL_PRESENTATION_PHASE_LATCHES.CONTACT_ORIGIN,
+});
 
 export const TWO_ACTOR_PARRY_SYNC_PROFILE = Object.freeze({
   presentationOffsetSeconds: 0.205,
-  parryAttackerRecoilDelayMs: 20,
-  perfectParryAttackerRecoilDelayMs: 14,
+  parryAttackerRecoilDelayMs: 0,
+  perfectParryAttackerRecoilDelayMs: 0,
 });
 
 export const TWO_ACTOR_COMBAT_PHASES = Object.freeze({
@@ -31,6 +67,101 @@ function finite(value, fallback = 0) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, finite(value, min)));
+}
+
+function frozenVector(value = {}) {
+  return freeze({
+    x: finite(value?.x),
+    y: finite(value?.y),
+    z: finite(value?.z),
+  });
+}
+
+export function buildParryImpactReactionEvent(input = {}) {
+  const resolution = input.resolution || {};
+  const outcome = String(resolution.outcome || '');
+  if (outcome !== 'parry' && outcome !== 'perfect-parry') return null;
+
+  const interruption = input.interruption || {};
+  const defenderPayload = input.defenderPayload || {};
+  const attackerReaction = input.attackerReaction || null;
+  const sequence = resolution.attackSequence ?? null;
+  const attackDirection = resolution.attackDirection || null;
+  return freeze({
+    stage: TWO_ACTOR_PARRY_IMPACT_REACTION_STAGE,
+    impactId: `parry-impact:${sequence ?? 'unknown'}`,
+    sequence,
+    attackDirection,
+    outcome,
+    responseClass: resolution.attacker?.responseClass || null,
+    contact: freeze({
+      point: frozenVector(resolution.contact?.point),
+      incomingVelocity: frozenVector(resolution.contact?.incomingVelocity),
+    }),
+    sourcePose: freeze({
+      clipId: interruption.clipId || null,
+      sourceTimeSeconds: Math.max(0, finite(interruption.sourceTimeSeconds)),
+    }),
+    defender: freeze({
+      event: resolution.defender?.event || null,
+      reactionVariant: resolution.defender?.reactionVariant || null,
+      presentationSourceTimeSeconds: Math.max(0, finite(defenderPayload.presentationOffsetSeconds)),
+      semanticMarker: 'deflect-impulse',
+    }),
+    attacker: freeze({
+      reactionDefinitionSelectedAtImpact: true,
+      bodyReactionStartsAtImpact: false,
+      weaponArmReactionIntentStartsAtImpact: false,
+      visibleOldB3StartsAtDeflectImpulse: true,
+      weaponArmOwnershipAtImpact: 'live-contact-constraint-before-deflect-impulse',
+      weaponArmOwnershipAfterRelease: 'canonical-old-b3-from-zero-after-continuity-bridge',
+      reactionDefinitionId: attackerReaction?.id || null,
+      reactionPlanBackwardPitchDegrees: attackerReaction?.silhouette?.backwardPitchDegrees ?? null,
+      reactionImpulsePeakMs: attackerReaction?.timeline?.impulsePeakMs ?? null,
+    }),
+    channelOwnership: freeze({
+      atImpact: TWO_ACTOR_PARRY_REACTION_CHANNELS.LIVE_CONTACT_HOLD,
+      reactionIntentAtImpact: TWO_ACTOR_PARRY_REACTION_CHANNELS.LIVE_CONTACT_HOLD,
+      finalContactCorrectionAtImpact: freeze({
+        appliesAfterReactionIntent: false,
+        bones: freeze(['upperarm.r', 'lowerarm.r', 'wrist.r']),
+        propagatedBones: freeze(['hand.r', 'handslot.r']),
+        shoulderPropagationActive: false,
+      }),
+      atDeflectImpulse: TWO_ACTOR_PARRY_REACTION_CHANNELS.FULL_RECOIL,
+      afterWeaponRelease: TWO_ACTOR_PARRY_REACTION_CHANNELS.FULL_RECOIL,
+    }),
+    phaseGraph: freeze({
+      impactCapturesContactPoseAndSelectsReaction: true,
+      impactStartsBodyImmediately: false,
+      impactStartsFullReactionIntent: false,
+      contactConstraintOwnsPreDeflectPose: true,
+      deflectImpulseStartsCanonicalOldB3: true,
+      continuityBridgeBeforeVisibleImpulse: true,
+      liveWeaponContactLatch: TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT,
+      releaseStartsSelectedPlanAtZero: true,
+      bodyRestartAtWeaponRelease: false,
+    }),
+    clock: freeze({
+      origin: 'authoritative-swept-shield-sword-contact',
+      elapsedMs: 0,
+    }),
+    inspectionPolicy: 'contact-qa-preferred-with-confirmed-real-parry-fail-safe-before-visible-old-b3',
+    authority: 'impact-selects-reaction-deflect-impulse-starts-visible-old-b3',
+  });
+}
+
+export function sampleParryImpactReactionClock(event, elapsedMs = 0) {
+  if (!event || event.stage !== TWO_ACTOR_PARRY_IMPACT_REACTION_STAGE) return null;
+  return freeze({
+    stage: TWO_ACTOR_PARRY_IMPACT_REACTION_STAGE,
+    impactId: event.impactId,
+    elapsedMs: Math.max(0, finite(elapsedMs)),
+    defenderReactionStarted: true,
+    attackerReactionDefinitionSelected: true,
+    attackerVisibleOldB3StartsAtDeflectImpulse: true,
+    authority: 'impact-clock-observes-contact-deflect-impulse-starts-old-b3-presentation-clock',
+  });
 }
 
 export function getAttackerRecoilDelayMs(outcome, overrides = {}) {
@@ -59,14 +190,31 @@ export function buildSynchronizedDefenderPayload(resolution, overrides = {}) {
   const outcome = String(resolution?.outcome || '');
   const parry = outcome === 'parry' || outcome === 'perfect-parry';
   if (!parry) return freeze({ ...payload });
-  const presentationOffsetSeconds = clamp(
+  const configuredPresentationOffsetSeconds = clamp(
     overrides.presentationOffsetSeconds ?? TWO_ACTOR_PARRY_SYNC_PROFILE.presentationOffsetSeconds,
+    0,
+    0.35,
+  );
+  const predictivePresentationOffset = Number(overrides.defenderPresentationOffsetSeconds);
+  const predictiveHandoffAvailable = Number.isFinite(predictivePresentationOffset)
+    && predictivePresentationOffset >= 0;
+  const presentationOffsetSeconds = clamp(
+    Math.max(
+      configuredPresentationOffsetSeconds,
+      predictiveHandoffAvailable ? predictivePresentationOffset : 0,
+    ),
     0,
     0.35,
   );
   return freeze({
     ...payload,
     presentationOffsetSeconds,
+    predictivePresentationOffsetSeconds: predictiveHandoffAvailable
+      ? predictivePresentationOffset
+      : null,
+    presentationContinuitySource: predictiveHandoffAvailable
+      ? 'predictive-contact-handoff-no-rewind'
+      : 'configured-parry-preroll',
     presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
     presentationSyncIntent: 'defender-deflect-motion-leads-attacker-recoil-after-authoritative-contact',
   });
@@ -124,6 +272,9 @@ export function createTwoActorCombatIntegration(options = {}) {
   let lastExchange = null;
   let lastFailure = null;
   let exchangeElapsedMs = 0;
+  let attackerReactionComplete = false;
+  let completedAttackerReaction = null;
+  let attackerReactionCompletedAtMs = null;
 
   function phase() {
     if (activeExchange) return TWO_ACTOR_COMBAT_PHASES.RECOIL;
@@ -132,6 +283,10 @@ export function createTwoActorCombatIntegration(options = {}) {
   }
 
   function snapshot(extra = {}) {
+    const parryImpactEvent = activeExchange?.parryImpactEvent || lastExchange?.parryImpactEvent || null;
+    const parryReactionElapsedMs = activeExchange
+      ? exchangeElapsedMs
+      : lastExchange?.exchangeDurationMs ?? 0;
     return freeze({
       stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
       presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
@@ -142,6 +297,10 @@ export function createTwoActorCombatIntegration(options = {}) {
       attackerRecoil: attackerRecoil.snapshot || null,
       activeExchange,
       exchangeElapsedMs,
+      attackerReactionComplete,
+      attackerReactionCompletedAtMs,
+      parryImpactEvent,
+      parryReactionClock: sampleParryImpactReactionClock(parryImpactEvent, parryReactionElapsedMs),
       lastExchange,
       lastFailure,
       authority: 'two-actor-combat-orchestration',
@@ -163,6 +322,9 @@ export function createTwoActorCombatIntegration(options = {}) {
     if (attackRuntime.interrupted) attackRuntime.releaseInterruption();
     outcomeGate.reset(sequence);
     exchangeElapsedMs = 0;
+    attackerReactionComplete = false;
+    completedAttackerReaction = null;
+    attackerReactionCompletedAtMs = null;
   }
 
   function startAttack(direction, startOptions = {}) {
@@ -260,20 +422,47 @@ export function createTwoActorCombatIntegration(options = {}) {
       });
     }
 
-    const recoilPlan = recoilPlanner.plan(interrupted.snapshot);
-    if (!recoilPlan.planned) {
+    const baseRecoilPlan = recoilPlanner.plan(interrupted.snapshot);
+    if (!baseRecoilPlan.planned) {
       rollbackResolvedSequence(resolution.attackSequence);
-      rememberFailure(recoilPlan.reason || 'recoil-plan-rejected', {
+      rememberFailure(baseRecoilPlan.reason || 'recoil-plan-rejected', {
         attackSequence: resolution.attackSequence,
       });
-      return integrationFailure(recoilPlan.reason || 'recoil-plan-rejected', snapshot(), {
+      return integrationFailure(baseRecoilPlan.reason || 'recoil-plan-rejected', snapshot(), {
         resolution,
         interrupted,
-        recoilPlan,
+        recoilPlan: baseRecoilPlan,
+        baseRecoilPlan,
       });
     }
 
-    const recoilStart = attackerRecoil.start(recoilPlan);
+    const parryOutcome = resolution.outcome === 'parry' || resolution.outcome === 'perfect-parry';
+    const attackerReaction = parryOutcome
+      ? buildParriedReactionDefinition({
+          plan: baseRecoilPlan,
+          outcome: resolution.outcome,
+        })
+      : null;
+    if (parryOutcome && !attackerReaction?.accepted) {
+      rollbackResolvedSequence(resolution.attackSequence);
+      rememberFailure(attackerReaction?.reason || 'attacker-reaction-definition-rejected', {
+        attackSequence: resolution.attackSequence,
+      });
+      return integrationFailure(
+        attackerReaction?.reason || 'attacker-reaction-definition-rejected',
+        snapshot(),
+        { resolution, interrupted, baseRecoilPlan, attackerReaction },
+      );
+    }
+
+    const recoilPlan = attackerReaction?.accepted ? attackerReaction.plan : baseRecoilPlan;
+    const recoilStart = attackerRecoil.start(recoilPlan, attackerReaction?.accepted
+      ? {
+          initialElapsedMs: attackerReaction.initialElapsedMs,
+          profileOverrides: attackerReaction.profileOverrides,
+          reactionDefinition: attackerReaction,
+        }
+      : {});
     if (!recoilStart.accepted) {
       rollbackResolvedSequence(resolution.attackSequence);
       rememberFailure(recoilStart.reason || 'attacker-recoil-start-rejected', {
@@ -282,13 +471,18 @@ export function createTwoActorCombatIntegration(options = {}) {
       return integrationFailure(recoilStart.reason || 'attacker-recoil-start-rejected', snapshot(), {
         resolution,
         interrupted,
+        baseRecoilPlan,
+        attackerReaction,
         recoilPlan,
         recoilStart,
       });
     }
 
     const enterBridge = bridgeGuardEnterForCombatOutcome(resolution);
-    const defenderPayload = buildSynchronizedDefenderPayload(resolution, parrySync);
+    const defenderPayload = buildSynchronizedDefenderPayload(resolution, {
+      ...parrySync,
+      defenderPresentationOffsetSeconds: input.defenderPresentationOffsetSeconds,
+    });
     const defenderDispatch = guardMachine.send(resolution.defender.event, defenderPayload);
     if (!defenderDispatch.accepted) {
       rollbackResolvedSequence(resolution.attackSequence);
@@ -299,6 +493,8 @@ export function createTwoActorCombatIntegration(options = {}) {
       return integrationFailure('defender-event-dispatch-failed', snapshot(), {
         resolution,
         interrupted,
+        baseRecoilPlan,
+        attackerReaction,
         recoilPlan,
         recoilStart,
         enterBridge,
@@ -308,7 +504,16 @@ export function createTwoActorCombatIntegration(options = {}) {
     }
 
     const attackerRecoilDelayMs = getAttackerRecoilDelayMs(resolution.outcome, parrySync);
+    const parryImpactEvent = buildParryImpactReactionEvent({
+      resolution,
+      interruption: interrupted.snapshot.interruption,
+      defenderPayload,
+      attackerReaction,
+    });
     exchangeElapsedMs = 0;
+    attackerReactionComplete = false;
+    completedAttackerReaction = null;
+    attackerReactionCompletedAtMs = null;
     activeExchange = freeze({
       stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE,
       presentationSyncStage: TWO_ACTOR_PARRY_SYNC_STAGE,
@@ -319,11 +524,14 @@ export function createTwoActorCombatIntegration(options = {}) {
       responseClass: resolution.attacker.responseClass,
       resolution,
       interruption: interrupted.snapshot.interruption,
+      baseRecoilPlan,
+      attackerReaction,
       recoilPlan,
       defenderEvent: resolution.defender.event,
       defenderReactionVariant: resolution.defender.reactionVariant,
       defenderPresentationOffsetSeconds: defenderPayload.presentationOffsetSeconds || 0,
       attackerRecoilDelayMs,
+      parryImpactEvent,
       enterBridgeApplied: Boolean(enterBridge?.accepted),
     });
     lastFailure = null;
@@ -334,11 +542,14 @@ export function createTwoActorCombatIntegration(options = {}) {
       reason: 'two-actor-combat-exchange-resolved',
       resolution,
       interrupted,
+      baseRecoilPlan,
+      attackerReaction,
       recoilPlan,
       recoilStart,
       enterBridge,
       defenderPayload,
       defenderDispatch,
+      parryImpactEvent,
       snapshot: snapshot(),
     });
   }
@@ -378,17 +589,37 @@ export function createTwoActorCombatIntegration(options = {}) {
     const previousRecoilMs = Math.max(0, previousElapsedMs - delayMs);
     const currentRecoilMs = Math.max(0, exchangeElapsedMs - delayMs);
     const recoilDeltaSeconds = Math.max(0, currentRecoilMs - previousRecoilMs) / 1000;
-    const recoilUpdate = recoilDeltaSeconds > 0
-      ? attackerRecoil.update(recoilDeltaSeconds)
-      : freeze({
+    const recoilUpdate = attackerReactionComplete
+      ? freeze({
           justCompleted: false,
-          delayedByContactSync: true,
-          remainingDelayMs: Math.max(0, delayMs - exchangeElapsedMs),
+          reactionAlreadyComplete: true,
+          completed: completedAttackerReaction,
           snapshot: attackerRecoil.snapshot || null,
-        });
-    const attackerVisualRefreshApplied = refreshAttackerPresentationAfterRecoil(recoilDeltaSeconds, context);
-    const completed = recoilUpdate?.justCompleted === true
+        })
+      : recoilDeltaSeconds > 0
+        ? attackerRecoil.update(recoilDeltaSeconds, freeze({
+            channels: context.attackerRecoilChannels,
+            phaseLatch: context.attackerRecoilPhaseLatch,
+            parryImpactEvent: activeExchange.parryImpactEvent || null,
+          }))
+        : freeze({
+            justCompleted: false,
+            delayedByContactSync: true,
+            remainingDelayMs: Math.max(0, delayMs - exchangeElapsedMs),
+            snapshot: attackerRecoil.snapshot || null,
+          });
+    const attackerVisualRefreshApplied = refreshAttackerPresentationAfterRecoil(
+      attackerReactionComplete ? 0 : recoilDeltaSeconds,
+      context,
+    );
+    const completedThisFrame = recoilUpdate?.justCompleted === true
       || recoilUpdate?.completed?.readyForAttackHandoff === true;
+    if (completedThisFrame && !attackerReactionComplete) {
+      attackerReactionComplete = true;
+      completedAttackerReaction = recoilUpdate.completed || null;
+      attackerReactionCompletedAtMs = exchangeElapsedMs;
+    }
+    const completed = attackerReactionComplete;
 
     if (!completed) {
       return snapshot({
@@ -399,17 +630,32 @@ export function createTwoActorCombatIntegration(options = {}) {
       });
     }
 
+    if (context.holdAttackerInterruption === true) {
+      return snapshot({
+        updated: true,
+        sampledFrozenPose,
+        recoilUpdate,
+        attackerVisualRefreshApplied,
+        attackerReactionComplete: true,
+        attackerInterruptionHeldForContact: true,
+      });
+    }
+
     const completedExchange = activeExchange;
     const released = attackRuntime.releaseInterruption();
     lastExchange = freeze({
       ...completedExchange,
       exchangeDurationMs: exchangeElapsedMs,
+      attackerReactionCompletedAtMs,
       completed: released.accepted === true,
       attackerHandoffReleased: released.accepted === true,
       defenderStateAtAttackerHandoff: guardMachine.state,
     });
     activeExchange = null;
     exchangeElapsedMs = 0;
+    attackerReactionComplete = false;
+    completedAttackerReaction = null;
+    attackerReactionCompletedAtMs = null;
 
     if (!released.accepted) {
       rememberFailure(released.reason || 'attack-interruption-release-failed', {
@@ -433,6 +679,9 @@ export function createTwoActorCombatIntegration(options = {}) {
     outcomeGate.reset();
     activeExchange = null;
     exchangeElapsedMs = 0;
+    attackerReactionComplete = false;
+    completedAttackerReaction = null;
+    attackerReactionCompletedAtMs = null;
     lastExchange = null;
     lastFailure = null;
     if (resetGuard) guardMachine.send(GUARD_EVENTS.RESET, { stage: TWO_ACTOR_COMBAT_INTEGRATION_STAGE });

@@ -9,6 +9,7 @@ import {
 } from './guard-reaction-presentation.js';
 import { applyGuardQuaternionOffsetsWeighted } from './longsword-guard-correction.js';
 import { LONGSWORD_GUARD_AUTHORING_STATE } from './longsword-guard-metadata.js';
+import { getProductionParryDeflectProfile } from '../animation/parry-contact-deflect-runtime-clip.js';
 
 export const PREDICTIVE_INTERCEPT_PARRY_STAGE = 'G4.3B.5R';
 export const RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE = 'G4.3B.5R.1';
@@ -22,6 +23,12 @@ export const PREDICTIVE_PARRY_INPUT_GRADES = Object.freeze({
   TOO_LATE: 'too-late',
 });
 
+const PRODUCTION_PARRY_PRESENTATION_MARKERS = getProductionParryDeflectProfile('parry').presentationMarkers
+  || Object.freeze({
+    preContactStartSeconds: 0.205,
+    contactPoseSeconds: 0.35,
+  });
+
 export const PREDICTIVE_INTERCEPT_PARRY_PROFILE = Object.freeze({
   detectionHorizonSeconds: 0.30,
   planeCaptureMeters: 0.055,
@@ -32,8 +39,8 @@ export const PREDICTIVE_INTERCEPT_PARRY_PROFILE = Object.freeze({
   perfectWindowStartSeconds: 0.045,
   perfectWindowEndSeconds: 0.075,
   lateWindowStartSeconds: 0.020,
-  presentationStartSourceSeconds: 0.205,
-  interceptSourceSeconds: 0.35,
+  presentationStartSourceSeconds: PRODUCTION_PARRY_PRESENTATION_MARKERS.preContactStartSeconds,
+  interceptSourceSeconds: PRODUCTION_PARRY_PRESENTATION_MARKERS.contactPoseSeconds,
   authority: 'rhythm-triggered-presentation-with-geometry-guided-tracking-until-authoritative-contact',
 });
 

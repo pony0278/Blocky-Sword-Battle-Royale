@@ -6,8 +6,8 @@ const source = await readFile(new URL('../tools/action-studio/shield-driven-cont
 const html = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 
 test('historical G4.3B.5R.2.7 source stays covered after current Lab advances to TOP/RIGHT OLD B3 handoff', () => {
-  assert.match(html, /Step 3A · Live Shield → Sword → Arm → OLD B3/);
-  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-top-right-old-b3-r18e/);
+  assert.match(html, /Step 3A .* Live Shield .* Sword .* Arm .* OLD B3/);
+  assert.match(html, /shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-closed-loop-old-b3-r18i5/);
   assert.match(source, /two-actor-whole-body-recoil-burst\.js\?v=g43b5r27/);
   assert.match(source, /const LAB_STAGE = TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
   assert.match(source, /window\.__G43B5R27_LAB__/);
@@ -31,10 +31,10 @@ test('G4.3B.5R.2.7 lab exposes release power frame instead of separation phase',
   assert.match(source, /oldTwoActorWholeBodyB3ClockRestoredAtRelease: true/);
 });
 
-test('historical .2.7 keeps one shared clock while current Lab freezes B3 until TOP/RIGHT pass 7/7', () => {
+test('historical .2.7 remains covered while R18I starts visible OLD B3 from the deflect event', () => {
   assert.match(source, /backward PRELOAD/);
   assert.match(source, /weaponShouldersTorsoHipsLegsShareBurstClock: true/);
   assert.match(source, /freeArmUsesParentHierarchyRatherThanExplicitFlail: true/);
-  assert.match(html, /live-contact inspection hold.*TOP\/RIGHT 7\/7.*OLD B3/);
-  assert.match(html, /Physical arm chain<\/span><b>TOP \/ RIGHT: bounded lowerarm\.r.*wrist\.r re-solve.*shoulder off.*LEFT deferred<\/b>/);
+  assert.match(html, /ParryImpact selects one 25.* OLD B3 plan.*contact holds presentation at 0ms.*DEFLECT_IMPULSE.*28ms continuity bridge.*OLD B3 runs from elapsed 0/);
+  assert.match(html, /Physical arm chain<\/span><b>during contact: bounded upperarm\.r.*lowerarm\.r.*wrist\.r.*after DEFLECT_IMPULSE: contact correction fades to zero before visible OLD B3 arm sweep.*separate shoulder\/clavicle helper off.*LEFT release deferred<\/b>/);
 });
