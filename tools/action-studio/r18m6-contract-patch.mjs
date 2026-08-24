@@ -44,7 +44,7 @@ regression = replaceOnce(
 regression = replaceOnce(
   regression,
   "const body = sliceFunction(source, 'function resolveContact(');",
-  "const body = sliceFunction(contactHandoffSource, 'function resolveContact(');",
+  "const body = sliceBetween(contactHandoffSource, 'function resolveContact(', 'function updateCombatBeforeGuard(');",
   'R18M.1 resolveContact ownership',
 );
 regression = replaceOnce(
@@ -84,6 +84,12 @@ preContact = replaceOnce(
   "const controller = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');\n",
   "const controller = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');\nconst contactHandoffController = await readFile(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');\n",
   'R18M.5 contact handoff fixture',
+);
+preContact = replaceOnce(
+  preContact,
+  "  assert.match(entry, /preContactController\\.recordWhiffProbe\\(snapshot, exchangeState\\.latestContact\\);/);",
+  "  assert.match(contactHandoffController, /preContactController\\.recordWhiffProbe\\(snapshot, exchangeState\\.latestContact\\);/);",
+  'R18M.5 whiff recorder ownership',
 );
 preContact = replaceOnce(
   preContact,
