@@ -19,6 +19,22 @@ function sliceBetween(text, startMarker, endMarker) {
   return text.slice(start, end);
 }
 
+function sliceFunction(text, startMarker) {
+  const start = text.indexOf(startMarker);
+  assert.notEqual(start, -1, `missing function marker: ${startMarker}`);
+  const openBrace = text.indexOf('{', start);
+  assert.notEqual(openBrace, -1, `missing function body: ${startMarker}`);
+  let depth = 0;
+  for (let index = openBrace; index < text.length; index += 1) {
+    if (text[index] === '{') depth += 1;
+    else if (text[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  assert.fail(`unterminated function body: ${startMarker}`);
+}
+
 test('R18M.1 baseline targets the actual R18I5 R281 browser entry', () => {
   assert.match(
     html,
@@ -51,7 +67,7 @@ test('R18M.1 locks predictive\/measured pre-contact guidance without granting su
 });
 
 test('R18M.1 locks real swept contact → Parry confirmation → combat resolution → live grip ownership', () => {
-  const body = sliceBetween(source, 'function resolveContact(', 'const INSPECTION_GATE_ORDER');
+  const body = sliceFunction(source, 'function resolveContact(');
 
   assert.match(body, /probeSweptSwordBucklerContact\(\{/);
   assert.match(body, /if \(!latestContact\.contact\) return;/);
