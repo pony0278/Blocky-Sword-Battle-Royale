@@ -55,7 +55,9 @@ jobs:
         run: node tools/action-studio/r18m6-contact-handoff-migration.mjs
 
       - name: Adapt existing contracts to the extracted ownership boundary
-        run: node tools/action-studio/r18m6-contract-patch-v2.mjs
+        run: |
+          node tools/action-studio/r18m6-contract-patch-v2.mjs
+          node tools/action-studio/r18m6-contract-postpatch.mjs
 
       - name: Normalize extracted controller whitespace
         shell: bash
@@ -127,8 +129,9 @@ jobs:
           rm -f tools/action-studio/r18m6-contact-handoff-migration.mjs
           rm -f tools/action-studio/r18m6-contract-patch.mjs
           rm -f tools/action-studio/r18m6-contract-patch-v2.mjs
+          rm -f tools/action-studio/r18m6-contract-postpatch.mjs
           rm -f .github/workflows/r18m6-contact-handoff-migration.yml
-          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/contact-handoff-controller\.js|tests/shield-parry-r281-contact-handoff-controller\.test\.js|tests/shield-driven-contact-coupling-r281-regression\.test\.js|tests/shield-parry-r281-exchange-state\.test\.js|tests/shield-parry-r281-pre-contact-controller\.test\.js|tests/committed-parry-contact-gate-lab\.test\.js|tests/shield-sword-hand-contact-coupling-lab\.test\.js|tools/action-studio/r18m6-contact-handoff-migration\.mjs|tools/action-studio/r18m6-contract-patch\.mjs|tools/action-studio/r18m6-contract-patch-v2\.mjs|\.github/workflows/r18m6-contact-handoff-migration\.yml)$'
+          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/contact-handoff-controller\.js|tests/shield-parry-r281-contact-handoff-controller\.test\.js|tests/shield-driven-contact-coupling-r281-regression\.test\.js|tests/shield-parry-r281-exchange-state\.test\.js|tests/shield-parry-r281-pre-contact-controller\.test\.js|tests/committed-parry-contact-gate-lab\.test\.js|tests/shield-sword-hand-contact-coupling-lab\.test\.js|tools/action-studio/r18m6-contact-handoff-migration\.mjs|tools/action-studio/r18m6-contract-patch\.mjs|tools/action-studio/r18m6-contract-patch-v2\.mjs|tools/action-studio/r18m6-contract-postpatch\.mjs|\.github/workflows/r18m6-contact-handoff-migration\.yml)$'
           git status --short
           UNEXPECTED=$(git status --short | grep -Ev "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
@@ -155,6 +158,7 @@ jobs:
             tools/action-studio/r18m6-contact-handoff-migration.mjs \
             tools/action-studio/r18m6-contract-patch.mjs \
             tools/action-studio/r18m6-contract-patch-v2.mjs \
+            tools/action-studio/r18m6-contract-postpatch.mjs \
             .github/workflows/r18m6-contact-handoff-migration.yml
           git diff --cached --check
           git diff --cached --stat
