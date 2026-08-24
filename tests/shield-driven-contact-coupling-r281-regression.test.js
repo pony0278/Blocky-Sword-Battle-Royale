@@ -46,9 +46,9 @@ test('R18M.1 baseline targets the actual R18I5 R281 browser entry', () => {
 
 test('R18M.1 locks manual Parry input and authored commitment\/TTC authority', () => {
   assert.match(source, /const parryGate = createCommittedParryContactGate\(\);/);
-  assert.match(source, /latestParryInput = parryGate\.arm\(\{/);
+  assert.match(source, /(?:exchangeState\.)?latestParryInput = parryGate\.arm\(\{/);
   assert.match(source, /manual: true,/);
-  assert.match(source, /latestParryConfirmation = selectedMode === 'parry'[\s\S]*parryGate\.confirm\(\{/);
+  assert.match(source, /(?:exchangeState\.)?latestParryConfirmation = selectedMode === 'parry'[\s\S]*parryGate\.confirm\(\{/);
   assert.match(html, /Input authority<\/span><b>manual PARRY NOW<\/b>/);
   assert.match(html, /Attack commitment<\/span><b>authored movementStartSeconds<\/b>/);
   assert.match(html, /Valid TTC<\/span><b>60–180 ms<\/b>/);
@@ -70,10 +70,10 @@ test('R18M.1 locks real swept contact → Parry confirmation → combat resoluti
   const body = sliceFunction(source, 'function resolveContact(');
 
   assert.match(body, /probeSweptSwordBucklerContact\(\{/);
-  assert.match(body, /if \(!latestContact\.contact\) return;/);
-  assert.match(body, /parryGate\.confirm\(\{ attackSnapshot: snapshot, contact: latestContact \}\)/);
-  assert.match(body, /latestCombatResult = combat\.resolveContact\(\{/);
-  assert.match(body, /latestGripConstraintReport = swordGripConstraint\.start\(\{/);
+  assert.match(body, /if \(!(?:exchangeState\.)?latestContact\.contact\) return;/);
+  assert.match(body, /parryGate\.confirm\(\{ attackSnapshot: snapshot, contact: (?:exchangeState\.)?latestContact \}\)/);
+  assert.match(body, /(?:exchangeState\.)?latestCombatResult = combat\.resolveContact\(\{/);
+  assert.match(body, /(?:exchangeState\.)?latestGripConstraintReport = swordGripConstraint\.start\(\{/);
   assert.match(body, /reactionIntentActiveAtImpact: false,/);
   assert.match(body, /b3BodyClockStartedAtImpact: false,/);
   assert.match(body, /contactConstraintOwnsUntilDeflectImpulse: true,/);
@@ -98,9 +98,9 @@ test('R18M.1 locks DEFLECT_IMPULSE release, confirmed-Parry fail-safe, continuit
   assert.match(body, /buildLiveParryOldB3Handoff\(\{/);
   assert.match(body, /allowConfirmedParryFallback: true,/);
   assert.match(body, /publishPostCouplingRecoilStaggerHandoff\(attacker\.rig, \{/);
-  assert.match(body, /step3AReleaseBlend = \{/);
+  assert.match(body, /(?:exchangeState\.)?step3AReleaseBlend = \{/);
   assert.match(body, /durationMs: handoff\.releaseBlendMs,/);
-  assert.match(body, /targetPose: canonicalAttackerOldB3Pose \|\| frozenAttackerContactPose,/);
+  assert.match(body, /targetPose: (?:exchangeState\.)?canonicalAttackerOldB3Pose \|\| (?:exchangeState\.)?frozenAttackerContactPose,/);
   assert.match(body, /visibleOldB3StartsAtDeflectImpulse: true,/);
   assert.match(body, /weaponArmContactConstrained: false,/);
 
