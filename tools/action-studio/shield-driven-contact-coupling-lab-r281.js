@@ -63,6 +63,24 @@ import {
   measureAttackerRecoilWorldSilhouette,
 } from '../../src/combat/attacker-recoil-world-silhouette.js?v=g43b5r281-closed-loop-old-b3-r18i5';
 
+import {
+  compactInterceptDriveTelemetry,
+  compactInterceptDriveTraceFrame,
+  compactPredictiveAnalysis,
+  compactParryGateAttempt,
+  compactReachableInterceptTarget,
+  compactLiveContactConstraint,
+  compactThreatSelection,
+} from './shield-parry-r281/diagnostic-telemetry.js';
+import {
+  describeContactGeometry,
+  formatAllInspectionGates,
+  formatInspectionFailureSummary,
+  formatTerminalState,
+  formatWhiffDiagnostic,
+} from './shield-parry-r281/diagnostic-formatters.js';
+import { serializeVerificationReport } from './shield-parry-r281/report-serialization.js';
+
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
 const RECOIL_STAGE = LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE;
 const THREE = window.THREE;
@@ -416,365 +434,6 @@ function cloneSurface(surface = {}) {
 
 function magnitude(v) {
   return v ? Math.hypot(Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0) : 0;
-}
-
-function compactVector(value) {
-  if (!value) return null;
-  return Object.freeze({
-    x: Number(value.x) || 0,
-    y: Number(value.y) || 0,
-    z: Number(value.z) || 0,
-  });
-}
-
-function compactGap(value) {
-  if (!value) return null;
-  return Object.freeze({
-    planeGapMeters: value.planeGapMeters ?? null,
-    radialGapMeters: value.radialGapMeters ?? null,
-    combinedGapMeters: value.combinedGapMeters ?? null,
-  });
-}
-
-function compactThreat(value) {
-  if (!value) return null;
-  return Object.freeze({
-    zone: value.zone ?? null,
-    pointY: value.pointY ?? null,
-    shieldBottomY: value.shieldBottomY ?? null,
-    kneeLeftY: value.kneeLeftY ?? null,
-    kneeRightY: value.kneeRightY ?? null,
-    verticalGapBelowShieldMeters: value.verticalGapBelowShieldMeters ?? null,
-    kneeLineDistanceMeters: value.kneeLineDistanceMeters ?? null,
-    planeNear: value.planeNear === true,
-    stronglyDownward: value.stronglyDownward === true,
-    belowShield: value.belowShield === true,
-    aboveFeet: value.aboveFeet === true,
-    kneeLineThreat: value.kneeLineThreat === true,
-    lowGuardGapThreat: value.lowGuardGapThreat === true,
-  });
-}
-
-function compactAnticipatedPlan(value) {
-  if (!value) return null;
-  return Object.freeze({
-    threat: compactThreat(value.threat),
-    metrics: compactGap(value.metrics),
-    arm: value.arm
-      ? Object.freeze({
-          attempted: value.arm.attempted === true,
-          stalled: value.arm.stalled === true,
-          saturated: value.arm.saturated === true,
-        })
-      : null,
-  });
-}
-
-function compactThreatSelection(value) {
-  if (!value) return null;
-  return Object.freeze({
-    source: value.source ?? null,
-    anticipatedLeadSeconds: value.anticipatedLeadSeconds ?? null,
-    anticipatedEligibilityReason: value.anticipatedEligibilityReason ?? null,
-    selectedThreat: compactThreat(value.selectedThreat),
-  });
-}
-
-function compactBodyReach(value) {
-  if (!value) return null;
-  return Object.freeze({
-    active: value.active === true,
-    armExtensionRatio: value.armExtensionRatio ?? null,
-    wristAppliedDegrees: value.wristAppliedDegrees ?? null,
-    planeGapBeforeMeters: value.planeGapBeforeMeters ?? null,
-    planeGapAfterWristMeters: value.planeGapAfterWristMeters ?? null,
-    appliedDegrees: value.appliedDegrees
-      ? Object.freeze({
-          chest: value.appliedDegrees.chest ?? 0,
-          spine: value.appliedDegrees.spine ?? 0,
-        })
-      : null,
-    bodyReachOffsetBefore: compactVector(value.bodyReachOffsetBefore),
-    bodyReachDistance: value.bodyReachDistance ?? null,
-    bodyDirectionDot: value.bodyDirectionDot ?? null,
-  });
-}
-
-function compactStanceReach(value) {
-  if (!value) return null;
-  return Object.freeze({
-    active: value.active === true,
-    stanceHeld: value.stanceHeld === true,
-    stanceConfirmed: value.stanceConfirmed === true,
-    earlyLowThreatRecruitment: value.earlyLowThreatRecruitment === true,
-    armStalled: value.armStalled === true,
-    activationSource: value.activationSource ?? null,
-    anticipatedLeadSeconds: value.anticipatedLeadSeconds ?? null,
-    engagedTargetCrouchMeters: value.engagedTargetCrouchMeters ?? null,
-    downwardRatio: value.downwardRatio ?? null,
-    crouchBeforeMeters: value.crouchBeforeMeters ?? null,
-    crouchMeters: value.crouchMeters ?? null,
-    hipsAppliedDegrees: value.hipsAppliedDegrees ?? null,
-    feetPlanted: value.feetPlanted ?? null,
-    footPlant: value.footPlant
-      ? Object.freeze({
-          l: Object.freeze({ driftMeters: value.footPlant.l?.driftMeters ?? null }),
-          r: Object.freeze({ driftMeters: value.footPlant.r?.driftMeters ?? null }),
-        })
-      : null,
-    threat: compactThreat(value.threat),
-    threatSelection: compactThreatSelection(value.threatSelection),
-    anticipatedPlan: compactAnticipatedPlan(value.anticipatedPlan),
-  });
-}
-
-function compactInterceptDriveTelemetry(value) {
-  if (!value) return null;
-  return Object.freeze({
-    telemetryDetail: 'compact-scalar-frame',
-    attackPhase: value.attackPhase ?? null,
-    elapsedSeconds: value.elapsedSeconds ?? null,
-    timeToContactSeconds: value.timeToContactSeconds ?? null,
-    presentationActive: value.presentationActive === true,
-    selectionSource: value.selectionSource ?? null,
-    drivePlanSource: value.drivePlanSource ?? null,
-    fallbackApplied: value.fallbackApplied === true,
-    predictedReachable: value.predictedReachable ?? null,
-    measuredReachable: value.measuredReachable ?? null,
-    measuredInsideAcquisitionBand: value.measuredInsideAcquisitionBand ?? null,
-    predictedRequiredDistanceMeters: value.predictedRequiredDistanceMeters ?? null,
-    measuredRequiredDistanceMeters: value.measuredRequiredDistanceMeters ?? null,
-    measuredRadialContactCorrectionMeters: value.measuredRadialContactCorrectionMeters ?? null,
-    measuredContactCorrectionMeters: value.measuredContactCorrectionMeters ?? null,
-    planRequiredDistanceMeters: value.planRequiredDistanceMeters ?? null,
-    planAppliedDistanceMeters: value.planAppliedDistanceMeters ?? null,
-    planReachable: value.planReachable ?? null,
-    trackingAchievedDistanceMeters: value.trackingAchievedDistanceMeters ?? null,
-    residualCarryBeforeMeters: value.residualCarryBeforeMeters ?? null,
-    residualCarryAfterMeters: value.residualCarryAfterMeters ?? null,
-    residualEdgeReductionMeters: value.residualEdgeReductionMeters ?? null,
-    residualPlaneReductionMeters: value.residualPlaneReductionMeters ?? null,
-    bodyEdgeReductionMeters: value.bodyEdgeReductionMeters ?? null,
-    bodyPlaneReductionMeters: value.bodyPlaneReductionMeters ?? null,
-    stanceEdgeReductionMeters: value.stanceEdgeReductionMeters ?? null,
-    stancePlaneReductionMeters: value.stancePlaneReductionMeters ?? null,
-    plannedCorrectionMeters: value.plannedCorrectionMeters ?? null,
-    shieldStepTranslationMeters: value.shieldStepTranslationMeters ?? null,
-    correctionDirectionDot: value.correctionDirectionDot ?? null,
-    residualBeforeRefinement: compactGap(value.residualBeforeRefinement),
-    residualAfterArmRefinement: compactGap(value.residualAfterArmRefinement),
-    residualAfterBodyReach: compactGap(value.residualAfterBodyReach),
-    residualAfterRefinement: compactGap(value.residualAfterRefinement),
-    residualRefinement: value.residualRefinement
-      ? Object.freeze({
-          achievedDistance: value.residualRefinement.achievedDistance ?? null,
-          directionDot: value.residualRefinement.directionDot ?? null,
-        })
-      : null,
-    residualBodyReach: compactBodyReach(value.residualBodyReach),
-    residualStanceReach: compactStanceReach(value.residualStanceReach),
-    authority: 'compact-parry-review-telemetry-no-solver-object-graph',
-  });
-}
-
-function compactInterceptDriveTraceFrame(value) {
-  if (!value) return null;
-  const stance = value.residualStanceReach;
-  return Object.freeze({
-    telemetryDetail: 'compact-scalar-frame',
-    attackPhase: value.attackPhase ?? null,
-    elapsedSeconds: value.elapsedSeconds ?? null,
-    timeToContactSeconds: value.timeToContactSeconds ?? null,
-    selectionSource: value.selectionSource ?? null,
-    drivePlanSource: value.drivePlanSource ?? null,
-    fallbackApplied: value.fallbackApplied === true,
-    predictedReachable: value.predictedReachable ?? null,
-    measuredReachable: value.measuredReachable ?? null,
-    measuredInsideAcquisitionBand: value.measuredInsideAcquisitionBand ?? null,
-    planAppliedDistanceMeters: value.planAppliedDistanceMeters ?? null,
-    residualAfterArmRefinement: compactGap(value.residualAfterArmRefinement),
-    residualAfterBodyReach: compactGap(value.residualAfterBodyReach),
-    residualAfterRefinement: compactGap(value.residualAfterRefinement),
-    stance: stance
-      ? Object.freeze({
-          active: stance.active === true,
-          held: stance.stanceHeld === true,
-          activationSource: stance.activationSource ?? null,
-          crouchMeters: stance.crouchMeters ?? null,
-          feetPlanted: stance.feetPlanted ?? null,
-        })
-      : null,
-  });
-}
-
-function compactPredictiveThreat(value) {
-  if (!value) return null;
-  return Object.freeze({
-    worldPoint: compactVector(value.worldPoint),
-    signedDistance: value.signedDistance ?? null,
-    radialDistance: value.radialDistance ?? null,
-    outsideDisc: value.outsideDisc ?? null,
-    futureSeconds: value.futureSeconds ?? null,
-    bladeFraction: value.bladeFraction ?? null,
-    source: value.source ?? null,
-  });
-}
-
-function compactTrackingPlan(value) {
-  if (!value) return null;
-  return Object.freeze({
-    mode: value.mode ?? null,
-    reachable: value.reachable ?? null,
-    requiredDistance: value.requiredDistance ?? null,
-    appliedDistance: value.appliedDistance ?? null,
-    correction: compactVector(value.correction),
-    reason: value.reason ?? null,
-  });
-}
-
-function compactPredictiveAnalysis(value) {
-  if (!value) return null;
-  return Object.freeze({
-    stage: value.stage ?? null,
-    rhythmStage: value.rhythmStage ?? null,
-    available: value.available === true,
-    reason: value.reason ?? null,
-    geometryReason: value.geometryReason ?? null,
-    requestedGrade: value.requestedGrade ?? null,
-    timingGrade: value.timingGrade ?? null,
-    timeToContactSeconds: value.timeToContactSeconds ?? null,
-    predictedTimeToContactSeconds: value.predictedTimeToContactSeconds ?? null,
-    triggerTtcSeconds: value.triggerTtcSeconds ?? null,
-    planeCapturable: value.planeCapturable ?? null,
-    interceptable: value.interceptable ?? null,
-    shouldTrigger: value.shouldTrigger ?? null,
-    threat: compactPredictiveThreat(value.threat),
-    trackingPlan: compactTrackingPlan(value.trackingPlan),
-    authority: value.authority ?? null,
-  });
-}
-
-function compactParryGateAttempt(value) {
-  if (!value) return null;
-  return Object.freeze({
-    stage: value.stage ?? null,
-    accepted: value.accepted === true,
-    reason: value.reason ?? null,
-    sequence: value.sequence ?? null,
-    source: value.source ?? value.input?.source ?? null,
-    timeToContactSeconds: value.timeToContactSeconds ?? null,
-    requiredShieldTravelMeters: value.requiredShieldTravelMeters ?? null,
-    predictedPlaneDistanceMeters: value.predictedPlaneDistanceMeters ?? null,
-    gates: value.gates
-      ? Object.freeze({
-          attackCommitted: value.gates.attackCommitted ?? null,
-          timingInsideWindow: value.gates.timingInsideWindow ?? null,
-          trackingClamped: value.gates.trackingClamped ?? null,
-          geometryGuidanceAvailable: value.gates.geometryGuidanceAvailable ?? null,
-          geometryGuidanceCanVetoInput: value.gates.geometryGuidanceCanVetoInput ?? null,
-          realSweptContact: value.gates.realSweptContact ?? null,
-        })
-      : null,
-  });
-}
-
-function compactReachableInterceptTarget(value) {
-  if (!value) return null;
-  return Object.freeze({
-    stage: value.stage ?? null,
-    source: value.source ?? null,
-    reason: value.reason ?? null,
-    fallbackApplied: value.fallbackApplied === true,
-    predictedReachable: value.predictedReachable ?? null,
-    measuredReachable: value.measuredReachable ?? null,
-    measuredInsideAcquisitionBand: value.measuredInsideAcquisitionBand ?? null,
-    predictedRequiredDistanceMeters: value.predictedRequiredDistanceMeters ?? null,
-    measuredRequiredDistanceMeters: value.measuredRequiredDistanceMeters ?? null,
-    measuredRadialContactCorrectionMeters: value.measuredRadialContactCorrectionMeters ?? null,
-    measuredContactCorrectionMeters: value.measuredContactCorrectionMeters ?? null,
-    threat: compactPredictiveThreat(value.threat),
-    trackingPlan: compactTrackingPlan(value.trackingPlan),
-    authority: value.authority ?? null,
-  });
-}
-
-function compactLiveContactConstraint(value) {
-  if (!value) return null;
-  const clearance = value.attackLineClearance;
-  const assessment = value.inspectionAssessment;
-  return Object.freeze({
-    accepted: value.accepted === true,
-    active: value.active === true,
-    holding: value.holding === true,
-    complete: value.complete === true,
-    inspectionPassed: value.inspectionPassed === true,
-    phase: value.phase ?? null,
-    stage: value.stage ?? null,
-    elapsedMs: value.elapsedMs ?? null,
-    terminalReason: value.terminalReason ?? null,
-    targetContactPoint: compactVector(value.targetContactPoint),
-    actualContactPoint: compactVector(value.actualContactPoint),
-    actualContactOffset: compactVector(value.actualContactOffset),
-    actualHandOffset: compactVector(value.actualHandOffset),
-    actualGripOffset: compactVector(value.actualGripOffset),
-    peakTargetTravelMeters: value.peakTargetTravelMeters ?? null,
-    peakOfflineTravelMeters: value.peakOfflineTravelMeters ?? null,
-    actualContactTravelMeters: value.actualContactTravelMeters ?? null,
-    actualHandTravelMeters: value.actualHandTravelMeters ?? null,
-    actualGripTravelMeters: value.actualGripTravelMeters ?? null,
-    liveContactErrorMeters: value.liveContactErrorMeters ?? null,
-    directionAgreement: value.directionAgreement ?? null,
-    appliedUpperarmCorrectionDegrees: value.appliedUpperarmCorrectionDegrees ?? null,
-    appliedForearmDegrees: value.appliedForearmDegrees ?? null,
-    appliedWristDegrees: value.appliedWristDegrees ?? null,
-    residualCorrectionPasses: value.residualCorrectionPasses ?? 0,
-    appliedResidualForearmDegrees: value.appliedResidualForearmDegrees ?? 0,
-    appliedResidualWristDegrees: value.appliedResidualWristDegrees ?? 0,
-    residualHiltCorrection: value.residualHiltCorrection
-      ? Object.freeze({
-          accepted: value.residualHiltCorrection.accepted === true,
-          correctionRequired: value.residualHiltCorrection.correctionRequired === true,
-          reason: value.residualHiltCorrection.reason ?? null,
-          currentOfflineTravelMeters:
-            value.residualHiltCorrection.currentOfflineTravelMeters ?? null,
-          targetOfflineTravelMeters:
-            value.residualHiltCorrection.targetOfflineTravelMeters ?? null,
-          appliedDegrees: value.residualHiltCorrection.appliedDegrees ?? 0,
-        })
-      : null,
-    attackLineClearance: clearance
-      ? Object.freeze({
-          pass: clearance.pass === true,
-          swordAxisClearanceDegrees: clearance.swordAxisClearanceDegrees ?? null,
-          hiltOfflineTravelMeters: clearance.hiltOfflineTravelMeters ?? null,
-          wristGripClearanceDegrees: clearance.wristGripClearanceDegrees ?? null,
-        })
-      : null,
-    inspectionAssessment: assessment
-      ? Object.freeze({
-          pass: assessment.pass === true,
-          holding: assessment.holding === true,
-          gates: assessment.gates,
-          failedGateKeys: assessment.failedGateKeys,
-          failedGateCount: assessment.failedGateCount,
-          terminalReason: assessment.terminalReason,
-          terminalIsExpectedHold: assessment.terminalIsExpectedHold,
-        })
-      : null,
-    modifiedBones: value.modifiedBones ?? null,
-    propagatedBones: value.propagatedBones ?? null,
-    proximalAssistBone: value.proximalAssistBone ?? null,
-    assistBone: value.assistBone ?? null,
-    proximalArmCorrectionActive: value.proximalArmCorrectionActive === true,
-    elbowPropagationActive: value.elbowPropagationActive === true,
-    shoulderPropagationActive: value.shoulderPropagationActive === true,
-    rigidSwordGrip: value.rigidSwordGrip === true,
-    b3BodyClockCanAdvance: value.b3BodyClockCanAdvance === true,
-    weaponArmContactConstrained: value.weaponArmContactConstrained === true,
-    reactionIntentAppliedBeforeConstraint: value.reactionIntentAppliedBeforeConstraint === true,
-    constraintApplicationOrder: value.constraintApplicationOrder ?? null,
-    authority: 'compact-live-contact-gate-telemetry',
-  });
 }
 
 function setInspectionLine(line, start, end) {
@@ -1707,240 +1366,6 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
   }
 }
 
-const INSPECTION_GATE_ORDER = Object.freeze([
-  'shieldOfflineTravel',
-  'handTravel',
-  'gripTravel',
-  'swordAxisClearance',
-  'hiltOfflineTravel',
-  'wristGripClearance',
-  'directionAgreement',
-]);
-const INSPECTION_GATE_LABELS = Object.freeze({
-  shieldOfflineTravel: '盾面離線',
-  handTravel: '手部位移',
-  gripTravel: '劍柄總位移',
-  swordAxisClearance: '劍軸偏轉',
-  hiltOfflineTravel: '劍柄離線',
-  wristGripClearance: '手腕→劍柄線',
-  directionAgreement: '撥動方向一致度',
-});
-
-function formatInspectionGate(gate) {
-  if (!gate) return '—';
-  const label = INSPECTION_GATE_LABELS[gate.key] || gate.label || gate.key;
-  const operator = gate.operator === '>' ? '>' : '≥';
-  if (gate.unit === 'meters') {
-    const actual = gate.actual == null ? '—' : (gate.actual * 100).toFixed(1);
-    return `${label} ${actual}cm ${operator} ${(gate.minimum * 100).toFixed(1)}cm`;
-  }
-  if (gate.unit === 'degrees') {
-    const actual = gate.actual == null ? '—' : gate.actual.toFixed(1);
-    return `${label} ${actual}° ${operator} ${gate.minimum.toFixed(1)}°`;
-  }
-  const actual = gate.actual == null ? '—' : gate.actual.toFixed(2);
-  return `${label} ${actual} ${operator} ${gate.minimum.toFixed(2)}`;
-}
-
-function formatTerminalState(reason) {
-  if (reason === 'shield-surface-separated-after-live-deflection-peak') return '正常分離（撥動峰值後）';
-  if (reason === 'shield-surface-settled-after-live-deflection-peak') return '正常穩定（撥動峰值後）';
-  if (reason === 'live-contact-safety-limit-after-sufficient-deflection') return '已達充分撥動（安全時間上限停格）';
-  if (reason === 'insufficient-live-shield-offline-travel') return '盾面離線量不足';
-  return reason || '尚未停格';
-}
-
-function formatInspectionFailureSummary(report) {
-  const assessment = report?.inspectionAssessment;
-  if (!assessment) return '驗收量測尚未建立';
-  const failed = assessment.failedGateKeys
-    .map((key) => assessment.gates[key])
-    .filter(Boolean)
-    .map(formatInspectionGate);
-  const failureText = failed.length ? failed.join(' · ') : '沒有失敗門檻';
-  return `FAIL ${assessment.failedGateCount}/${INSPECTION_GATE_ORDER.length} · ${failureText} · 接觸終止：${formatTerminalState(assessment.terminalReason)}`;
-}
-
-function formatAllInspectionGates(report) {
-  const assessment = report?.inspectionAssessment;
-  if (!assessment) return 'STEP 3A diagnostic: waiting for inspection measurements';
-  const values = INSPECTION_GATE_ORDER.map((key) => {
-    const gate = assessment.gates[key];
-    return `${gate?.pass ? 'PASS' : 'FAIL'} ${formatInspectionGate(gate)}`;
-  });
-  return `INSPECTION ${assessment.pass ? 'PASS' : 'FAIL'} · ${values.join(' · ')}`;
-}
-
-function describeContactGeometry(contact = firstContact) {
-  if (!contact?.geometricContact) return null;
-  const bladeFraction = Math.max(0, Math.min(1, Number(contact.bladeFraction) || 0));
-  const radialDistanceMeters = Math.max(0, Number(contact.radialDistance) || 0);
-  const shieldRadiusMeters = Math.max(0, Number(contact.surface?.radius) || 0);
-  const shieldRadiusRatio = shieldRadiusMeters > 0 ? radialDistanceMeters / shieldRadiusMeters : null;
-  const bladeRegion = bladeFraction < 0.25 ? 'BASE' : bladeFraction > 0.75 ? 'TIP' : 'MID';
-  const shieldRegion = shieldRadiusRatio == null
-    ? 'UNKNOWN'
-    : shieldRadiusRatio < 0.55
-      ? 'FACE CENTER'
-      : shieldRadiusRatio < 0.85
-        ? 'FACE OUTER'
-        : 'RIM / EDGE';
-  return Object.freeze({
-    bladeFraction,
-    bladePercent: bladeFraction * 100,
-    bladeRegion,
-    radialDistanceMeters,
-    shieldRadiusMeters,
-    shieldRadiusRatio,
-    shieldRegion,
-    text: `blade ${(bladeFraction * 100).toFixed(0)}% ${bladeRegion} · shield ${(radialDistanceMeters * 100).toFixed(1)}/${(shieldRadiusMeters * 100).toFixed(1)}cm ${shieldRegion}`,
-    authority: 'real-swept-contact-location-diagnostic',
-  });
-}
-
-const PARRY_WHIFF_CATEGORY_LABELS = Object.freeze({
-  CONTACT_OUTSIDE_ACTIVE_WINDOW: 'CONTACT OUTSIDE ACTIVE WINDOW',
-  OUTSIDE_SHIELD_EDGE: 'OUTSIDE SHIELD EDGE',
-  MISSED_SHIELD_PLANE: 'MISSED SHIELD PLANE',
-  MISSED_PLANE_AND_DISC: 'PLANE + EDGE MISS',
-  NO_EXACT_SWEPT_CONTACT: 'NO EXACT CONTACT',
-  NO_PROBE_DATA: 'NO PROBE DATA',
-});
-
-function formatWhiffDiagnostic(whiff) {
-  if (!whiff) return null;
-  const sample = whiff.outsideActiveContact || whiff.closestApproachRecord;
-  const baseLabel = PARRY_WHIFF_CATEGORY_LABELS[whiff.category] || whiff.category || 'UNKNOWN WHIFF';
-  const sampledThreat = sample?.interceptDriveReport?.residualStanceReach?.threat;
-  const label = sampledThreat?.kneeLineThreat
-    ? baseLabel + ' · KNEE-LINE THREAT'
-    : sampledThreat?.lowGuardGapThreat ? baseLabel + ' · LOW GUARD GAP' : baseLabel;
-  if (!sample) return Object.freeze({ label, detail: `reason ${whiff.reason} · no sweep sample recorded` });
-  const phase = String(sample.attackPhase || 'unknown').toUpperCase();
-  const ttcMs = sample.timeToContactSeconds == null ? null : sample.timeToContactSeconds * 1000;
-  const lead = whiff.category === 'CONTACT_OUTSIDE_ACTIVE_WINDOW'
-    ? `geometric touch at ${phase}`
-    : `closest ${phase}`;
-  const parts = [lead];
-  if (ttcMs != null) parts.push(`TTC ${ttcMs >= 0 ? '+' : ''}${ttcMs.toFixed(0)}ms`);
-  if (sample.bladeFraction != null) parts.push(`blade ${(sample.bladeFraction * 100).toFixed(0)}%`);
-  if (sample.planeGapMeters != null) parts.push(`plane gap ${(sample.planeGapMeters * 100).toFixed(1)}cm`);
-  if (sample.radialGapMeters != null) parts.push(`edge gap ${(sample.radialGapMeters * 100).toFixed(1)}cm`);
-  if (sample.radialDistanceMeters != null && sample.shieldRadiusMeters != null) {
-    parts.push(`shield ${(sample.radialDistanceMeters * 100).toFixed(1)}/${(sample.shieldRadiusMeters * 100).toFixed(1)}cm`);
-  }
-  const required = whiff.tracking?.requiredDistanceMeters;
-  const applied = whiff.tracking?.appliedDistanceMeters;
-  if (required != null) {
-    parts.push(`tracking ${(required * 100).toFixed(1)}→${((applied ?? whiff.tracking.limitMeters) * 100).toFixed(1)}cm${whiff.tracking.clamped ? ' CLAMP' : ''}`);
-  }
-  const drive = sample.interceptDriveReport;
-  if (drive) {
-    const driveSource = drive.selectionSource === 'measured-current-sweep-closest-approach' ? 'MEASURED' : drive.selectionSource === 'linear-predicted-threat' ? 'LINEAR' : 'NONE';
-    const edgeCorrection = drive.measuredRadialContactCorrectionMeters == null ? '—' : `${(drive.measuredRadialContactCorrectionMeters * 100).toFixed(1)}cm`;
-    const shieldStep = drive.shieldStepTranslationMeters == null ? '—' : `${(drive.shieldStepTranslationMeters * 100).toFixed(1)}cm`;
-    const driveFrame = drive.drivePlanSource === 'surface-relative-measured-contact-correction' ? 'RELATIVE' : 'CURRENT';
-    const directionDot = drive.correctionDirectionDot == null ? '—' : drive.correctionDirectionDot.toFixed(2);
-    const formatGap = (value) => value == null ? '—' : `${(value * 100).toFixed(1)}cm`;
-    const edgeBefore = formatGap(drive.residualBeforeRefinement?.radialGapMeters);
-    const edgeAfter = formatGap(drive.residualAfterRefinement?.radialGapMeters);
-    const planeBefore = formatGap(drive.residualBeforeRefinement?.planeGapMeters);
-    const planeAfter = formatGap(drive.residualAfterRefinement?.planeGapMeters);
-    const refinementStep = formatGap(drive.residualRefinement?.achievedDistance);
-    const carryBefore = formatGap(drive.residualCarryBeforeMeters);
-    const carryAfter = formatGap(drive.residualCarryAfterMeters);
-    const bodyReach = drive.residualBodyReach;
-    const armReach = bodyReach?.armExtensionRatio == null
-      ? '—'
-      : `${(bodyReach.armExtensionRatio * 100).toFixed(0)}%`;
-    const wristDegrees = bodyReach?.wristAppliedDegrees == null
-      ? '—'
-      : `${bodyReach.wristAppliedDegrees.toFixed(1)}°`;
-    const wristPlaneBefore = formatGap(bodyReach?.planeGapBeforeMeters);
-    const wristPlaneAfter = formatGap(bodyReach?.planeGapAfterWristMeters);
-    const torsoDegrees = bodyReach?.appliedDegrees
-      ? `${(bodyReach.appliedDegrees.chest + bodyReach.appliedDegrees.spine).toFixed(1)}°`
-      : '—';
-    const bodyReachBefore = formatGap(magnitude(bodyReach?.bodyReachOffsetBefore));
-    const bodyReachAfter = formatGap(bodyReach?.bodyReachDistance);
-    const bodyDirection = bodyReach?.bodyDirectionDot == null
-      ? '—'
-      : bodyReach.bodyDirectionDot.toFixed(2);
-    const armEdgeAfter = formatGap(drive.residualAfterArmRefinement?.radialGapMeters);
-    const stance = drive.residualStanceReach;
-    const threat = stance?.threat;
-    const stanceState = stance?.stanceHeld
-      ? 'HOLD'
-      : stance?.stanceConfirmed
-        ? stance?.earlyLowThreatRecruitment ? 'EARLY ACTIVE' : 'ACTIVE'
-        : stance?.armStalled ? 'STALL WAIT' : 'OFF';
-    const threatZone = threat?.zone || '—';
-    const formatHeight = (value) => value == null ? '—' : (value * 100).toFixed(1) + 'cm';
-    const threatHeights = [
-      threat?.pointY,
-      threat?.shieldBottomY,
-      threat?.kneeLeftY,
-      threat?.kneeRightY,
-    ].map(formatHeight).join('/');
-    const lowGap = formatGap(threat?.verticalGapBelowShieldMeters);
-    const kneeDistance = formatGap(threat?.kneeLineDistanceMeters);
-    const earlyStance = stance?.earlyLowThreatRecruitment ? 'YES' : 'NO';
-    const stanceThreatSource = stance?.activationSource === 'predicted-future-sword-point'
-      ? 'PREDICTED'
-      : stance?.activationSource === 'measured-residual-sword-point' ? 'MEASURED' : 'NONE';
-    const stanceLead = stance?.anticipatedLeadSeconds == null
-      ? '—'
-      : `${Math.round(stance.anticipatedLeadSeconds * 1000)}ms`;
-    const stanceHold = stance?.stanceHeld ? 'YES' : 'NO';
-    const crouchTarget = formatGap(stance?.engagedTargetCrouchMeters);
-    const stanceSelection = stance?.threatSelection;
-    const anticipatedPlan = stance?.anticipatedPlan;
-    const rawPredictedLead = stanceSelection?.anticipatedLeadSeconds;
-    const predictedDecision = String(
-      stanceSelection?.anticipatedEligibilityReason || 'no-predicted-selection',
-    ).toUpperCase().replaceAll('-', '_');
-    const predictedLead = rawPredictedLead == null ? '—' : `${Math.round(rawPredictedLead * 1000)}ms`;
-    const predictedZone = anticipatedPlan?.threat?.zone || '—';
-    const predictedEdge = formatGap(anticipatedPlan?.metrics?.radialGapMeters);
-    const predictedPlane = formatGap(anticipatedPlan?.metrics?.planeGapMeters);
-    const predictedArm = anticipatedPlan?.arm?.saturated
-      ? 'SATURATED'
-      : anticipatedPlan?.arm?.stalled ? 'STALLED' : anticipatedPlan?.arm?.attempted ? 'ATTEMPT' : 'NO_ATTEMPT';
-    const predictedThreat = anticipatedPlan?.threat;
-    const predictedFlags = predictedThreat
-      ? `plane ${predictedThreat.planeNear ? 'Y' : 'N'} / down ${predictedThreat.stronglyDownward ? 'Y' : 'N'} / below ${predictedThreat.belowShield ? 'Y' : 'N'} / feet ${predictedThreat.aboveFeet ? 'Y' : 'N'}`
-      : '—';
-    const downwardRatio = stance?.downwardRatio == null ? '—' : stance.downwardRatio.toFixed(2);
-    const crouchBefore = formatGap(stance?.crouchBeforeMeters);
-    const crouchAfter = formatGap(stance?.crouchMeters);
-    const hipsDegrees = stance?.hipsAppliedDegrees == null ? '—' : `${stance.hipsAppliedDegrees.toFixed(1)}°`;
-    const footL = stance?.footPlant?.l?.driftMeters == null ? '—' : `${(stance.footPlant.l.driftMeters * 1000).toFixed(1)}mm`;
-    const footR = stance?.footPlant?.r?.driftMeters == null ? '—' : `${(stance.footPlant.r.driftMeters * 1000).toFixed(1)}mm`;
-    const planted = stance?.feetPlanted == null ? '—' : stance.feetPlanted ? 'PASS' : 'FAIL';
-    parts.push([
-      'zone ' + threatZone,
-      'y blade/rim/kneeL/kneeR ' + threatHeights,
-      'lowgap ' + lowGap,
-      'kdist ' + kneeDistance,
-      'early ' + earlyStance,
-      'stance src ' + stanceThreatSource,
-      'lead ' + stanceLead,
-      'hold ' + stanceHold,
-      'target ' + crouchTarget,
-    ].join(' · '));
-    if (DEBUG_MODE) {
-      parts.push(`DEBUG pred ${predictedDecision} · plead ${predictedLead} · pzone ${predictedZone} · pedge ${predictedEdge} · pplane ${predictedPlane} · parm ${predictedArm} · pflags ${predictedFlags}`);
-    }
-    const refinementDirection = drive.residualRefinement?.directionDot == null
-      ? '—'
-      : drive.residualRefinement.directionDot.toFixed(2);
-    parts.push(`selector ${driveSource} · drive ${driveFrame} · edge correction ${edgeCorrection} · acquire ${drive.measuredInsideAcquisitionBand ? 'PASS' : 'FAIL'} · shield step ${shieldStep} · dir ${directionDot} · residual edge ${edgeBefore}→${edgeAfter} · plane ${planeBefore}→${planeAfter} · carry ${carryBefore}→${carryAfter} · refine ${refinementStep} · rdir ${refinementDirection} · arm ${armReach} · aedge ${edgeBefore}→${armEdgeAfter} · wrist ${wristDegrees} · wplane ${wristPlaneBefore}→${wristPlaneAfter} · torso ${torsoDegrees} · reach ${bodyReachBefore}→${bodyReachAfter} · bdir ${bodyDirection} · stance ${stanceState} · down ${downwardRatio} · crouch ${crouchBefore}→${crouchAfter} · hips ${hipsDegrees} · feet ${footL}/${footR} ${planted}`);
-  } else {
-    parts.push('selector NO ARMED DRIVE FRAME');
-  }
-  return Object.freeze({ label, detail: parts.join(' · ') });
-}
-
 let parryCueState = null;
 let parryCueMainText = null;
 let parryCueDetailText = null;
@@ -2004,7 +1429,7 @@ function updateParryCue(snapshot = attackRuntime.snapshot) {
     return;
   }
   if (latestParryWhiff) {
-    const whiff = formatWhiffDiagnostic(latestParryWhiff);
+    const whiff = formatWhiffDiagnostic(latestParryWhiff, { debugMode: DEBUG_MODE });
     showParryCue('late', `PARRY WHIFF · ${whiff.label}`, whiff.detail);
     return;
   }
@@ -2093,7 +1518,7 @@ function updateHud(snapshot, combatSnapshot) {
   const reviewRate = isParryPreContactReviewActive(snapshot) ? PARRY_REVIEW_RATE : 1;
   hudAttack.textContent = `Requested: ${requestedOutcome().toUpperCase()} · Actual: ${String(outcome).toUpperCase()} · ${snapshot.phase} · committed ${committed ? 'YES' : 'NO'} · TTC ${ttcSeconds == null ? '—' : `${Math.max(0, ttcSeconds) * 1000 | 0}ms`} · review ${reviewRate.toFixed(2)}×${parryPromptHold ? ' · VALID WINDOW HELD' : ''}`;
   const contactGeometry = describeContactGeometry(firstContact);
-  const whiffGeometry = formatWhiffDiagnostic(latestParryWhiff);
+  const whiffGeometry = formatWhiffDiagnostic(latestParryWhiff, { debugMode: DEBUG_MODE });
   hudContact.textContent = contactGeometry
     ? `REAL Sword × Shield: YES · swept ${firstContact.mode || 'contact'} · ${contactGeometry.text}`
     : whiffGeometry
@@ -2376,34 +1801,16 @@ function buildReport(combatSnapshot = combat.snapshot) {
       noRootTranslation: true,
     },
   };
-  const reportText = JSON.stringify(report, null, 2);
-  const reportWithinDomBudget = reportText.length <= MAX_REPORT_DOM_CHARACTERS;
-  const oversizedSectionCharacters = reportWithinDomBudget
-    ? null
-    : Object.freeze(Object.fromEntries(
-        Object.entries(report).map(([key, value]) => [key, JSON.stringify(value)?.length ?? 0]),
-      ));
-  reportNode.textContent = reportWithinDomBudget
-    ? reportText
-    : JSON.stringify({
-        stage: LAB_STAGE,
-        pass: false,
-        reason: 'verification-report-exceeded-dom-budget',
-        reportCharacters: reportText.length,
-        maximumCharacters: MAX_REPORT_DOM_CHARACTERS,
-        traceFrames: interceptDriveTrace.length,
-        oversizedSectionCharacters,
-      }, null, 2);
-  document.documentElement.dataset.g43b5r281 = report.pass ? 'pass' : 'fail';
-  window.__G43B5R281_RESULT__ = report;
-  window.__G43B5R281_PERF__ = Object.freeze({
-    reportCharacters: reportText.length,
-    maximumCharacters: MAX_REPORT_DOM_CHARACTERS,
-    reportWithinDomBudget,
+  const publication = serializeVerificationReport({
+    report,
+    maxCharacters: MAX_REPORT_DOM_CHARACTERS,
     traceFrames: interceptDriveTrace.length,
     recentTraceFrames: Math.min(interceptDriveTrace.length, RECENT_COMPACT_TRACE_FRAMES),
-    telemetryDetail: 'compact-scalar-frames-only',
   });
+  reportNode.textContent = publication.displayText;
+  document.documentElement.dataset.g43b5r281 = report.pass ? 'pass' : 'fail';
+  window.__G43B5R281_RESULT__ = report;
+  window.__G43B5R281_PERF__ = publication.perf;
   return report;
 }
 async function main() {
@@ -2476,7 +1883,7 @@ function frame(timestamp) {
         shieldLeadMotion: latestShieldLeadMotion,
         parryInput: latestParryInput,
       });
-      const whiff = formatWhiffDiagnostic(latestParryWhiff);
+      const whiff = formatWhiffDiagnostic(latestParryWhiff, { debugMode: DEBUG_MODE });
       status.textContent = `PARRY WHIFF · ${whiff.label} · ${whiff.detail}`;
       status.className = 'bad';
     }
