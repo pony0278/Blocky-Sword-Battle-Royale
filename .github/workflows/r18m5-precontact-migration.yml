@@ -54,11 +54,16 @@ jobs:
       - name: Apply guarded R18M.5 extraction
         run: node tools/action-studio/r18m5-precontact-migration.mjs
 
+      - name: Adapt existing contracts to the extracted ownership boundary
+        run: node tools/action-studio/r18m5-contract-patch.mjs
+
       - name: Syntax checks
         run: |
           node --check tools/action-studio/shield-driven-contact-coupling-lab-r281.js
           node --check tools/action-studio/shield-parry-r281/pre-contact-controller.js
           node --check tests/shield-parry-r281-pre-contact-controller.test.js
+          node --check tests/shield-driven-contact-coupling-r281-regression.test.js
+          node --check tests/shield-parry-r281-exchange-state.test.js
 
       - name: R18M focused regression contracts
         run: |
@@ -107,8 +112,9 @@ jobs:
           git diff --check
           rm -f r18m5-baseline.log r18m5-candidate.log r18m5-baseline.failures r18m5-candidate.failures
           rm -f tools/action-studio/r18m5-precontact-migration.mjs
+          rm -f tools/action-studio/r18m5-contract-patch.mjs
           rm -f .github/workflows/r18m5-precontact-migration.yml
-          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/pre-contact-controller\.js|tests/shield-parry-r281-pre-contact-controller\.test\.js|tools/action-studio/r18m5-precontact-migration\.mjs|\.github/workflows/r18m5-precontact-migration\.yml)$'
+          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/pre-contact-controller\.js|tests/shield-parry-r281-pre-contact-controller\.test\.js|tests/shield-driven-contact-coupling-r281-regression\.test\.js|tests/shield-parry-r281-exchange-state\.test\.js|tools/action-studio/r18m5-precontact-migration\.mjs|tools/action-studio/r18m5-contract-patch\.mjs|\.github/workflows/r18m5-precontact-migration\.yml)$'
           git status --short
           UNEXPECTED=$(git status --short | grep -Ev "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
@@ -127,7 +133,10 @@ jobs:
             tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
             tools/action-studio/shield-parry-r281/pre-contact-controller.js \
             tests/shield-parry-r281-pre-contact-controller.test.js \
+            tests/shield-driven-contact-coupling-r281-regression.test.js \
+            tests/shield-parry-r281-exchange-state.test.js \
             tools/action-studio/r18m5-precontact-migration.mjs \
+            tools/action-studio/r18m5-contract-patch.mjs \
             .github/workflows/r18m5-precontact-migration.yml
           git diff --cached --check
           git diff --cached --stat
