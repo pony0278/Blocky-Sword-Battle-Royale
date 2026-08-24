@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const entryPath = 'tools/action-studio/shield-driven-contact-coupling-lab-r281.js';
 const packagePath = 'package.json';
+const legacyCameraTestPath = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
 let entry = fs.readFileSync(entryPath, 'utf8');
 
 function replaceExact(text, before, after, label) {
@@ -69,8 +70,23 @@ for (const required of [
 ]) {
   if (!entry.includes(required)) throw new Error(`required authority/composition token missing: ${required}`);
 }
-
 fs.writeFileSync(entryPath, entry);
+
+let legacyCameraTest = fs.readFileSync(legacyCameraTestPath, 'utf8');
+const cameraReadBlock = `const cameraSource = readFileSync(\n  new URL('../tools/action-studio/free-inspection-camera-controls.js', import.meta.url),\n  'utf8',\n);\n`;
+legacyCameraTest = replaceExact(
+  legacyCameraTest,
+  cameraReadBlock,
+  `${cameraReadBlock}const sceneCompositionSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/lab-scene.js', import.meta.url),\n  'utf8',\n);\n`,
+  'legacy camera composition source',
+);
+legacyCameraTest = replaceExact(
+  legacyCameraTest,
+  `  assert.match(source, /createFreeInspectionCameraControls/);\n`,
+  `  assert.match(sceneCompositionSource, /createFreeInspectionCameraControls/);\n`,
+  'legacy free-camera construction assertion',
+);
+fs.writeFileSync(legacyCameraTestPath, legacyCameraTest);
 
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 const testToken = 'tests/shield-parry-r281-composition-scene.test.js';
