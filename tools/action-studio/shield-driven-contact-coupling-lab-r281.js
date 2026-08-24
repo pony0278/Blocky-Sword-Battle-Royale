@@ -80,6 +80,9 @@ import {
   formatWhiffDiagnostic,
 } from './shield-parry-r281/diagnostic-formatters.js';
 import { serializeVerificationReport } from './shield-parry-r281/report-serialization.js';
+import { createShieldParryLabDom } from './shield-parry-r281/lab-dom.js';
+import { createStanceDebugController } from './shield-parry-r281/stance-debug-controls.js';
+import { createShieldParryLabUi, bindShieldParryLabUiEvents } from './shield-parry-r281/lab-ui.js';
 
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
 const RECOIL_STAGE = LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE;
@@ -272,85 +275,21 @@ const swordGripConstraint = createLiveShieldSwordGripContactRuntime(THREE, {
   attackerSword,
 });
 
-const hudAttack = document.getElementById('hudAttack');
-const hudInput = document.getElementById('hudInput');
-const parryCue = document.getElementById('parryCue');
-const parryCueMain = document.getElementById('parryCueMain');
-const parryCueDetail = document.getElementById('parryCueDetail');
-const hudContact = document.getElementById('hudContact');
-const hudCoupling = document.getElementById('hudCoupling');
-const hudShield = document.getElementById('hudShield');
-const hudWeapon = document.getElementById('hudWeapon');
-const hudSeparation = document.getElementById('hudSeparation');
-const hudLineClearance = document.getElementById('hudLineClearance');
-const hudRecoil = document.getElementById('hudRecoil');
-const hudDiagnostic = document.getElementById('hudDiagnostic');
-const status = document.getElementById('status');
-const reportNode = document.getElementById('report');
-const autoRepeat = document.getElementById('autoRepeat');
-const slowReview = document.getElementById('slowReview');
-const showSurface = document.getElementById('showSurface');
-const forceOldB3Button = document.getElementById('forceOldB3');
-const parryNowButton = document.getElementById('parryNow');
-const retryAttackButton = document.getElementById('retryAttack');
-const stanceDebugPanel = document.getElementById('stanceDebugPanel');
-const debugProfileSummary = document.getElementById('debugProfileSummary');
-const debugApplyRetryButton = document.getElementById('debugApplyRetry');
-const debugResetDefaultsButton = document.getElementById('debugResetDefaults');
-const DEBUG_STANCE_CONTROLS = Object.freeze([
-  Object.freeze({ id: 'debugLeadMs', query: 'leadMs', profileKey: 'anticipatoryLeadMaxSeconds', scale: 0.001, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.anticipatoryLeadMaxSeconds * 1000, precision: 0, unit: 'ms' }),
-  Object.freeze({ id: 'debugMaxCrouchCm', query: 'crouchCm', profileKey: 'maxCrouchMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.maxCrouchMeters * 100, precision: 1, unit: 'cm' }),
-  Object.freeze({ id: 'debugCrouchSpeed', query: 'crouchSpeed', profileKey: 'crouchSpeedMps', scale: 1, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.crouchSpeedMps, precision: 2, unit: 'm/s' }),
-  Object.freeze({ id: 'debugEdgeCm', query: 'edgeCm', profileKey: 'edgeActivationMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.edgeActivationMeters * 100, precision: 1, unit: 'cm' }),
-  Object.freeze({ id: 'debugPlaneCm', query: 'planeCm', profileKey: 'kneeThreatPlaneMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.kneeThreatPlaneMeters * 100, precision: 1, unit: 'cm' }),
-  Object.freeze({ id: 'debugLowGapCm', query: 'lowGapCm', profileKey: 'lowGapVerticalActivationMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.lowGapVerticalActivationMeters * 100, precision: 1, unit: 'cm' }),
-  Object.freeze({ id: 'debugDownRatio', query: 'downRatio', profileKey: 'kneeThreatDownRatio', scale: 1, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.kneeThreatDownRatio, precision: 2, unit: '' }),
-  Object.freeze({ id: 'debugKneeBandCm', query: 'kneeBandCm', profileKey: 'kneeLineBandMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.kneeLineBandMeters * 100, precision: 0, unit: 'cm' }),
-  Object.freeze({ id: 'debugArmAttemptCm', query: 'armAttemptCm', profileKey: 'armAttemptActivationMeters', scale: 0.01, defaultValue: GUARD_RESIDUAL_STANCE_REACH_PROFILE.armAttemptActivationMeters * 100, precision: 1, unit: 'cm' }),
-]);
-const debugStanceProfile = {};
-
-function clampDebugControl(input, value) {
-  return Math.max(Number(input.min), Math.min(Number(input.max), Number(value)));
-}
-function refreshDebugStanceProfile(syncUrl = true) {
-  if (!DEBUG_MODE) return;
-  const url = new URL(window.location.href);
-  for (const spec of DEBUG_STANCE_CONTROLS) {
-    const input = document.getElementById(spec.id);
-    const value = clampDebugControl(input, input.value);
-    input.value = String(value);
-    debugStanceProfile[spec.profileKey] = value * spec.scale;
-    document.getElementById(`${spec.id}Value`).textContent = `${value.toFixed(spec.precision)}${spec.unit}`;
-    if (syncUrl) url.searchParams.set(spec.query, String(value));
-  }
-  if (syncUrl) window.history.replaceState(null, '', url);
-  debugProfileSummary.textContent = `ACTIVE · lead ${Math.round(debugStanceProfile.anticipatoryLeadMaxSeconds * 1000)}ms · crouch ${(debugStanceProfile.maxCrouchMeters * 100).toFixed(1)}cm @ ${debugStanceProfile.crouchSpeedMps.toFixed(2)}m/s · edge ${(debugStanceProfile.edgeActivationMeters * 100).toFixed(1)}cm · plane ${(debugStanceProfile.kneeThreatPlaneMeters * 100).toFixed(1)}cm · lowgap ${(debugStanceProfile.lowGapVerticalActivationMeters * 100).toFixed(1)}cm · down ${debugStanceProfile.kneeThreatDownRatio.toFixed(2)} · knee ±${(debugStanceProfile.kneeLineBandMeters * 100).toFixed(0)}cm · arm gate ${(debugStanceProfile.armAttemptActivationMeters * 100).toFixed(1)}cm`;
-}
-function initializeDebugStanceControls() {
-  stanceDebugPanel.hidden = !DEBUG_MODE;
-  document.documentElement.dataset.debugMode = DEBUG_MODE ? 'on' : 'off';
-  if (!DEBUG_MODE) return;
-  for (const spec of DEBUG_STANCE_CONTROLS) {
-    const input = document.getElementById(spec.id);
-    const rawQueryValue = DEBUG_QUERY.get(spec.query);
-    const queryValue = rawQueryValue == null || rawQueryValue.trim() === ''
-      ? Number.NaN
-      : Number(rawQueryValue);
-    input.value = String(Number.isFinite(queryValue)
-      ? clampDebugControl(input, queryValue)
-      : spec.defaultValue);
-    input.addEventListener('input', () => refreshDebugStanceProfile(true));
-  }
-  refreshDebugStanceProfile(false);
-}
-function resetDebugStanceDefaults() {
-  for (const spec of DEBUG_STANCE_CONTROLS) {
-    document.getElementById(spec.id).value = String(spec.defaultValue);
-  }
-  refreshDebugStanceProfile(true);
-}
-initializeDebugStanceControls();
+const uiElements = createShieldParryLabDom(document);
+const { status, reportNode, autoRepeat, slowReview, showSurface } = uiElements;
+const stanceDebug = createStanceDebugController({
+  documentRef: document,
+  windowRef: window,
+  debugMode: DEBUG_MODE,
+  debugQuery: DEBUG_QUERY,
+  profileDefaults: GUARD_RESIDUAL_STANCE_REACH_PROFILE,
+  elements: uiElements,
+});
+const debugStanceProfile = stanceDebug.profile;
+const refreshDebugStanceProfile = (syncUrl = true) => stanceDebug.refresh(syncUrl);
+const resetDebugStanceDefaults = () => stanceDebug.resetDefaults();
+stanceDebug.initialize();
+const labUi = createShieldParryLabUi(uiElements);
 
 let ready = false;
 let selectedDirection = 'right';
@@ -391,7 +330,6 @@ let whiffProbeFrames = 0;
 let closestWhiffApproach = null;
 let outsideActiveContact = null;
 let latestInputSignal = null;
-let parryKeyDownObserved = false;
 let parryPromptHold = null;
 let parryPromptHoldSequence = null;
 let hudClockMs = HUD_INTERVAL_MS;
@@ -797,36 +735,14 @@ function dispatchParryInput(source, event = null) {
     sequence: attackRuntime.snapshot.sequence,
     elapsedSeconds: attackRuntime.snapshot.elapsedSeconds,
   });
-  parryNowButton.classList.add('input-flash');
-  setTimeout(() => parryNowButton.classList.remove('input-flash'), 180);
+  labUi.flashParryInput();
   const result = triggerParryNow(source);
   parryPromptHold = null;
-  hudInput.textContent = `INPUT RECEIVED: ${source.toUpperCase()} · ${result.accepted ? 'ARMED' : `REJECTED · ${result.reason}`}`;
+  labUi.setInputReceipt(source, result);
   updateParryCue(attackRuntime.snapshot);
   return result;
 }
 
-function isParryKey(event) {
-  return event?.code === 'KeyF'
-    || String(event?.key || '').toLowerCase() === 'f'
-    || event?.keyCode === 70;
-}
-
-function handleParryKeyDown(event) {
-  if (!isParryKey(event) || event.repeat) return;
-  parryKeyDownObserved = true;
-  event.preventDefault();
-  event.stopPropagation();
-  dispatchParryInput('keyboard-f', event);
-}
-
-function handleParryKeyUp(event) {
-  if (!isParryKey(event)) return;
-  event.preventDefault();
-  event.stopPropagation();
-  if (!parryKeyDownObserved) dispatchParryInput('keyboard-f-keyup-fallback', event);
-  parryKeyDownObserved = false;
-}
 function forceOldTwoActorB3(direction = selectedDirection) {
   if (!ready) return Object.freeze({ accepted: false, reason: 'lab-not-ready' });
   autoRepeat.checked = false;
@@ -1366,219 +1282,48 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
   }
 }
 
-let parryCueState = null;
-let parryCueMainText = null;
-let parryCueDetailText = null;
-function showParryCue(state, main, detail) {
-  if (
-    state === parryCueState
-    && main === parryCueMainText
-    && detail === parryCueDetailText
-  ) return;
-  parryCueState = state;
-  parryCueMainText = main;
-  parryCueDetailText = detail;
-  parryCue.className = `parry-cue ${state}`;
-  parryCueMain.textContent = main;
-  parryCueDetail.textContent = detail;
-  retryAttackButton.classList.toggle('retry-attention', state === 'used');
-}
-
 function updateParryCue(snapshot = attackRuntime.snapshot) {
-  if (!ready) {
-    showParryCue('wait', 'LOADING…', '等待 Lab 與動作資料完成');
-    return;
-  }
-  if (selectedMode !== 'parry') {
-    showParryCue('idle', 'BLOCK MODE', '切換到 PARRY 才會顯示按鍵窗口');
-    return;
-  }
-  if (step3AContactTransfer && !step3AContactTransfer.accepted) {
-    showParryCue('used', 'STEP 3A TRANSFER FAILED', `接觸幀已鎖住；原因：${step3AContactTransfer.reason}`);
-    return;
-  }
-  if (step3AContactTransfer?.accepted) {
-    if (latestGripConstraintReport?.holding) {
-      if (latestGripConstraintReport.inspectionPassed) {
-        showParryCue(
-          'confirmed',
-          'STEP 3A HOLD · LIVE CONTACT VERIFIED',
-          `7/7 gates PASS · 接觸終止：${formatTerminalState(latestGripConstraintReport.terminalReason)}`,
-        );
-      } else {
-        const assessment = latestGripConstraintReport.inspectionAssessment;
-        showParryCue(
-          'used',
-          `STEP 3A HOLD · ${assessment?.failedGateCount ?? '?'} GATES FAILED`,
-          formatInspectionFailureSummary(latestGripConstraintReport),
-        );
-      }
-    } else {
-      showParryCue(
-        'confirmed',
-        'LIVE SHIELD × SWORD CONSTRAINT',
-        selectedDirection === 'left'
-          ? '每幀由盾面接觸錨點解算 wrist.r；LEFT 手臂交棒仍待校準'
-          : '每幀由盾面接觸錨點解算 lowerarm.r → wrist.r；7/7 後交棒 OLD B3',
-      );
-    }
-    return;
-  }
-  if (latestParryConfirmation?.accepted) {
-    showParryCue('confirmed', 'PARRY CONFIRMED', '真實 Sword × Shield 接觸已成立，正在建立 live wrist-grip 接觸約束');
-    return;
-  }
-  if (latestParryWhiff) {
-    const whiff = formatWhiffDiagnostic(latestParryWhiff, { debugMode: DEBUG_MODE });
-    showParryCue('late', `PARRY WHIFF · ${whiff.label}`, whiff.detail);
-    return;
-  }
-
-  const attempt = parryGate.attempt;
-  if (attempt) {
-    if (attempt.accepted) {
-      showParryCue('armed', 'ARMED · WAIT FOR CONTACT', 'F 已收到；現在只等待真實 Sword × Shield swept contact');
-      return;
-    }
-    const timing = attempt.reason === 'attack-not-committed' || attempt.reason === 'parry-input-too-early'
-      ? 'TOO EARLY'
-      : attempt.reason === 'parry-input-too-late'
-        ? 'TOO LATE'
-        : 'INPUT REJECTED';
-    showParryCue('used', `${timing} · ATTEMPT USED`, `原因：${attempt.reason} · 這一刀不再接受 F，按 RETRY ATTACK`);
-    return;
-  }
-
-  if (!snapshot?.action) {
-    showParryCue('idle', 'START AN ATTACK', '選一個攻擊方向，或按 RETRY ATTACK');
-    return;
-  }
-  if (firstContact) {
-    showParryCue('late', 'CONTACT PASSED', '這一刀沒有在有效窗口武裝 Parry');
-    return;
-  }
-
-  const opportunity = latestParryOpportunity;
-  if (!opportunity) {
-    showParryCue('wait', 'WAIT · READING ATTACK', '正在取得即時攻擊路徑與盾牌可達資訊');
-    return;
-  }
-  if (opportunity.accepted) {
-    const ttcMs = Math.max(0, opportunity.timeToContactSeconds * 1000).toFixed(0);
-    const reachCm = opportunity.requiredShieldTravelMeters == null
-      ? '—'
-      : (opportunity.requiredShieldTravelMeters * 100).toFixed(1);
-    const tracking = opportunity.gates.trackingClamped ? `tracking ${reachCm}cm → clamp 18cm` : `shield travel ${reachCm}cm`;
-    showParryCue('ready', 'PARRY NOW! · PRESS F', `commitment + TTC gate 已開 · ${tracking} · review hold 最多 1.5s`);
-    return;
-  }
-
-  if (opportunity.reason === 'attack-not-committed' || opportunity.reason === 'parry-input-too-early') {
-    const attack = opportunity.attack;
-    const untilCommitMs = attack?.movementStartSeconds == null || attack?.elapsedSeconds == null
-      ? null
-      : Math.max(0, (attack.movementStartSeconds - attack.elapsedSeconds) * 1000);
-    const reviewMs = untilCommitMs == null
-      ? null
-      : untilCommitMs / (isParryPreContactReviewActive(snapshot) ? PARRY_REVIEW_RATE : 1);
-    showParryCue(
-      'wait',
-      untilCommitMs == null ? 'WAIT · ATTACK NOT COMMITTED' : `WAIT · WINDOW IN ${untilCommitMs.toFixed(0)}ms`,
-      reviewMs == null ? '不要按 F；等待 PARRY NOW' : `game-time · 約 ${reviewMs.toFixed(0)}ms review-time · 不要先按 F`,
-    );
-    return;
-  }
-  if (opportunity.reason === 'parry-input-too-late') {
-    showParryCue('late', 'TOO LATE', '等待下一刀，或按 RETRY ATTACK');
-    return;
-  }
-
-  showParryCue('geometry', 'WAIT · GATE CLOSED', `即時原因：${opportunity.reason} · 尚未接受 F`);
+  return labUi.updateParryCue({
+    snapshot,
+    ready,
+    selectedMode,
+    step3AContactTransfer,
+    latestGripConstraintReport,
+    selectedDirection,
+    latestParryConfirmation,
+    latestParryWhiff,
+    parryAttempt: parryGate.attempt,
+    firstContact,
+    latestParryOpportunity,
+    parryReviewActive: isParryPreContactReviewActive(snapshot),
+    parryReviewRate: PARRY_REVIEW_RATE,
+    debugMode: DEBUG_MODE,
+  });
 }
-function updateHud(snapshot, combatSnapshot) {
-  const outcome = latestCombatResult?.resolution?.outcome || '—';
-  const recoil = combatSnapshot.attackerRecoil?.sample;
-  const attackProfile = snapshot.action?.runtime || null;
-  const ttcSeconds = attackProfile ? attackProfile.contactSeconds - snapshot.elapsedSeconds : null;
-  const committed = Boolean(attackProfile)
-    && snapshot.elapsedSeconds >= attackProfile.movementStartSeconds
-    && snapshot.elapsedSeconds < attackProfile.contactSeconds;
-  const inputStatus = latestParryWhiff
-    ? `WHIFF · ${latestParryWhiff.category}`
-    : latestParryConfirmation?.accepted
-    ? 'CONFIRMED'
-    : latestParryInput?.accepted
-      ? 'ARMED · awaiting real contact'
-      : latestParryInput
-        ? `REJECTED · ${latestParryInput.reason}`
-        : selectedMode === 'parry'
-          ? 'not pressed'
-          : 'Block mode';
 
-  const reviewRate = isParryPreContactReviewActive(snapshot) ? PARRY_REVIEW_RATE : 1;
-  hudAttack.textContent = `Requested: ${requestedOutcome().toUpperCase()} · Actual: ${String(outcome).toUpperCase()} · ${snapshot.phase} · committed ${committed ? 'YES' : 'NO'} · TTC ${ttcSeconds == null ? '—' : `${Math.max(0, ttcSeconds) * 1000 | 0}ms`} · review ${reviewRate.toFixed(2)}×${parryPromptHold ? ' · VALID WINDOW HELD' : ''}`;
-  const contactGeometry = describeContactGeometry(firstContact);
-  const whiffGeometry = formatWhiffDiagnostic(latestParryWhiff, { debugMode: DEBUG_MODE });
-  hudContact.textContent = contactGeometry
-    ? `REAL Sword × Shield: YES · swept ${firstContact.mode || 'contact'} · ${contactGeometry.text}`
-    : whiffGeometry
-      ? `REAL Sword × Shield: NO · ${whiffGeometry.detail}`
-      : 'REAL Sword × Shield: waiting';
-  hudCoupling.textContent = `Parry gate: ${inputStatus}`;
-  const interceptRequired = latestFinePlan?.requiredDistance;
-  const interceptApplied = latestFinePlan?.appliedDistance;
-  const originalPrediction = latestReachableInterceptTarget?.predictedRequiredDistanceMeters;
-  hudShield.textContent = latestParryInput
-    ? latestReachableInterceptTarget?.fallbackApplied && interceptRequired != null
-      ? `Shield intercept: MEASURED SWEEP ${(interceptRequired * 100).toFixed(1)}→${(interceptApplied * 100).toFixed(1)}cm · bad linear prediction ${originalPrediction == null ? '—' : `${(originalPrediction * 100).toFixed(1)}cm`} rejected · real contact still required`
-      : `Shield tracking: ${latestParryInput.requiredShieldTravelMeters == null ? 'path pending' : `${(latestParryInput.requiredShieldTravelMeters * 100).toFixed(1)}cm → ${latestParryInput.gates.trackingClamped ? 'CLAMP 18cm' : 'within 18cm'}`} · geometry cannot veto input · plane ${latestParryInput.predictedPlaneDistanceMeters == null ? '—' : `${(latestParryInput.predictedPlaneDistanceMeters * 100).toFixed(1)}cm`}`
-    : 'Shield tracking: geometry guides a clamped 18cm response; it cannot veto valid timing input';
-  const centimeters = (value) => value == null ? '—' : (value * 100).toFixed(1);
-  const agreement = latestGripConstraintReport?.directionAgreement == null
-    ? '—'
-    : latestGripConstraintReport.directionAgreement.toFixed(2);
-  const inspection = latestGripConstraintReport?.holding
-    ? latestGripConstraintReport.inspectionPassed ? 'PASS' : 'FAIL'
-    : 'LIVE';
-  hudWeapon.textContent = step3AContactTransfer?.accepted
-    ? `LIVE Shield → Sword → Arm: forearm ${latestGripConstraintReport?.appliedForearmDegrees?.toFixed(1) ?? '0.0'}° · wrist ${latestGripConstraintReport?.appliedWristDegrees?.toFixed(1) ?? '0.0'}° · offline target ${centimeters(latestGripConstraintReport?.peakOfflineTravelMeters)}cm · sword ${centimeters(latestGripConstraintReport?.actualContactTravelMeters)}cm · hand ${centimeters(latestGripConstraintReport?.actualHandTravelMeters)}cm · hilt ${centimeters(latestGripConstraintReport?.actualGripTravelMeters)}cm`
-    : 'LIVE Shield → Sword → Grip: locked until valid manual timing and real contact pass';
-  hudSeparation.textContent = step3AContactTransfer?.accepted
-    ? `Step 3A: ${inspection} · contact error ${centimeters(latestGripConstraintReport?.liveContactErrorMeters)}cm · direction ${agreement} · hold ${formatTerminalState(latestGripConstraintReport?.terminalReason)} · ${latestGripConstraintReport?.elbowPropagationActive ? 'lowerarm.r assist → ' : ''}wrist.r → hand.r + handslot.r · shoulder OFF`
-    : 'Step 3A: waiting · TOP/RIGHT lowerarm assist + wrist/grip; LEFT remains wrist-only';
-  const lineClearance = latestGripConstraintReport?.attackLineClearance || null;
-  const lineGate = (passed) => passed ? 'PASS' : 'FAIL';
-  hudLineClearance.textContent = lineClearance
-    ? `LINE CLEAR ${lineGate(lineClearance.pass)} · sword axis ${lineGate(lineClearance.swordAxisPassed)} ${lineClearance.swordAxisClearanceDegrees.toFixed(1)}° / ${lineClearance.minimumSwordAxisClearanceDegrees.toFixed(1)}° · hilt ${lineGate(lineClearance.hiltOfflinePassed)} ${(lineClearance.hiltOfflineTravelMeters * 100).toFixed(1)}cm / ${(lineClearance.minimumHiltOfflineTravelMeters * 100).toFixed(1)}cm · wrist→grip ${lineGate(lineClearance.wristGripLinePassed)} ${lineClearance.wristGripClearanceDegrees.toFixed(1)}° / ${lineClearance.minimumWristGripClearanceDegrees.toFixed(1)}°`
-    : 'LINE CLEAR: waiting for live contact · red original axis / green current axis / purple wrist→grip';
-  const defenderReleaseGate = defenderDeflectReleaseGate();
-  const reactionClockMs = combatSnapshot.parryReactionClock?.elapsedMs;
-  const recoilPhaseClock = combatSnapshot.attackerRecoil?.phaseClock || null;
-  const reactionPlanPitchDegrees = latestCombatResult?.attackerReaction
-    ?.silhouette?.backwardPitchDegrees;
-  const appliedChainPitchDegrees = recoil?.pose
-    ? (Number(recoil.pose.chestPitchDegrees) || 0)
-      + (Number(recoil.pose.spinePitchDegrees) || 0)
-      + (Number(recoil.pose.hipsPitchDegrees) || 0)
-    : null;
-  hudRecoil.textContent = step3AOwnsLiveContact()
-    ? `OLD B3 selected at impact ${reactionClockMs == null ? '—' : `${reactionClockMs.toFixed(0)}ms`} · strong plan ${reactionPlanPitchDegrees?.toFixed(1) ?? '—'}° · presentation ${recoilPhaseClock?.elapsedMs?.toFixed(0) ?? '0'}ms ${recoilPhaseClock?.latched ? 'PARKED AT CONTACT ORIGIN' : 'WAITING'} · CONTACT OWNS FINAL POSE · ${defenderReleaseGate.passed ? 'DEFLECT_IMPULSE READY' : `waiting DEFLECT ${defenderReleaseGate.sourceTimeSeconds.toFixed(3)}s / ${defenderReleaseGate.requiredSourceTimeSeconds.toFixed(3)}s`}`
-    : recoil
-      ? `OLD B3 recoil: ${recoil.phase} · presentation ${recoilPhaseClock?.elapsedMs?.toFixed(0) ?? '—'}ms · arm ${recoil.weights?.armWeight?.toFixed(2) ?? '—'} · torso ${recoil.weights?.torsoWeight?.toFixed(2) ?? '—'} · legs ${recoil.weights?.legWeight?.toFixed(2) ?? '—'}`
-      : 'OLD B3 recoil: —';
-  const inspectionAssessment = latestGripConstraintReport?.inspectionAssessment;
-  hudDiagnostic.textContent = directOldB3Diagnostic
-    ? `STEP 1 DIRECT B3: ${directOldB3Diagnostic.accepted ? 'ACTIVE' : 'FAIL'} · all later gates bypassed`
-    : inspectionAssessment?.holding
-      ? formatAllInspectionGates(latestGripConstraintReport)
-      : whiffGeometry
-        ? `WHIFF DIAGNOSTIC · ${whiffGeometry.label} · ${whiffGeometry.detail}`
-        : `STEP 3A: ${inputStatus} · shield → sword → hand only · Perfect removed`;
-  hudDiagnostic.className = latestParryWhiff
-    ? 'bad'
-    : inspectionAssessment?.holding
-      ? inspectionAssessment.pass ? 'good' : 'bad'
-      : '';
+function updateHud(snapshot, combatSnapshot) {
+  return labUi.updateHud({
+    snapshot,
+    combatSnapshot,
+    latestCombatResult,
+    latestParryWhiff,
+    latestParryConfirmation,
+    latestParryInput,
+    selectedMode,
+    requestedOutcome: requestedOutcome(),
+    parryReviewActive: isParryPreContactReviewActive(snapshot),
+    parryReviewRate: PARRY_REVIEW_RATE,
+    parryPromptHeld: Boolean(parryPromptHold),
+    firstContact,
+    latestFinePlan,
+    latestReachableInterceptTarget,
+    latestGripConstraintReport,
+    step3AContactTransfer,
+    defenderReleaseGate: defenderDeflectReleaseGate(),
+    step3AOwnsLiveContact: step3AOwnsLiveContact(),
+    directOldB3Diagnostic,
+    debugMode: DEBUG_MODE,
+  });
 }
 
 function buildReport(combatSnapshot = combat.snapshot) {
@@ -1836,20 +1581,24 @@ async function main() {
   startAttack('right');
 }
 
-document.querySelectorAll('[data-attack]').forEach((button) => button.addEventListener('click', () => startAttack(button.dataset.attack)));
-document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.mode)));
-document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
-forceOldB3Button.addEventListener('click', () => forceOldTwoActorB3(selectedDirection));
-parryNowButton.addEventListener('click', () => dispatchParryInput('button'));
-retryAttackButton.addEventListener('click', () => restartAttack(selectedDirection));
-debugApplyRetryButton.addEventListener('click', () => restartAttack(selectedDirection));
-debugResetDefaultsButton.addEventListener('click', resetDebugStanceDefaults);
-document.addEventListener('keydown', handleParryKeyDown, true);
-document.addEventListener('keyup', handleParryKeyUp, true);
-addEventListener('blur', () => { parryKeyDownObserved = false; });
-canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
-showSurface.addEventListener('change', () => buckler.setParrySurfaceVisible(showSurface.checked));
-setView('three'); resize(); addEventListener('resize', resize);
+bindShieldParryLabUiEvents({
+  documentRef: document,
+  windowRef: window,
+  canvas,
+  elements: uiElements,
+  handlers: {
+    onAttack: (direction) => startAttack(direction),
+    onMode: (mode) => setMode(mode),
+    onView: (view) => setView(view),
+    onForceOldB3: () => forceOldTwoActorB3(selectedDirection),
+    onParryInput: (inputSource, event) => dispatchParryInput(inputSource, event),
+    onRetryAttack: () => restartAttack(selectedDirection),
+    onDebugApplyRetry: () => restartAttack(selectedDirection),
+    onDebugResetDefaults: resetDebugStanceDefaults,
+    onShowSurface: (checked) => buckler.setParrySurfaceVisible(checked),
+    onResize: resize,
+  },
+});
 
 function frame(timestamp) {
   const rawDeltaMs = Math.min(50, Math.max(0, timestamp - lastTimestamp));
