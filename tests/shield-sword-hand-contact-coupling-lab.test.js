@@ -27,6 +27,10 @@ const sceneCompositionSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/lab-scene.js', import.meta.url),
   'utf8',
 );
+const attackerPresentationSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/attacker-presentation.js', import.meta.url),
+  'utf8',
+);
 
 function functionBody(name, nextName) {
   const start = source.indexOf(`function ${name}(`);
@@ -165,9 +169,9 @@ test('R18I lets live contact own the final pose while OLD B3 waits at presentati
   ]) assert.ok(postContactOwnershipSource.includes(marker), marker);
   assert.ok(source.includes('weaponArmRemainsContactConstrainedDuringStep3A'));
   assert.ok(contactHandoffSource.includes('exchangeState.frozenAttackerContactPose = captureRigPose(attacker.rig)'));
-  assert.ok(source.includes('applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose)'));
-  assert.ok(source.includes('exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig)'));
-  assert.ok(source.includes('sampleCanonicalInterruptionPose(interruption)'));
+  assert.ok(attackerPresentationSource.includes('applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose)'));
+  assert.ok(attackerPresentationSource.includes('exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig)'));
+  assert.ok(attackerPresentationSource.includes('sampleCanonicalInterruptionPose(interruption)'));
   assert.ok(source.includes('frozenContactPoseRestoredBeforeEveryBodyOverlay'));
   assert.ok(source.includes('bodyCompletionCannotReleaseContactOwnedPose'));
   assert.ok(source.includes('contactOwnsFinalPoseBeforeVisibleOldB3'));

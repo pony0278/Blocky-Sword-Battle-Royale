@@ -84,6 +84,7 @@ import { createShieldParryPreContactController } from './shield-parry-r281/pre-c
 import { createShieldParryContactHandoffController } from './shield-parry-r281/contact-handoff-controller.js';
 import { createShieldParryLabScene } from './shield-parry-r281/lab-scene.js';
 import { createShieldParryInspectionOverlay } from './shield-parry-r281/inspection-overlay.js';
+import { createAttackerPresentationAdapter } from './shield-parry-r281/attacker-presentation.js';
 
 
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
@@ -121,70 +122,19 @@ const predictivePresentation = createPredictiveInterceptParryPresentationRuntime
 const parryGate = createCommittedParryContactGate();
 const exchangeState = createShieldParryExchangeState();
 
-function captureAttackerWorldSilhouette() {
-  attacker.rig.root?.updateMatrixWorld?.(true);
-  const read = (boneName) => {
-    const position = new THREE.Vector3();
-    attacker.rig.bones[boneName]?.getWorldPosition(position);
-    return Object.freeze({ x: position.x, y: position.y, z: position.z });
-  };
-  const leftShoulder = read('upperarm.l');
-  const rightShoulder = read('upperarm.r');
-  return Object.freeze({
-    hips: read('hips'),
-    chest: read('chest'),
-    head: read('head'),
-    shoulders: Object.freeze({
-      x: (leftShoulder.x + rightShoulder.x) * 0.5,
-      y: (leftShoulder.y + rightShoulder.y) * 0.5,
-      z: (leftShoulder.z + rightShoulder.z) * 0.5,
-    }),
-  });
-}
-
-function sampleCanonicalInterruptionPose(interruption) {
-  attacker.sampleAnimation(interruption.clipId, interruption.sourceTimeSeconds, {
-    loop: false,
-    inPlace: interruption.inPlace !== false,
-    rootRotationPolicy: interruption.rootRotationPolicy,
-  });
-  attacker.update(0, camera);
-}
-
-function captureCanonicalAttackerOldB3Base(interruption) {
-  if (!interruption) return false;
-  const visiblePose = captureRigPose(attacker.rig);
-  sampleCanonicalInterruptionPose(interruption);
-  exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig);
-  exchangeState.canonicalAttackerOldB3WorldSilhouette = captureAttackerWorldSilhouette();
-  applyRigPose(attacker.rig, visiblePose);
-  attacker.update(0, camera);
-  return true;
-}
-
-function sampleOriginalContactPose(interruption) {
-  if (step3AOwnsLiveContact() && exchangeState.frozenAttackerContactPose) {
-    applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose);
-  } else if (exchangeState.step3AReleaseBlend?.sourcePose && exchangeState.step3AReleaseBlend?.targetPose) {
-    const releaseSample = sampleLiveParryOldB3ReleaseBlend(
-      exchangeState.step3AReleaseBlend.elapsedMs,
-      exchangeState.step3AReleaseBlend.durationMs,
-    );
-    applyRigPose(attacker.rig, blendRecoveryPose(
-      exchangeState.step3AReleaseBlend.sourcePose,
-      exchangeState.step3AReleaseBlend.sourcePose,
-      exchangeState.step3AReleaseBlend.targetPose,
-      releaseSample.progress,
-      { durationMs: exchangeState.step3AReleaseBlend.durationMs, sampleDeltaMs: 0, momentumScale: 0 },
-    ));
-    exchangeState.step3AReleaseBlend.sample = releaseSample;
-  } else if (exchangeState.canonicalAttackerOldB3Pose) {
-    applyRigPose(attacker.rig, exchangeState.canonicalAttackerOldB3Pose);
-  } else {
-    sampleCanonicalInterruptionPose(interruption);
-  }
-  attacker.update(0, camera);
-}
+const attackerPresentation = createAttackerPresentationAdapter({
+  THREE,
+  attacker,
+  camera,
+  exchangeState,
+  services: {
+    captureRigPose,
+    applyRigPose,
+    blendRecoveryPose,
+    sampleLongswordAttackRecovery,
+    sampleLiveParryOldB3ReleaseBlend,
+  },
+});
 
 const combat = createTwoActorCombatIntegration({
   THREE,
@@ -196,7 +146,9 @@ const combat = createTwoActorCombatIntegration({
     parryAttackerRecoilDelayMs: 0,
   },
   sampleFrozenContactPose(interruption) {
-    sampleOriginalContactPose(interruption);
+    attackerPresentation.sampleFrozenContactPose(interruption, {
+      ownsLiveContact: step3AOwnsLiveContact(),
+    });
   },
 });
 const swordGripConstraint = createLiveShieldSwordGripContactRuntime(THREE, {
@@ -303,8 +255,8 @@ const contactHandoffController = createShieldParryContactHandoffController({
     measureAttackerRecoilWorldSilhouette,
   },
   callbacks: {
-    captureCanonicalAttackerOldB3Base: () => captureCanonicalAttackerOldB3Base(attackRuntime.snapshot.interruption),
-    captureAttackerWorldSilhouette,
+    captureCanonicalAttackerOldB3Base: () => attackerPresentation.captureCanonicalOldB3Base(attackRuntime.snapshot.interruption),
+    captureAttackerWorldSilhouette: () => attackerPresentation.captureWorldSilhouette(),
     updateLiveContactMarkers: (report) => inspectionOverlay.update(report),
     formatInspectionFailureSummary,
     publishStatus({ text, className }) {
@@ -360,39 +312,19 @@ function enterGuard() {
   if (report.snapshot.state !== GUARD_STATES.HOLD) throw new Error(`Expected Guard Hold, got ${report.snapshot.state}`);
 }
 function beginAttackRecovery(direction) {
-  const sourcePose = captureRigPose(attacker.rig);
-  attacker.sampleAnimation('UAL1/Sword_Idle', 0, { loop: true, inPlace: true, rootRotationPolicy: 'lock' });
-  attacker.update(0, camera);
-  const targetPose = captureRigPose(attacker.rig);
-  applyRigPose(attacker.rig, sourcePose);
-  attacker.update(0, camera);
-  attackerRecovery = { direction, elapsedMs: 0, sourcePose, targetPose };
+  attackerRecovery = attackerPresentation.createRecovery(direction);
   attackerIdleClockSeconds = 0;
 }
 function sampleAttackerBase(snapshot, deltaMs) {
-  if (snapshot.action) {
-    const profile = snapshot.action.runtime;
-    attacker.sampleAnimation(profile.clipId, Math.min(profile.durationSeconds, snapshot.elapsedSeconds), { loop: false, inPlace: true, rootRotationPolicy: 'lock' });
-    attacker.update(0, camera);
-    return;
-  }
-  if (attackerRecovery) {
-    attackerRecovery.elapsedMs += deltaMs;
-    const recovery = sampleLongswordAttackRecovery(attackerRecovery.direction, attackerRecovery.elapsedMs);
-    applyRigPose(attacker.rig, blendRecoveryPose(
-      attackerRecovery.sourcePose,
-      attackerRecovery.sourcePose,
-      attackerRecovery.targetPose,
-      recovery.progress,
-      { durationMs: recovery.profile.attackRecoveryDurationMs, sampleDeltaMs: 0, momentumScale: 0 },
-    ));
-    attacker.update(0, camera);
-    if (recovery.complete) attackerRecovery = null;
-    return;
-  }
-  attackerIdleClockSeconds += deltaMs / 1000;
-  attacker.sampleAnimation('UAL1/Sword_Idle', attackerIdleClockSeconds % Math.max(0.001, attackerIdleDuration), { loop: true, inPlace: true, rootRotationPolicy: 'lock' });
-  attacker.update(0, camera);
+  const presentationState = attackerPresentation.sampleBase({
+    snapshot,
+    deltaMs,
+    recovery: attackerRecovery,
+    idleClockSeconds: attackerIdleClockSeconds,
+    idleDuration: attackerIdleDuration,
+  });
+  attackerRecovery = presentationState.recovery;
+  attackerIdleClockSeconds = presentationState.idleClockSeconds;
 }
 function resetExchange() {
   parryGate.reset();
@@ -550,7 +482,7 @@ function forceOldTwoActorB3(direction = selectedDirection) {
     exchangeState.directOldB3Diagnostic = Object.freeze({ accepted: false, reason: exchangeState.latestCombatResult.reason || 'diagnostic-contact-rejected' });
     return exchangeState.directOldB3Diagnostic;
   }
-  captureCanonicalAttackerOldB3Base(attackRuntime.snapshot.interruption);
+  attackerPresentation.captureCanonicalOldB3Base(attackRuntime.snapshot.interruption);
   guardRuntime.sync(camera);
 
   const handoffPublished = publishPostCouplingRecoilStaggerHandoff(attacker.rig, {
