@@ -166,4 +166,30 @@ for (const persistentName of [
 }
 
 await writeFile(entryPath, source);
-console.log(`R18M.4 migrated ${exchangeKeys.length} exchange fields with ${ordered.length} reference edits.`);
+
+const ownershipContractPath = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
+let ownershipContract = await readFile(ownershipContractPath, 'utf8');
+const ownershipContractReplacements = [
+  [
+    'assert.match(source, /frozenAttackerContactPose = captureRigPose\\(attacker\\.rig\\)/);',
+    'assert.match(source, /(?:exchangeState\\.)?frozenAttackerContactPose = captureRigPose\\(attacker\\.rig\\)/);',
+  ],
+  [
+    'assert.match(source, /applyRigPose\\(attacker\\.rig, frozenAttackerContactPose\\)/);',
+    'assert.match(source, /applyRigPose\\(attacker\\.rig, (?:exchangeState\\.)?frozenAttackerContactPose\\)/);',
+  ],
+  [
+    'assert.match(source, /canonicalAttackerOldB3Pose = captureRigPose\\(attacker\\.rig\\)/);',
+    'assert.match(source, /(?:exchangeState\\.)?canonicalAttackerOldB3Pose = captureRigPose\\(attacker\\.rig\\)/);',
+  ],
+];
+for (const [before, after] of ownershipContractReplacements) {
+  const occurrences = ownershipContract.split(before).length - 1;
+  if (occurrences !== 1) {
+    throw new Error(`expected exactly one ownership-sensitive R18I contract, found ${occurrences}: ${before}`);
+  }
+  ownershipContract = ownershipContract.replace(before, after);
+}
+await writeFile(ownershipContractPath, ownershipContract);
+
+console.log(`R18M.4 migrated ${exchangeKeys.length} exchange fields with ${ordered.length} reference edits and ${ownershipContractReplacements.length} ownership-sensitive R18I contracts.`);
