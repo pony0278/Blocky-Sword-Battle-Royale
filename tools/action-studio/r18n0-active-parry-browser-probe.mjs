@@ -53,17 +53,21 @@ async function waitFor(expression, timeoutMs = 20000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (await evaluate(`Boolean(${expression})`)) return;
-    await sleep(40);
+    await sleep(20);
   }
-  throw new Error(`R18N.0 probe timeout waiting for ${expression}`);
+  const snapshot = await evaluate(`window.__G43B5R281_LAB__?.attackRuntime?.snapshot`);
+  throw new Error(`R18N.0 probe timeout waiting for ${expression}; snapshot=${JSON.stringify(snapshot)}`);
 }
 
 await cdp('Runtime.enable');
 await waitFor("window.__G43B5R281_LAB__ && document.documentElement.dataset.g43b5r281 !== 'fail'");
 
 async function diagnoseDirection(direction) {
-  await evaluate(`window.__G43B5R281_LAB__.restartAttack(${JSON.stringify(direction)})`);
-  await waitFor(`window.__G43B5R281_LAB__.attackRuntime.snapshot.direction === ${JSON.stringify(direction)} && window.__G43B5R281_LAB__.latestParryOpportunity?.accepted === true`);
+  const restarted = await evaluate(`window.__G43B5R281_LAB__.restartAttack(${JSON.stringify(direction)})`);
+  if (restarted !== true) throw new Error(`R18N.0 could not restart ${direction} attack`);
+  const timelineWindow = `(() => { const s = window.__G43B5R281_LAB__.attackRuntime.snapshot; const r = s?.action?.runtime; if (!r || s.direction !== ${JSON.stringify(direction)}) return false; const ttc = Number(r.contactSeconds) - Number(s.elapsedSeconds); return Number(s.elapsedSeconds) >= Number(r.movementStartSeconds) && ttc >= 0.08 && ttc <= 0.16; })()`;
+  await waitFor(timelineWindow);
+  const timelineAtInput = await evaluate(`(() => { const s = window.__G43B5R281_LAB__.attackRuntime.snapshot; const r = s?.action?.runtime; return { direction: s.direction, elapsedSeconds: s.elapsedSeconds, movementStartSeconds: r?.movementStartSeconds ?? null, contactSeconds: r?.contactSeconds ?? null, timeToContactMs: r ? (r.contactSeconds - s.elapsedSeconds) * 1000 : null }; })()`);
   const opportunity = await evaluate(`window.__G43B5R281_LAB__.latestParryOpportunity`);
   const beforeInput = await evaluate(`window.__G43B5R281_LAB__.activeParryInterceptDiagnosis`);
   const inputResult = await evaluate(`window.__G43B5R281_LAB__.dispatchParryInput('r18n0-browser-probe')`);
@@ -71,7 +75,7 @@ async function diagnoseDirection(direction) {
   await waitFor(`window.__G43B5R281_LAB__.latestParryConfirmation?.accepted === true || window.__G43B5R281_LAB__.latestParryWhiff`);
   const final = await evaluate(`window.__G43B5R281_LAB__.activeParryInterceptDiagnosis`);
   const whiff = await evaluate(`window.__G43B5R281_LAB__.latestParryWhiff`);
-  return { direction, opportunity, beforeInput, inputResult, afterInput, final, whiff };
+  return { direction, timelineAtInput, opportunity, beforeInput, inputResult, afterInput, final, whiff };
 }
 
 try {
