@@ -34,4 +34,25 @@ migrateExact(
   'R18M.5 swept-contact order contract',
 );
 
+const step3ATestPath = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
+const oldStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
+const newStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst labUiSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url),\n  'utf8',\n);\nconst diagnosticFormattersSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/diagnostic-formatters.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
+
+migrateExact(
+  step3ATestPath,
+  oldStep3AImports,
+  newStep3AImports,
+  'Step 3A extracted presentation ownership imports',
+);
+
+const oldStep3AInspection = `  assert.match(source, /STEP 3A HOLD · LIVE CONTACT VERIFIED/);\n  assert.match(source, /formatInspectionFailureSummary/);\n  assert.match(source, /failedGateCount/);\n  assert.match(source, /formatTerminalState/);\n  assert.match(source, /contactGeometryDiagnostic: describeContactGeometry/);\n  assert.match(source, /bladePercent/);\n  assert.match(source, /shieldRegion/);`;
+const newStep3AInspection = `  assert.match(labUiSource, /STEP 3A HOLD · LIVE CONTACT VERIFIED/);\n  assert.match(labUiSource, /formatInspectionFailureSummary/);\n  assert.match(labUiSource, /failedGateCount/);\n  assert.match(labUiSource, /formatTerminalState/);\n  assert.match(verificationReportSource, /contactGeometryDiagnostic: describeContactGeometry/);\n  assert.match(diagnosticFormattersSource, /bladePercent/);\n  assert.match(diagnosticFormattersSource, /shieldRegion/);`;
+
+migrateExact(
+  step3ATestPath,
+  oldStep3AInspection,
+  newStep3AInspection,
+  'Step 3A live contact inspection ownership contract',
+);
+
 console.log('R18N.3 v6.4 contact authority source contracts migrated.');
