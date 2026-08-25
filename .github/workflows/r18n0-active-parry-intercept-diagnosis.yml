@@ -53,7 +53,7 @@ jobs:
           set -e
           cat r18n0-pre.log
           test "$PRE_EXIT" -ne 0
-          grep -q 'activeParryInterceptDiagnosis' r18n0-pre.log
+          grep -q 'active-parry-intercept-diagnosis' r18n0-pre.log
 
       - name: Apply guarded diagnosis integration
         run: node tools/action-studio/r18n0-active-parry-diagnosis-migration.mjs
