@@ -40,8 +40,21 @@ await new Promise((resolve, reject) => {
 });
 let id = 0;
 const pending = new Map();
+const browserExceptions = [];
 socket.addEventListener('message', (event) => {
   const message = JSON.parse(event.data);
+  if (message.method === 'Runtime.exceptionThrown') {
+    const details = message.params?.exceptionDetails || {};
+    browserExceptions.push({
+      text: details.text || null,
+      exception: details.exception?.description || details.exception?.value || null,
+      lineNumber: details.lineNumber ?? null,
+      columnNumber: details.columnNumber ?? null,
+      url: details.url || null,
+      timestamp: message.params?.timestamp ?? null,
+    });
+    if (browserExceptions.length > 12) browserExceptions.shift();
+  }
   const entry = pending.get(message.id);
   if (!entry) return;
   pending.delete(message.id);
@@ -55,7 +68,10 @@ function cdp(method, params = {}) {
 }
 async function evaluate(expression) {
   const result = await cdp('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'browser evaluation failed');
+  if (result.exceptionDetails) {
+    const description = result.exceptionDetails.exception?.description;
+    throw new Error(description || result.exceptionDetails.text || 'browser evaluation failed');
+  }
   return result.result?.value;
 }
 async function waitFor(expression, timeoutMs = 15000) {
@@ -65,6 +81,40 @@ async function waitFor(expression, timeoutMs = 15000) {
     await sleep(8);
   }
   throw new Error(`timeout waiting for ${expression}`);
+}
+async function captureFailureEvidence() {
+  let page = null;
+  try {
+    page = await evaluate(`(() => {
+      const lab = window.__G43B5R281_LAB__;
+      const s = lab?.attackRuntime?.snapshot || null;
+      return {
+        dataset: document.documentElement.dataset.g43b5r281 || null,
+        hasLab: Boolean(lab),
+        readyState: document.readyState,
+        attack: s ? {
+          sequence: s.sequence ?? null,
+          direction: s.direction ?? null,
+          phase: s.phase ?? null,
+          elapsedSeconds: s.elapsedSeconds ?? null,
+          active: lab?.attackRuntime?.active ?? null,
+          hasAction: Boolean(s.action),
+          hasRuntime: Boolean(s.action?.runtime),
+          interruption: s.interruption || null,
+        } : null,
+        latestContact: lab?.latestContact ? {
+          contact: lab.latestContact.contact === true,
+          geometricContact: lab.latestContact.geometricContact === true,
+          reason: lab.latestContact.reason ?? null,
+        } : null,
+        latestParryConfirmation: lab?.latestParryConfirmation || null,
+        latestParryWhiff: lab?.latestParryWhiff || null,
+      };
+    })()`);
+  } catch (error) {
+    page = { captureError: error instanceof Error ? error.message : String(error) };
+  }
+  return { page, browserExceptions: browserExceptions.slice(-8) };
 }
 
 await cdp('Runtime.enable');
@@ -83,11 +133,22 @@ async function runTrial(index) {
     const hitchMs = ${JSON.stringify(hitchMs)};
     const deadline = performance.now() + 3000;
     let dispatched = null;
+    let lastRuntimeState = null;
     function tick() {
       const s = lab?.attackRuntime?.snapshot;
       const r = s?.action?.runtime;
+      lastRuntimeState = s ? {
+        sequence: s.sequence ?? null,
+        direction: s.direction ?? null,
+        phase: s.phase ?? null,
+        elapsedSeconds: s.elapsedSeconds ?? null,
+        hasAction: Boolean(s.action),
+        hasRuntime: Boolean(r),
+      } : null;
       if (!s || !r || s.direction !== 'right') {
-        if (performance.now() > deadline) return reject(new Error('RIGHT runtime missing'));
+        if (performance.now() > deadline) {
+          return reject(new Error('RIGHT runtime missing: ' + JSON.stringify(lastRuntimeState)));
+        }
         return requestAnimationFrame(tick);
       }
       const elapsed = Number(s.elapsedSeconds);
@@ -105,7 +166,7 @@ async function runTrial(index) {
           hitch: { requestedMs: hitchMs, actualMs: performance.now() - before, beforeElapsedSeconds: elapsed },
         });
       }
-      if (performance.now() > deadline) return reject(new Error('hitch scheduling deadline'));
+      if (performance.now() > deadline) return reject(new Error('hitch scheduling deadline: ' + JSON.stringify(lastRuntimeState)));
       requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
@@ -169,9 +230,19 @@ async function cleanup() {
 try {
   const trials = [];
   for (let i = 1; i <= trialCount; i += 1) {
-    const trial = await runTrial(i);
-    trials.push(trial);
-    console.log(`R18N3_V64_TRIAL=${JSON.stringify(trial)}`);
+    try {
+      const trial = await runTrial(i);
+      trials.push(trial);
+      console.log(`R18N3_V64_TRIAL=${JSON.stringify(trial)}`);
+    } catch (error) {
+      const failure = await captureFailureEvidence();
+      console.error(`R18N3_V64_TRIAL_FAILURE=${JSON.stringify({
+        trial: i,
+        error: error instanceof Error ? error.message : String(error),
+        ...failure,
+      })}`);
+      throw error;
+    }
     await sleep(70);
   }
   console.log(`R18N3_V64_PROBE_JSON=${JSON.stringify({
@@ -183,6 +254,7 @@ try {
     confirmed: trials.filter((row) => row.confirmed).length,
     whiffs: trials.filter((row) => row.whiff).length,
     relativeRecovered: trials.filter((row) => row.geometricContact !== true && row.relativeMovingShieldGeometricContact === true).length,
+    browserExceptions,
   })}`);
 } finally {
   await cleanup();
