@@ -88,6 +88,12 @@ update('tools/action-studio/shield-parry-r281/pre-contact-controller.js', (sourc
   );
   next = replaceOnce(
     next,
+    '      const trackingSurfaceBefore = cloneSurface(buckler.getWorldParrySurface());\n      exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);',
+    '      const trackingSurfaceBefore = cloneSurface(buckler.getWorldParrySurface());\n      // Active Intercept owns a persistent shield-arm pose. Re-zero only the runtime\n      // carry so update() becomes this-frame bounded travel toward the fixed world target\n      // instead of re-applying an absolute offset on top of last frame\'s moved pose.\n      if (activeIntentPlan) fineTrackingRuntime.reset();\n      exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);',
+    'persistent-pose incremental world-target drive',
+  );
+  next = replaceOnce(
+    next,
     "        drivePlanSource: exchangeState.latestReachableInterceptTarget?.fallbackApplied\n          ? 'surface-relative-measured-contact-correction'\n          : 'current-presentation-linear-contact-correction',",
     "        drivePlanSource: activeIntentPlan\n          ? 'latched-f-active-intercept-intent'\n          : exchangeState.latestReachableInterceptTarget?.fallbackApplied\n            ? 'surface-relative-measured-contact-correction'\n            : 'current-presentation-linear-contact-correction',\n        activeInterceptIntent: activeInterceptIntent?.report ?? null,",
     'drive plan telemetry',
