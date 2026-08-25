@@ -117,7 +117,7 @@ update('src/combat/predictive-intercept-parry.js', (source) => {
   let next = replaceOnce(
     source,
     "export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';\n",
-    "export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';\nexport const PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS = 0.055;\nconst PREDICTIVE_PARRY_ENTRY_BLEND_BONES = Object.freeze(['spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l']);\nconst PREDICTIVE_PARRY_EXTERNAL_SHIELD_ARM_BONES = Object.freeze(['upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l']);\n",
+    "export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';\nexport const PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS = 0.055;\nconst PREDICTIVE_PARRY_ENTRY_BLEND_BONES = Object.freeze(['spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l']);\nconst PREDICTIVE_PARRY_EXTERNAL_SHIELD_ARM_BONES = Object.freeze(['root', 'hips', 'spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l']);\n",
     'presentation bridge constants',
   );
   next = replaceOnce(
