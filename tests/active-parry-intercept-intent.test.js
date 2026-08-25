@@ -35,7 +35,11 @@ test('R18N.1 clamps the F-latched intercept to a reachable visible lead instead 
   assert.equal(armed.intent.stage, ACTIVE_PARRY_INTERCEPT_INTENT_STAGE);
   assert.equal(armed.intent.rawRequiredDistanceMeters, 1.44);
   assert.equal(armed.intent.leadMeters, 0.12);
-  assert.ok(Math.abs(magnitude(armed.intent.correction) - 0.12) < 1e-9);
+  assert.ok(Math.abs(magnitude({
+    x: armed.intent.targetCenter.x - armed.intent.originCenter.x,
+    y: armed.intent.targetCenter.y - armed.intent.originCenter.y,
+    z: armed.intent.targetCenter.z - armed.intent.originCenter.z,
+  }) - 0.12) < 1e-9);
 
   const plan = intent.plan({ sequence: 2, bucklerSurface: surface });
   assert.equal(plan.reason, 'latched-active-shield-intercept');
@@ -44,7 +48,7 @@ test('R18N.1 clamps the F-latched intercept to a reachable visible lead instead 
   assert.equal(plan.appliedDistance, 0.12);
 });
 
-test('R18N.1 preserves one world-space lead vector across changing prediction/surface frames', () => {
+test('R18N.1 preserves one fixed world-space target while remaining correction shrinks as the shield advances', () => {
   const intent = createActiveParryInterceptIntent();
   intent.arm({
     sequence: 3,
@@ -53,10 +57,18 @@ test('R18N.1 preserves one world-space lead vector across changing prediction/su
     predictiveAnalysis: predictive(0.95, { x: 0.8, y: 0.6, z: 0 }),
   });
   const first = intent.plan({ sequence: 3, bucklerSurface: surface });
-  const movedSurface = { ...surface, center: { x: 0.02, y: 1.03, z: 0.01 } };
+  const movedSurface = {
+    ...surface,
+    center: {
+      x: surface.center.x + first.correction.x * 0.4,
+      y: surface.center.y + first.correction.y * 0.4,
+      z: surface.center.z + first.correction.z * 0.4,
+    },
+  };
   const second = intent.plan({ sequence: 3, bucklerSurface: movedSurface });
-  assert.deepEqual(second.correction, first.correction);
-  assert.equal(second.requiredDistance, first.requiredDistance);
+  assert.deepEqual(second.targetCenter, first.targetCenter);
+  assert.ok(second.requiredDistance < first.requiredDistance);
+  assert.ok(Math.abs(second.requiredDistance - first.requiredDistance * 0.6) < 1e-9);
   assert.equal(intent.report.stableAcrossFrames, true);
 });
 
@@ -70,7 +82,8 @@ test('R18N.1 still creates a distinct active lead when the existing guard alread
   });
   assert.equal(armed.accepted, true);
   assert.equal(armed.intent.leadMeters, 0.07);
-  assert.ok(magnitude(armed.intent.correction) >= 0.07 - 1e-9);
+  const plan = intent.plan({ sequence: 4, bucklerSurface: surface });
+  assert.ok(magnitude(plan.correction) >= 0.07 - 1e-9);
 });
 
 test('R18N.1 keeps LEFT deferred and never creates contact authority', () => {
