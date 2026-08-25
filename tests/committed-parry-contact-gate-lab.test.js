@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const html = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 const source = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
+const labUiSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url), 'utf8');
 const preContactSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
 const contactHandoffSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');
 
@@ -65,14 +66,20 @@ test('Step 2 invalid or absent Parry input falls back to Block timing', () => {
 });
 
 test('Step 2 visibly captures F before evaluating the Parry gate', () => {
+  const dispatch = functionBody('dispatchParryInput', 'forceOldTwoActorB3');
   assert.match(html, /id="canvas" tabindex="0"/);
   assert.match(html, /id="hudInput"/);
-  assert.match(source, /function dispatchParryInput/);
-  assert.match(source, /document\.addEventListener\('keydown', handleParryKeyDown, true\)/);
-  assert.match(source, /document\.addEventListener\('keyup', handleParryKeyUp, true\)/);
-  assert.match(source, /event\?\.code === 'KeyF'/);
-  assert.match(source, /String\(event\?\.key \|\| ''\)\.toLowerCase\(\) === 'f'/);
-  assert.match(source, /INPUT RECEIVED:/);
+  assert.match(source, /bindShieldParryLabUiEvents/);
+  assert.match(source, /onParryInput: \(inputSource, event\) => dispatchParryInput\(inputSource, event\)/);
+  assert.match(labUiSource, /documentRef\.addEventListener\('keydown', \(event\) =>/);
+  assert.match(labUiSource, /documentRef\.addEventListener\('keyup', \(event\) =>/);
+  assert.match(labUiSource, /event\?\.code === 'KeyF'/);
+  assert.match(labUiSource, /String\(event\?\.key \|\| ''\)\.toLowerCase\(\) === 'f'/);
+  assert.match(labUiSource, /handlers\.onParryInput\('keyboard-f', event\)/);
+  assert.match(dispatch, /exchangeState\.latestInputSignal/);
+  assert.match(dispatch, /const result = triggerParryNow\(source\)/);
+  assert.ok(dispatch.indexOf('exchangeState.latestInputSignal') < dispatch.indexOf('triggerParryNow(source)'));
+  assert.match(labUiSource, /INPUT RECEIVED:/);
 });
 
 test('Step 2 previews the live gate without consuming input and gives an explicit retry', () => {
