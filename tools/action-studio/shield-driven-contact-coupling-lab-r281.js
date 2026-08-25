@@ -1,9 +1,3 @@
-import { createDebugSword, mountDebugSword } from '../../src/character/debug-sword.js';
-import { DEFAULT_KAYKIT_SWORD_MOUNT } from '../../src/character/default-character-mount.js';
-import { loadUal1AnimationLibrary } from '../../src/animation/ual1-animation-library.js';
-import { loadUal2AnimationLibrary } from '../../src/animation/ual2-animation-library.js';
-import { loadSkyrimConvertedAnimationLibrary } from '../../src/animation/skyrim-converted-animation-library.js';
-import { composeSkyrimWeaponMountCalibration } from '../../src/animation/skyrim-weapon-bind-calibration.js';
 import { getProductionParryDeflectProfile } from '../../src/animation/parry-contact-deflect-runtime-clip.js?v=g43b5r281-parry-sync-r2';
 import { GUARD_EVENTS, GUARD_STATES, createGuardStateMachine } from '../../src/combat/guard-state-machine.js';
 import { createGuardPresentationRuntime } from '../../src/combat/guard-presentation-runtime.js';
@@ -86,6 +80,8 @@ import { createShieldParryLabScene } from './shield-parry-r281/lab-scene.js';
 import { createShieldParryInspectionOverlay } from './shield-parry-r281/inspection-overlay.js';
 import { createAttackerPresentationAdapter } from './shield-parry-r281/attacker-presentation.js';
 import { createDirectOldB3DiagnosticController } from './shield-parry-r281/direct-old-b3-diagnostic.js';
+import { bootstrapShieldParryLabAssets } from './shield-parry-r281/lab-bootstrap.js';
+import { createShieldParryDebugApi } from './shield-parry-r281/debug-api.js';
 
 
 const LAB_STAGE = LIVE_SHIELD_SWORD_GRIP_CONTACT_STAGE;
@@ -594,18 +590,14 @@ function buildReport(combatSnapshot = combat.snapshot) {
 }
 async function main() {
   status.textContent = `Loading UAL attacks + Skyrim Guard + ${LAB_STAGE}…`;
-  const [ual1, ual2, skyrim] = await Promise.all([
-    loadUal1AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
-    loadUal2AnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: attacker.rig, fps: 30 }),
-    loadSkyrimConvertedAnimationLibrary(new THREE.GLTFLoader(), { THREE, rig: defender.rig, fps: 30 }),
-  ]);
-  attacker.registerAnimations(ual1); attacker.registerAnimations(ual2); defender.registerAnimations(skyrim);
-  attackerIdleDuration = attacker.getAnimationDuration('UAL1/Sword_Idle') || 1;
-  const idle = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle');
-  const bind = idle?.userData?.weaponBindCalibration;
-  if (!bind?.correctionQuaternion) throw new Error(`${LAB_STAGE} requires Skyrim Guard weapon bind calibration`);
-  defenderSword = createDebugSword(THREE);
-  mountDebugSword(defender, defenderSword, composeSkyrimWeaponMountCalibration(THREE, DEFAULT_KAYKIT_SWORD_MOUNT, bind));
+  const bootstrap = await bootstrapShieldParryLabAssets({
+    THREE,
+    attacker,
+    defender,
+    labStage: LAB_STAGE,
+  });
+  attackerIdleDuration = bootstrap.attackerIdleDuration;
+  defenderSword = bootstrap.defenderSword;
   enterGuard();
   exchangeState.previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
   ready = true;
@@ -720,37 +712,29 @@ main().catch((error) => {
   window.__G43B5R281_RESULT__ = { stage: LAB_STAGE, pass: false, error: error?.stack || String(error) };
 });
 
-window.__G43B5R281_LAB__ = {
-  startAttack,
-  restartAttack,
-  setMode,
-  combat,
-  attackRuntime,
-  guardMachine,
-  predictivePresentation,
-  parryGate,
-  freeCamera,
-  residualBodyReachRuntime,
-  residualStanceReachRuntime,
+window.__G43B5R281_LAB__ = createShieldParryDebugApi({
+  actions: {
+    startAttack,
+    restartAttack,
+    setMode,
+    refreshDebugStanceProfile,
+    resetDebugStanceDefaults,
+    triggerParryNow,
+    dispatchParryInput,
+    forceOldTwoActorB3,
+  },
+  runtimes: {
+    combat,
+    attackRuntime,
+    guardMachine,
+    predictivePresentation,
+    parryGate,
+    freeCamera,
+    residualBodyReachRuntime,
+    residualStanceReachRuntime,
+    swordGripConstraint,
+  },
   debugMode: DEBUG_MODE,
-  get debugStanceProfile() { return Object.freeze({ ...debugStanceProfile }); },
-  refreshDebugStanceProfile,
-  resetDebugStanceDefaults,
-  swordGripConstraint,
-  triggerParryNow,
-  dispatchParryInput,
-  forceOldTwoActorB3,
-  get directOldB3Diagnostic() { return exchangeState.directOldB3Diagnostic; },
-  get latestPredictiveReport() { return exchangeState.latestPredictiveReport; },
-  get latestShieldLeadMotion() { return exchangeState.latestShieldLeadMotion; },
-  get latestLeadHandoff() { return exchangeState.latestLeadHandoff; },
-  get latestCombatResult() { return exchangeState.latestCombatResult; },
-  get latestParryInput() { return exchangeState.latestParryInput; },
-  get latestParryOpportunity() { return exchangeState.latestParryOpportunity; },
-  get latestParryConfirmation() { return exchangeState.latestParryConfirmation; },
-  get step3AContactTransfer() { return exchangeState.step3AContactTransfer; },
-  get latestGripConstraintReport() { return exchangeState.latestGripConstraintReport; },
-  get latestParryWhiff() { return exchangeState.latestParryWhiff; },
-  get latestInterceptDriveReport() { return exchangeState.latestInterceptDriveReport; },
-  get latestInputSignal() { return exchangeState.latestInputSignal; },
-};
+  getDebugStanceProfile: () => debugStanceProfile,
+  getExchangeState: () => exchangeState,
+});
