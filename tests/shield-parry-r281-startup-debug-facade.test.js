@@ -98,7 +98,7 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
     'forceOldTwoActorB3', 'directOldB3Diagnostic', 'latestPredictiveReport', 'latestShieldLeadMotion',
     'latestLeadHandoff', 'latestCombatResult', 'latestParryInput', 'latestParryOpportunity',
     'latestParryConfirmation', 'step3AContactTransfer', 'latestGripConstraintReport', 'latestParryWhiff',
-    'latestInterceptDriveReport', 'latestInputSignal', 'activeParryInterceptDiagnosis',
+    'latestInterceptDriveReport', 'latestInputSignal',
   ]);
   assert.equal(api.startAttack, noop);
   assert.equal(api.combat, runtimes.combat);
