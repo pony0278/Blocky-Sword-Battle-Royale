@@ -18,9 +18,9 @@ function removeExact(block, label) {
 
 requireCount('step3AOwnsLiveContact()', 4);
 requireCount('defenderDeflectReleaseGate()', 4);
-requireCount('updateDefenderDeflectReleaseGate()', 2);
+requireCount('updateDefenderDeflectReleaseGate()', 3);
 requireCount('releaseLiveContactToOldB3()', 1);
-requireCount('recordVisibleOldB3Sample(', 2);
+requireCount('recordVisibleOldB3Sample(', 3);
 requireCount('requestedOutcome()', 2);
 
 removeExact(`function step3AOwnsLiveContact() {\n  return contactHandoffController.ownsLiveContact();\n}\n\n`, 'step3AOwnsLiveContact');
