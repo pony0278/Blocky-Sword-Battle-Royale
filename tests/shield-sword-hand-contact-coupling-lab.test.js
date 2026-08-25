@@ -35,6 +35,10 @@ const verificationReportSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/verification-report.js', import.meta.url),
   'utf8',
 );
+const directOldB3DiagnosticSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/direct-old-b3-diagnostic.js', import.meta.url),
+  'utf8',
+);
 
 function functionBody(name, nextName) {
   const start = source.indexOf(`function ${name}(`);
@@ -265,9 +269,10 @@ test('Step 3A does not add the live grip constraint to the original Block pre-co
 
 test('Step 1 direct OLD B3 remains independent of Step 3A runtime', () => {
   const directB3 = functionBody('forceOldTwoActorB3', 'startAttack');
-  assert.match(directB3, /publishPostCouplingRecoilStaggerHandoff/);
-  assert.match(directB3, /combat\.update\(0\.021/);
-  assert.doesNotMatch(directB3, /swordGripConstraint\.start/);
+  assert.match(directB3, /directOldB3DiagnosticController\.run/);
+  assert.match(directOldB3DiagnosticSource, /publishPostCouplingRecoilStaggerHandoff/);
+  assert.match(directOldB3DiagnosticSource, /combat\.update\(0\.021/);
+  assert.doesNotMatch(directOldB3DiagnosticSource, /swordGripConstraint\.start/);
 });
 
 test('Step 3A classifies a Parry whiff from measured sweep geometry without changing contact authority', () => {
