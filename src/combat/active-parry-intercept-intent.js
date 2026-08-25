@@ -74,18 +74,19 @@ export function createActiveParryInterceptIntent(overrides = {}) {
       profile.minimumLeadMeters,
       profile.maximumLeadMeters,
     );
-    const correction = vec(mul(leadDirection, leadMeters));
+    const initialCorrection = vec(mul(leadDirection, leadMeters));
+    const targetCenter = vec(add(surfaceCenter, initialCorrection));
 
     active = Object.freeze({
       stage: ACTIVE_PARRY_INTERCEPT_INTENT_STAGE,
       sequence: finite(input.sequence),
       direction,
-      source: 'manual-f-latched-predictive-direction',
+      source: 'manual-f-latched-world-target',
       originCenter: surfaceCenter,
+      targetCenter,
       leadDirection: vec(leadDirection),
       rawRequiredDistanceMeters,
       leadMeters,
-      correction,
       authority: 'bounded-guidance-only-real-swept-contact-still-required',
     });
     lastReport = active;
@@ -95,21 +96,24 @@ export function createActiveParryInterceptIntent(overrides = {}) {
   function plan(input = {}) {
     if (!active || finite(input.sequence, -1) !== active.sequence) return null;
     const surfaceCenter = vec(input.bucklerSurface?.center);
-    const targetCenter = vec(add(surfaceCenter, active.correction));
+    const correction = vec(sub(active.targetCenter, surfaceCenter));
+    const requiredDistance = length(correction);
     lastReport = Object.freeze({
       ...active,
-      targetCenter,
+      currentCenter: surfaceCenter,
+      correction,
+      remainingDistanceMeters: requiredDistance,
       stableAcrossFrames: true,
     });
     return Object.freeze({
       stage: ACTIVE_PARRY_INTERCEPT_INTENT_STAGE,
       mode: 'parry',
       threat: null,
-      reachable: true,
-      requiredDistance: active.leadMeters,
-      appliedDistance: active.leadMeters,
-      correction: active.correction,
-      targetCenter,
+      reachable: requiredDistance <= profile.maximumLeadMeters + 1e-6,
+      requiredDistance,
+      appliedDistance: requiredDistance,
+      correction,
+      targetCenter: active.targetCenter,
       reason: 'latched-active-shield-intercept',
       authority: 'bounded-guidance-only-real-swept-contact-still-required',
     });
