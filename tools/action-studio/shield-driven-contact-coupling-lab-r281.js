@@ -144,7 +144,7 @@ const combat = createTwoActorCombatIntegration({
   },
   sampleFrozenContactPose(interruption) {
     attackerPresentation.sampleFrozenContactPose(interruption, {
-      ownsLiveContact: step3AOwnsLiveContact(),
+      ownsLiveContact: contactHandoffController.ownsLiveContact(),
     });
   },
 });
@@ -369,26 +369,6 @@ function resetExchange() {
   inspectionOverlay.clear();
 }
 
-function step3AOwnsLiveContact() {
-  return contactHandoffController.ownsLiveContact();
-}
-
-function updateDefenderDeflectReleaseGate() {
-  return contactHandoffController.updateDefenderDeflectReleaseGate();
-}
-
-function defenderDeflectReleaseGate() {
-  return contactHandoffController.defenderDeflectReleaseGate();
-}
-
-function releaseLiveContactToOldB3() {
-  return contactHandoffController.releaseLiveContactToOldB3({ selectedDirection });
-}
-
-function recordVisibleOldB3Sample(combatUpdate) {
-  return contactHandoffController.recordVisibleOldB3Sample(combatUpdate);
-}
-
 function triggerParryNow(source = 'button') {
   if (!ready) {
     exchangeState.latestParryInput = Object.freeze({ accepted: false, reason: 'lab-not-ready', source });
@@ -495,7 +475,6 @@ function setMode(mode) {
   }
   document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
 }
-function requestedOutcome() { return selectedMode; }
 function isParryPreContactReviewActive(snapshot = attackRuntime.snapshot) {
   const contactSeconds = snapshot?.action?.runtime?.contactSeconds;
   return selectedMode === 'parry'
@@ -542,7 +521,7 @@ function updateHud(snapshot, combatSnapshot) {
     latestParryConfirmation: exchangeState.latestParryConfirmation,
     latestParryInput: exchangeState.latestParryInput,
     selectedMode,
-    requestedOutcome: requestedOutcome(),
+    requestedOutcome: selectedMode,
     parryReviewActive: isParryPreContactReviewActive(snapshot),
     parryReviewRate: PARRY_REVIEW_RATE,
     parryPromptHeld: Boolean(exchangeState.parryPromptHold),
@@ -551,8 +530,8 @@ function updateHud(snapshot, combatSnapshot) {
     latestReachableInterceptTarget: exchangeState.latestReachableInterceptTarget,
     latestGripConstraintReport: exchangeState.latestGripConstraintReport,
     step3AContactTransfer: exchangeState.step3AContactTransfer,
-    defenderReleaseGate: defenderDeflectReleaseGate(),
-    step3AOwnsLiveContact: step3AOwnsLiveContact(),
+    defenderReleaseGate: contactHandoffController.defenderDeflectReleaseGate(),
+    step3AOwnsLiveContact: contactHandoffController.ownsLiveContact(),
     directOldB3Diagnostic: exchangeState.directOldB3Diagnostic,
     debugMode: DEBUG_MODE,
   });
@@ -568,8 +547,8 @@ function buildReport(combatSnapshot = combat.snapshot) {
     selectedDirection,
     selectedMode,
     parryProfile: parryGate.profile,
-    defenderReleaseGate: defenderDeflectReleaseGate(),
-    ownsLiveContact: step3AOwnsLiveContact(),
+    defenderReleaseGate: contactHandoffController.defenderDeflectReleaseGate(),
+    ownsLiveContact: contactHandoffController.ownsLiveContact(),
     inspectionCameraSnapshot: freeCamera.snapshot(),
     debugMode: DEBUG_MODE,
     debugStanceProfile,
