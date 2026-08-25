@@ -93,6 +93,7 @@ async function diagnoseDirection(direction) {
     const drive = sample.drive;
     if (drive?.activeInterceptPoseAuthority === 'post-guard-post-predictive-absolute-world-offset-last-writer') {
       const intent = drive.activeInterceptIntent || null;
+      const support = drive.residualBodyReach || null;
       samples.push({
         targetCenter: intent?.targetCenter ?? null,
         remaining: intent?.remainingDistanceMeters ?? drive.planRequiredDistanceMeters ?? null,
@@ -100,6 +101,13 @@ async function diagnoseDirection(direction) {
         targetErrorAfter: drive.activeInterceptTargetErrorAfterMeters ?? null,
         primaryCarry: drive.activeInterceptPrimaryCarryMeters ?? null,
         residualCarry: drive.activeInterceptResidualCarryMeters ?? null,
+        supportAuthority: drive.activeInterceptSupportAuthority ?? null,
+        supportActive: support?.active === true,
+        supportOffset: support?.supportOffsetDistance ?? null,
+        supportTargetErrorBefore: support?.targetErrorBeforeMeters ?? null,
+        supportTargetErrorAfter: support?.targetErrorAfterMeters ?? null,
+        supportChestDegrees: support?.appliedDegrees?.chest ?? null,
+        supportSpineDegrees: support?.appliedDegrees?.spine ?? null,
         achieved: drive.trackingAchievedDistanceMeters ?? null,
         correctionDirectionDot: drive.correctionDirectionDot ?? null,
       });
@@ -136,6 +144,10 @@ function summarize(row) {
   const after = finite(row.samples.map((sample) => sample.targetErrorAfter));
   const carry = finite(row.samples.map((sample) => sample.primaryCarry));
   const residual = finite(row.samples.map((sample) => sample.residualCarry));
+  const support = finite(row.samples.map((sample) => sample.supportOffset));
+  const supportAfter = finite(row.samples.map((sample) => sample.supportTargetErrorAfter));
+  const supportChest = finite(row.samples.map((sample) => sample.supportChestDegrees));
+  const supportSpine = finite(row.samples.map((sample) => sample.supportSpineDegrees));
   const remaining = finite(row.samples.map((sample) => sample.remaining));
   const achieved = finite(row.samples.map((sample) => sample.achieved));
   const improvements = row.samples
@@ -157,6 +169,12 @@ function summarize(row) {
     meanPerFrameImprovementCm: avg(improvements) == null ? null : avg(improvements) * 100,
     maxPrimaryCarryCm: carry.length ? Math.max(...carry) * 100 : null,
     maxResidualCarryCm: residual.length ? Math.max(...residual) * 100 : null,
+    maxSupportCarryCm: support.length ? Math.max(...support) * 100 : null,
+    minSupportTargetErrorAfterCm: supportAfter.length ? Math.min(...supportAfter) * 100 : null,
+    maxSupportChestDegrees: supportChest.length ? Math.max(...supportChest) : null,
+    maxSupportSpineDegrees: supportSpine.length ? Math.max(...supportSpine) : null,
+    supportActiveFrames: row.samples.filter((sample) => sample.supportActive).length,
+    supportAuthority: row.samples.find((sample) => sample.supportAuthority)?.supportAuthority ?? null,
     firstRemainingCm: remaining.length ? remaining[0] * 100 : null,
     minRemainingCm: remaining.length ? Math.min(...remaining) * 100 : null,
     maxAchievedCm: achieved.length ? Math.max(...achieved) * 100 : null,
