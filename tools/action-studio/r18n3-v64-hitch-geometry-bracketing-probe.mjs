@@ -4,14 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const browser = process.env.BROWSER;
-if (!browser) throw new Error('R18N.3 v6.4.1 geometry probe requires BROWSER');
+if (!browser) throw new Error('R18N.3 v6.4.2 geometry probe requires BROWSER');
 const debugPort = Number(process.env.R18N3_V641_DEBUG_PORT || 9466);
 const pageUrl = process.env.R18N3_V641_PAGE_URL || 'http://127.0.0.1:4175/tools/action-studio/shield-driven-contact-coupling-lab.html';
 const targetTtc = Number(process.env.R18N3_V641_TTC || 0.110);
-const hitchAtSeconds = Number(process.env.R18N3_V641_HITCH_AT || 0.235);
+const requestedHitchAtSeconds = Number(process.env.R18N3_V641_HITCH_AT || 0.235);
+// Observer sampling happens after the gameplay frame. Arm the diagnostic hitch early enough
+// that the following ~50ms gameplay frame brackets the ~258.6ms real RIGHT contact instead
+// of racing a 235ms threshold that may only be observed after contact has already resolved.
+const hitchAtSeconds = Math.min(requestedHitchAtSeconds, 0.225);
 const hitchMs = Number(process.env.R18N3_V641_HITCH_MS || 55);
 const trialsPerVariant = Number(process.env.R18N3_V641_TRIALS || 4);
-const profileDir = mkdtempSync(join(tmpdir(), 'r18n3-v641-chrome-'));
+const profileDir = mkdtempSync(join(tmpdir(), 'r18n3-v642-chrome-'));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const chrome = spawn(browser, [
@@ -29,7 +33,7 @@ async function pageTarget() {
     } catch {}
     await sleep(100);
   }
-  throw new Error('R18N.3 v6.4.1 could not attach to lab');
+  throw new Error('R18N.3 v6.4.2 could not attach to lab');
 }
 
 const target = await pageTarget();
@@ -193,7 +197,7 @@ async function runTrial(variant, index) {
         && elapsed >= frame.movementStartSeconds) {
         const ttc = frame.contactSeconds - elapsed;
         if (ttc > 0 && ttc <= targetTtc) {
-          const armed = lab.dispatchParryInput(${JSON.stringify(`r18n3-v641-${variant}-${index}`)});
+          const armed = lab.dispatchParryInput(${JSON.stringify(`r18n3-v642-${variant}-${index}`)});
           if (armed?.accepted !== true) return reject(new Error('F rejected'));
           dispatched = { actualTtc: ttc, inputElapsedSeconds: elapsed };
         }
@@ -227,6 +231,7 @@ async function runTrial(variant, index) {
     variant,
     trial: index,
     targetTtc,
+    requestedHitchAtSeconds,
     hitchAtSeconds,
     hitchMs: applyHitch ? hitchMs : 0,
     ...result.dispatched,
@@ -269,8 +274,9 @@ try {
     await sleep(70);
   }
   const data = {
-    stage: 'R18N.3-v6.4.2-hitch-harness-raf-parity',
+    stage: 'R18N.3-v6.4.2-deterministic-hitch-geometry-bracketing',
     targetTtc,
+    requestedHitchAtSeconds,
     hitchAtSeconds,
     hitchMs,
     controls,
