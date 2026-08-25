@@ -61,6 +61,7 @@ async function waitFor(expression, timeoutMs = 20000) {
 
 await cdp('Runtime.enable');
 await waitFor("window.__G43B5R281_LAB__ && document.documentElement.dataset.g43b5r281 !== 'fail'");
+await waitFor("window.__G43B5R281_LAB__.attackRuntime.snapshot?.action && window.__G43B5R281_LAB__.attackRuntime.snapshot.direction === 'right'");
 
 async function diagnoseDirection(direction) {
   const restarted = await evaluate(`window.__G43B5R281_LAB__.restartAttack(${JSON.stringify(direction)})`);
