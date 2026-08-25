@@ -70,10 +70,16 @@ jobs:
       - name: Apply R18N.3 last-writer migration
         run: node tools/action-studio/r18n3-active-intercept-last-writer-migration.mjs
 
+      - name: Apply R18N.3 fixed-target arm closure
+        run: node tools/action-studio/r18n3-fixed-target-arm-closure-migration.mjs
+
       - name: Syntax and last-writer contracts
         run: |
+          node --check src/combat/guard-threat-tracking.js
+          node --check src/combat/guard-residual-body-reach.js
           node --check tools/action-studio/shield-parry-r281/pre-contact-controller.js
           node --check tools/action-studio/r18n3-active-intercept-last-writer-migration.mjs
+          node --check tools/action-studio/r18n3-fixed-target-arm-closure-migration.mjs
           node --check tools/action-studio/r18n3-active-intercept-browser-probe.mjs
           node --check tests/r18n3-active-intercept-last-writer.test.js
           node --test \
@@ -105,6 +111,10 @@ jobs:
           grep -q "maxTrackingSpeedMps: 1.6" src/combat/guard-threat-tracking.js
           grep -q "upperArmMaxDegrees: 14" src/combat/guard-threat-tracking.js
           grep -q "lowerArmMaxDegrees: 18" src/combat/guard-threat-tracking.js
+          grep -q "jointBudgetScale: 0.35" tools/action-studio/shield-parry-r281/pre-contact-controller.js
+          grep -q "maxBodyReachMeters: 0.035" src/combat/guard-residual-body-reach.js
+          grep -q "chestMaxDegrees: 2.4" src/combat/guard-residual-body-reach.js
+          grep -q "spineMaxDegrees: 1.6" src/combat/guard-residual-body-reach.js
           grep -q "bounded-guidance-only-real-swept-contact-still-required" src/combat/active-parry-intercept-intent.js
           grep -q "fineTrackingRuntime.reset();" tools/action-studio/shield-parry-r281/contact-handoff-controller.js
           LINES=$(wc -l < tools/action-studio/shield-driven-contact-coupling-lab-r281.js)
