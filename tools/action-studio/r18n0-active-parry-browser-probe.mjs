@@ -2,17 +2,19 @@ import { spawn } from 'node:child_process';
 
 const browser = process.env.BROWSER;
 if (!browser) throw new Error('R18N.0 probe requires BROWSER');
-const debugPort = Number(process.env.R18N0_DEBUG_PORT || 9223);
+const debugPort = Number(process.env.R18N0_DEBUG_PORT || 9337);
 const pageUrl = process.env.R18N0_PAGE_URL || 'http://127.0.0.1:4174/tools/action-studio/shield-driven-contact-coupling-lab.html';
+const userDataDir = `/tmp/r18n0-chrome-${process.pid}-${Date.now()}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const chrome = spawn(browser, [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--hide-scrollbars',
-  '--remote-allow-origins=*', `--remote-debugging-port=${debugPort}`, '--window-size=1440,1000', pageUrl,
+  '--disable-dev-shm-usage', '--disable-background-networking', '--remote-allow-origins=*',
+  `--user-data-dir=${userDataDir}`, `--remote-debugging-port=${debugPort}`, '--window-size=1440,1000', pageUrl,
 ], { stdio: ['ignore', 'ignore', 'inherit'] });
 
 async function pageTarget() {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
       const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) => response.json());
       const target = targets.find((item) => item.type === 'page' && item.url.includes('shield-driven-contact-coupling-lab.html'));
@@ -55,13 +57,13 @@ async function waitFor(expression, timeoutMs = 20000) {
     if (await evaluate(`Boolean(${expression})`)) return;
     await sleep(20);
   }
-  const snapshot = await evaluate(`window.__G43B5R281_LAB__?.attackRuntime?.snapshot`);
-  throw new Error(`R18N.0 probe timeout waiting for ${expression}; snapshot=${JSON.stringify(snapshot)}`);
+  const state = await evaluate(`({ href: location.href, readyState: document.readyState, status: document.querySelector('#status')?.textContent || null, fail: document.documentElement.dataset.g43b5r281 || null, snapshot: window.__G43B5R281_LAB__?.attackRuntime?.snapshot || null })`);
+  throw new Error(`R18N.0 probe timeout waiting for ${expression}; state=${JSON.stringify(state)}`);
 }
 
 await cdp('Runtime.enable');
-await waitFor("window.__G43B5R281_LAB__ && document.documentElement.dataset.g43b5r281 !== 'fail'");
-await waitFor("window.__G43B5R281_LAB__.attackRuntime.snapshot?.action && window.__G43B5R281_LAB__.attackRuntime.snapshot.direction === 'right'");
+await waitFor("window.__G43B5R281_LAB__ && document.documentElement.dataset.g43b5r281 !== 'fail'", 60000);
+await waitFor("window.__G43B5R281_LAB__.attackRuntime.snapshot?.action && window.__G43B5R281_LAB__.attackRuntime.snapshot.direction === 'right'", 60000);
 
 async function diagnoseDirection(direction) {
   const restarted = await evaluate(`window.__G43B5R281_LAB__.restartAttack(${JSON.stringify(direction)})`);
