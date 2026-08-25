@@ -14,6 +14,10 @@ const contactHandoffSource = await readFile(
   new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),
   'utf8',
 );
+const verificationReportSource = await readFile(
+  new URL('../tools/action-studio/shield-parry-r281/verification-report.js', import.meta.url),
+  'utf8',
+);
 const html = await readFile(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url),
   'utf8',
@@ -138,6 +142,6 @@ test('R18M.1 locks TOP\/RIGHT calibrated arm assistance while LEFT release remai
 test('R18M.1 locks current verification budget so extraction cannot silently expand telemetry', () => {
   assert.match(source, /const MAX_REPORT_DOM_CHARACTERS = 60000;/);
   assert.match(source, /const RECENT_COMPACT_TRACE_FRAMES = 8;/);
-  assert.match(source, /telemetryDetail: 'compact-scalar-frames-only'/);
+  assert.match(verificationReportSource, /telemetryDetail: 'compact-scalar-frames-only'/);
   assert.match(html, /Verification report ≤ 60,000 characters/);
 });
