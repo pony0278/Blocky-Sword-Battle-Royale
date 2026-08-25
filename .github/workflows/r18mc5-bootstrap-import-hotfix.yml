@@ -1,0 +1,95 @@
+name: R18M.C5 Bootstrap Import Hotfix
+
+on:
+  pull_request:
+    branches:
+      - refactor/shield-parry-r18m-maintainability
+    paths:
+      - 'tools/action-studio/shield-parry-r281/lab-bootstrap.js'
+      - 'tests/shield-parry-r281-startup-debug-facade.test.js'
+      - '.github/workflows/r18mc5-bootstrap-import-hotfix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout hotfix
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install candidate dependencies
+        run: npm install
+
+      - name: Verify import resolution contract
+        run: |
+          node --check tools/action-studio/shield-parry-r281/lab-bootstrap.js
+          node --test tests/shield-parry-r281-startup-debug-facade.test.js
+
+      - name: R18M focused regression
+        run: |
+          node --test \
+            tests/shield-driven-contact-coupling-r281-regression.test.js \
+            tests/shield-parry-r281-diagnostics.test.js \
+            tests/shield-parry-r281-ui.test.js \
+            tests/shield-parry-r281-ui-runtime.test.js \
+            tests/shield-parry-r281-exchange-state.test.js \
+            tests/shield-parry-r281-pre-contact-controller.test.js \
+            tests/shield-parry-r281-contact-handoff-controller.test.js \
+            tests/shield-parry-r281-composition-scene.test.js \
+            tests/shield-parry-r281-attacker-presentation.test.js \
+            tests/shield-parry-r281-verification-report.test.js \
+            tests/shield-parry-r281-direct-old-b3-diagnostic.test.js \
+            tests/shield-parry-r281-startup-debug-facade.test.js \
+            tests/old-two-actor-b3-direct-diagnostic.test.js
+
+      - name: Build and current-file checks
+        run: |
+          npm run build:action-studio
+          git diff --exit-code -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html
+
+      - name: Guard Runtime browser surface
+        run: bash tools/action-studio/verify-guard-runtime-surface.sh
+
+      - name: Fresh parent and candidate full-suite failure-title comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARENT=c217c479d69af8844097a88929bfbeb4358cc658
+          git worktree add ../c5-parent "$PARENT"
+          pushd ../c5-parent >/dev/null
+          npm install >/dev/null
+          set +e
+          npm test > ../c5-parent.log 2>&1
+          set -e
+          popd >/dev/null
+
+          set +e
+          npm test > ../c5-candidate.log 2>&1
+          set -e
+
+          node <<'NODE'
+          const fs = require('fs');
+          for (const name of ['parent', 'candidate']) {
+            const text = fs.readFileSync(`../c5-${name}.log`, 'utf8');
+            const titles = [...text.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((m) => m[1].trim()).sort();
+            fs.writeFileSync(`../c5-${name}.failures`, `${titles.join('\n')}${titles.length ? '\n' : ''}`);
+            console.log(`${name}: ${titles.length} failure titles`);
+            for (const title of titles) console.log(`${name.toUpperCase()} FAIL: ${title}`);
+          }
+          NODE
+          test "$(wc -l < ../c5-parent.failures)" -eq 14
+          diff -u ../c5-parent.failures ../c5-candidate.failures
+
+      - name: Hygiene
+        run: |
+          rm -f package-lock.json
+          git diff --check
