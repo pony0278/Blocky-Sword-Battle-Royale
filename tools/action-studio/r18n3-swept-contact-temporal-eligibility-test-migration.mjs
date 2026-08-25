@@ -70,6 +70,7 @@ for (const [needle, owner, label] of [
   ["assert.match(source, /query: 'downRatio'/", "assert.match(stanceDebugSource, /query: 'downRatio'/", 'R18E down ratio ownership'],
   ["assert.match(source, /query: 'kneeBandCm'/", "assert.match(stanceDebugSource, /query: 'kneeBandCm'/", 'R18E knee band ownership'],
   ["assert.match(source, /query: 'armAttemptCm'/", "assert.match(stanceDebugSource, /query: 'armAttemptCm'/", 'R18E arm attempt ownership'],
+  ['assert.match(source, /profile: DEBUG_MODE \\? debugStanceProfile : null/)', 'assert.match(preContactSource, /profile: debugMode \\? debugStanceProfile : null/)', 'R18E stance profile guidance ownership'],
   ['assert.match(source, /DEBUG pred', 'assert.match(diagnosticFormattersSource, /DEBUG pred', 'R18E debug prediction ownership'],
   ['assert.match(source, /anticipatedEligibilityReason/', 'assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/', 'R18E eligibility reason ownership'],
   ['assert.match(source, /pflags', 'assert.match(diagnosticFormattersSource, /pflags', 'R18E prediction flags ownership'],
