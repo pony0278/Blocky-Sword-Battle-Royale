@@ -131,10 +131,50 @@ async function runTrial(index) {
     const targetTtc = ${JSON.stringify(targetTtc)};
     const hitchAt = ${JSON.stringify(hitchAtSeconds)};
     const hitchMs = ${JSON.stringify(hitchMs)};
+    const hitchArmWindowMs = 50;
     const deadline = performance.now() + 3000;
     let dispatched = null;
+    let hitchScheduled = false;
+    let settled = false;
     let lastRuntimeState = null;
+
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    }
+
+    function scheduleHitch(s, elapsed) {
+      const remainingMs = Math.max(0, (hitchAt - elapsed) * 1000);
+      const scheduledAt = performance.now();
+      const targetAt = scheduledAt + remainingMs;
+      hitchScheduled = true;
+      setTimeout(() => {
+        if (settled) return;
+        while (performance.now() < targetAt) {}
+        const before = performance.now();
+        const injectionSnapshot = lab?.attackRuntime?.snapshot;
+        while (performance.now() - before < hitchMs) {}
+        const after = performance.now();
+        settled = true;
+        resolve({
+          dispatched,
+          hitch: {
+            requestedMs: hitchMs,
+            actualMs: after - before,
+            scheduledFromElapsedSeconds: elapsed,
+            scheduledDelayMs: remainingMs,
+            actualStartDelayMs: before - scheduledAt,
+            beforeElapsedSeconds: Number(injectionSnapshot?.elapsedSeconds),
+            phaseAtInjection: injectionSnapshot?.phase ?? null,
+            directionAtInjection: injectionSnapshot?.direction ?? null,
+          },
+        });
+      }, Math.max(0, remainingMs - 1));
+    }
+
     function tick() {
+      if (settled || hitchScheduled) return;
       const s = lab?.attackRuntime?.snapshot;
       const r = s?.action?.runtime;
       lastRuntimeState = s ? {
@@ -147,7 +187,7 @@ async function runTrial(index) {
       } : null;
       if (!s || !r || s.direction !== 'right') {
         if (performance.now() > deadline) {
-          return reject(new Error('RIGHT runtime missing: ' + JSON.stringify(lastRuntimeState)));
+          return fail(new Error('RIGHT runtime missing: ' + JSON.stringify(lastRuntimeState)));
         }
         return requestAnimationFrame(tick);
       }
@@ -155,18 +195,20 @@ async function runTrial(index) {
       const ttc = Number(r.contactSeconds) - elapsed;
       if (!dispatched && elapsed >= Number(r.movementStartSeconds) && ttc > 0 && ttc <= targetTtc) {
         const result = lab.dispatchParryInput(${JSON.stringify(`r18n3-v64-${index}`)});
-        if (result?.accepted !== true) return reject(new Error('F rejected'));
+        if (result?.accepted !== true) return fail(new Error('F rejected'));
         dispatched = { actualTtc: ttc, inputElapsedSeconds: elapsed };
       }
-      if (dispatched && elapsed >= hitchAt && s.phase === 'attack_active') {
-        const before = performance.now();
-        while (performance.now() - before < hitchMs) {}
-        return resolve({
-          dispatched,
-          hitch: { requestedMs: hitchMs, actualMs: performance.now() - before, beforeElapsedSeconds: elapsed },
-        });
+      if (dispatched && s.phase === 'attack_active') {
+        const remainingMs = (hitchAt - elapsed) * 1000;
+        if (remainingMs < 0) {
+          return fail(new Error('hitch bracket missed: ' + JSON.stringify({ hitchAt, elapsed, remainingMs, lastRuntimeState })));
+        }
+        if (remainingMs <= hitchArmWindowMs) {
+          scheduleHitch(s, elapsed);
+          return;
+        }
       }
-      if (performance.now() > deadline) return reject(new Error('hitch scheduling deadline: ' + JSON.stringify(lastRuntimeState)));
+      if (performance.now() > deadline) return fail(new Error('hitch scheduling deadline: ' + JSON.stringify(lastRuntimeState)));
       requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
