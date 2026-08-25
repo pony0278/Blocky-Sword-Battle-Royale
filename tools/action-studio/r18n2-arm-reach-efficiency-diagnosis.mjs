@@ -103,14 +103,17 @@ update('tools/action-studio/shield-parry-r281/pre-contact-controller.js', (sourc
         && Number.isFinite(finalTargetDistanceMeters)
         ? finalTargetDistanceMeters - postPrimaryTargetDistanceMeters
         : null;
-      const primaryRequestedMeters = exchangeState.latestFinePlan?.appliedDistance ?? null;
+      const primaryPlanDistanceMeters = exchangeState.latestFinePlan?.appliedDistance ?? null;
+      // update() reports the actual speed-clamped per-frame offset it attempted. Use that,
+      // not the full fixed-target distance, as the denominator for solver efficiency.
+      const primaryRequestedMeters = magnitude(exchangeState.latestFineTracking?.requestedOffset);
       const primaryAchievedMeters = exchangeState.latestFineTracking?.achievedDistance ?? null;
-      const primaryDisplacementEfficiency = Number.isFinite(primaryRequestedMeters)
-        && primaryRequestedMeters > 1e-9 && Number.isFinite(primaryAchievedMeters)
+      const primaryDisplacementEfficiency = primaryRequestedMeters > 1e-9
+        && Number.isFinite(primaryAchievedMeters)
         ? primaryAchievedMeters / primaryRequestedMeters
         : null;
-      const primaryConvergenceEfficiency = Number.isFinite(primaryRequestedMeters)
-        && primaryRequestedMeters > 1e-9 && Number.isFinite(primaryTargetReductionMeters)
+      const primaryConvergenceEfficiency = primaryRequestedMeters > 1e-9
+        && Number.isFinite(primaryTargetReductionMeters)
         ? primaryTargetReductionMeters / primaryRequestedMeters
         : null;
       const crossFrameRetention = Object.freeze({
@@ -134,6 +137,7 @@ update('tools/action-studio/shield-parry-r281/pre-contact-controller.js', (sourc
         presentationTargetDeltaMeters,
         primaryTargetReductionMeters,
         postPrimaryTargetDeltaMeters,
+        primaryPlanDistanceMeters,
         primaryRequestedMeters,
         primaryAchievedMeters,
         primaryDisplacementEfficiency,
