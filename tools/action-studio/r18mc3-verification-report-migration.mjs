@@ -62,9 +62,12 @@ entry = entry.slice(0, functionStart) + wrapper + entry.slice(mainStart);
 
 if (entry.includes('const report = {\n    stage: LAB_STAGE')) throw new Error('inline report assembly remains in entry');
 requireExactlyOnce(entry, 'buildShieldParryVerificationReport({', 'builder delegation');
-requireExactlyOnce(entry, 'window.__G43B5R281_RESULT__ = report;', 'result publication');
-requireExactlyOnce(entry, 'window.__G43B5R281_PERF__ = publication.perf;', 'perf publication');
-requireExactlyOnce(entry, 'maxCharacters: MAX_REPORT_DOM_CHARACTERS,', '60k serializer budget wiring');
+const migratedFunctionStart = entry.indexOf(functionMarker);
+const migratedMainStart = entry.indexOf(mainMarker, migratedFunctionStart);
+const migratedBuildReport = entry.slice(migratedFunctionStart, migratedMainStart);
+requireExactlyOnce(migratedBuildReport, 'window.__G43B5R281_RESULT__ = report;', 'buildReport result publication');
+requireExactlyOnce(migratedBuildReport, 'window.__G43B5R281_PERF__ = publication.perf;', 'buildReport perf publication');
+requireExactlyOnce(migratedBuildReport, 'maxCharacters: MAX_REPORT_DOM_CHARACTERS,', 'buildReport 60k serializer budget wiring');
 
 fs.writeFileSync(modulePath, moduleSource.replace(/[ \t]+$/gm, ''));
 fs.writeFileSync(entryPath, entry.replace(/[ \t]+$/gm, ''));
