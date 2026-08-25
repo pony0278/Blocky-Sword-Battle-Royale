@@ -64,11 +64,16 @@ test('R18N.1 keeps manual Parry authority in the entry and only latches intent a
   assert.doesNotMatch(exchangeState, /activeParryInterceptIntent|activeInterceptIntent/);
 });
 
-test('R18N.1 makes the F-latched intent the primary shield drive without moving contact authority', () => {
+test('R18N.1 makes the F-latched intent the primary incremental shield drive without moving contact authority', () => {
   assert.match(preContact, /activeInterceptIntent\?\.plan\(\{/);
   assert.match(preContact, /exchangeState\.latestFinePlan = activeIntentPlan \|\|/);
   assert.match(preContact, /drivePlanSource: activeIntentPlan/);
   assert.match(preContact, /preserveShieldArm: Boolean\(activeInterceptIntent\?\.active\)/);
+  const planIndex = preContact.indexOf('const activeIntentPlan = activeInterceptIntent?.plan({');
+  const resetIndex = preContact.indexOf('if (activeIntentPlan) fineTrackingRuntime.reset();');
+  const updateIndex = preContact.indexOf('exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);', resetIndex);
+  assert.ok(planIndex >= 0 && resetIndex > planIndex && updateIndex > resetIndex, 'active intent must clear absolute runtime carry immediately before its persistent-pose tracking step');
+  assert.match(preContact.slice(resetIndex, updateIndex), /if \(activeIntentPlan\) fineTrackingRuntime\.reset\(\);/);
   assert.match(preContact, /function armActiveIntercept\(snapshot\)/);
   assert.match(preContact, /function resetActiveIntercept\(\)/);
   assert.doesNotMatch(preContact, /parryGate\.arm\(/);
