@@ -37,7 +37,13 @@ function migrateAssertionOwner(source, testName, assertionPrefix, newOwner, labe
   const block = source.slice(start, end);
   const oldSource = `assert.match(source, /${assertionPrefix}`;
   const newSource = `assert.match(${newOwner}, /${assertionPrefix}`;
-  const migrated = replaceUnique(block, oldSource, newSource, `${testName}: ${label}`);
+  if (!block.includes(oldSource)) {
+    throw new Error(`R18N.3 v6.4 pre-contact ownership migration could not locate ${testName}: ${label}`);
+  }
+  if (block.indexOf(oldSource) !== block.lastIndexOf(oldSource)) {
+    throw new Error(`R18N.3 v6.4 pre-contact ownership migration expected one ${testName}: ${label}`);
+  }
+  const migrated = block.replace(oldSource, newSource);
   return source.slice(0, start) + migrated + source.slice(end);
 }
 
