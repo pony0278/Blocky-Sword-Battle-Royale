@@ -47,11 +47,11 @@ fs.writeFileSync(bootstrapPath, bootstrapSource);
 fs.writeFileSync(debugApiPath, debugApiSource);
 
 let pkg = fs.readFileSync(packagePath, 'utf8');
-const packageMarker = 'tests/shield-parry-r281-direct-old-b3-diagnostic.test.js tests/old-two-actor-b3-direct-diagnostic.test.js';
+const packageMarker = 'tests/shield-parry-r281-direct-old-b3-diagnostic.test.js tests/shield-sword-hand-contact-coupling.test.js';
 if (!pkg.includes(packageMarker)) throw new Error('package test marker missing');
 pkg = pkg.replace(
   packageMarker,
-  'tests/shield-parry-r281-direct-old-b3-diagnostic.test.js tests/shield-parry-r281-startup-debug-facade.test.js tests/old-two-actor-b3-direct-diagnostic.test.js',
+  'tests/shield-parry-r281-direct-old-b3-diagnostic.test.js tests/shield-parry-r281-startup-debug-facade.test.js tests/shield-sword-hand-contact-coupling.test.js',
 );
 fs.writeFileSync(packagePath, pkg);
 
