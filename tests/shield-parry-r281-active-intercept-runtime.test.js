@@ -104,9 +104,12 @@ test('R18N.1 blends the first Guard-to-Parry shield-arm frames instead of telepo
   assert.ok(angleDegrees(bones['upperarm.l'].quaternion) > firstAngle);
 });
 
-test('R18N.1 lets active intercept tracking exclusively own the shield-arm chain', () => {
-  const shieldArm = ['upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l'];
-  const { bones, character } = fakePresentationCharacter(['spine', 'chest', ...shieldArm]);
+test('R18N.1 lets active intercept tracking own the full shield support chain while unrelated presentation continues', () => {
+  const shieldSupportChain = [
+    'root', 'hips', 'spine', 'chest',
+    'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l',
+  ];
+  const { bones, character } = fakePresentationCharacter([...shieldSupportChain, 'head']);
   const runtime = createPredictiveInterceptParryPresentationRuntime(
     { Quaternion: FakeQuaternion },
     { character, guardOffsets: {} },
@@ -120,11 +123,10 @@ test('R18N.1 lets active intercept tracking exclusively own the shield-arm chain
   });
 
   assert.equal(report.shieldArmOwnership, 'external-active-intercept-tracking');
-  for (const boneId of shieldArm) {
+  for (const boneId of shieldSupportChain) {
     assert.ok(angleDegrees(bones[boneId].quaternion) < 1e-6, `${boneId} was overwritten by presentation`);
   }
-  assert.ok(angleDegrees(bones.spine.quaternion) > 0, 'body presentation should keep advancing');
-  assert.ok(angleDegrees(bones.chest.quaternion) > 0, 'body presentation should keep advancing');
+  assert.ok(angleDegrees(bones.head.quaternion) > 0, 'unrelated presentation should keep advancing');
 });
 
 test('R18N.1 presentation continuity remains presentation-only', async () => {
