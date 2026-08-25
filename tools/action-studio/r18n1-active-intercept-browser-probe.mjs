@@ -121,11 +121,22 @@ async function diagnoseDirection(direction) {
       whiff: window.__G43B5R281_LAB__.latestParryWhiff,
     })`);
     if (sample.drive?.drivePlanSource === 'latched-f-active-intercept-intent') {
-      const report = sample.drive.activeInterceptIntent || null;
+      const drive = sample.drive;
+      const report = drive.activeInterceptIntent || null;
       samples.push({
         targetCenter: report?.targetCenter ?? null,
-        remaining: report?.remainingDistanceMeters ?? sample.drive.planRequiredDistanceMeters ?? null,
-        achieved: sample.drive.trackingAchievedDistanceMeters,
+        remaining: report?.remainingDistanceMeters ?? drive.planRequiredDistanceMeters ?? null,
+        achieved: drive.trackingAchievedDistanceMeters,
+        correctionDirectionDot: drive.correctionDirectionDot ?? null,
+        plannedCorrectionVector: drive.plannedCorrectionVector ?? null,
+        shieldStepVector: drive.shieldStepVector ?? null,
+        shieldStepTranslationMeters: drive.shieldStepTranslationMeters ?? null,
+        residualEdgeReductionMeters: drive.residualEdgeReductionMeters ?? null,
+        residualPlaneReductionMeters: drive.residualPlaneReductionMeters ?? null,
+        bodyEdgeReductionMeters: drive.bodyEdgeReductionMeters ?? null,
+        bodyPlaneReductionMeters: drive.bodyPlaneReductionMeters ?? null,
+        stanceEdgeReductionMeters: drive.stanceEdgeReductionMeters ?? null,
+        stancePlaneReductionMeters: drive.stancePlaneReductionMeters ?? null,
       });
     }
     if (sample.confirmation?.accepted === true || sample.whiff) break;
@@ -145,6 +156,11 @@ async function diagnoseDirection(direction) {
   };
 }
 
+function finiteValues(samples, key) {
+  return samples.map((sample) => Number(sample[key])).filter(Number.isFinite);
+}
+function sum(values) { return values.reduce((total, value) => total + value, 0); }
+
 function metricSummary(row) {
   const distance = (a, b) => Math.hypot(
     (a?.x ?? 0) - (b?.x ?? 0),
@@ -152,8 +168,9 @@ function metricSummary(row) {
     (a?.z ?? 0) - (b?.z ?? 0),
   );
   const targets = row.samples.map((sample) => sample.targetCenter).filter(Boolean);
-  const remaining = row.samples.map((sample) => Number(sample.remaining)).filter(Number.isFinite);
-  const achieved = row.samples.map((sample) => Number(sample.achieved)).filter(Number.isFinite);
+  const remaining = finiteValues(row.samples, 'remaining');
+  const achieved = finiteValues(row.samples, 'achieved');
+  const dots = finiteValues(row.samples, 'correctionDirectionDot');
   const targetDrift = targets.length
     ? Math.max(...targets.map((target) => distance(target, targets[0])))
     : null;
@@ -171,6 +188,14 @@ function metricSummary(row) {
     minRemainingCm: remaining.length ? Math.min(...remaining) * 100 : null,
     maxRemainingCm: remaining.length ? Math.max(...remaining) * 100 : null,
     maxAchievedCm: achieved.length ? Math.max(...achieved) * 100 : null,
+    minCorrectionDirectionDot: dots.length ? Math.min(...dots) : null,
+    maxCorrectionDirectionDot: dots.length ? Math.max(...dots) : null,
+    sumResidualEdgeReductionCm: sum(finiteValues(row.samples, 'residualEdgeReductionMeters')) * 100,
+    sumResidualPlaneReductionCm: sum(finiteValues(row.samples, 'residualPlaneReductionMeters')) * 100,
+    sumBodyEdgeReductionCm: sum(finiteValues(row.samples, 'bodyEdgeReductionMeters')) * 100,
+    sumBodyPlaneReductionCm: sum(finiteValues(row.samples, 'bodyPlaneReductionMeters')) * 100,
+    sumStanceEdgeReductionCm: sum(finiteValues(row.samples, 'stanceEdgeReductionMeters')) * 100,
+    sumStancePlaneReductionCm: sum(finiteValues(row.samples, 'stancePlaneReductionMeters')) * 100,
     confirmation: row.final?.confirmation?.accepted === true,
     whiff: Boolean(row.final?.whiff),
     samples: remaining.length,
