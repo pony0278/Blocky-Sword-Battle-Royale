@@ -53,12 +53,11 @@ if (assembly.includes('window.') || assembly.includes('document.')) throw new Er
 
 const moduleSource = `// R18M.C3 — read-only verification report assembly.\n// This module receives snapshots/context and never advances combat, mutates exchange state, or publishes DOM/window globals.\n\nimport {\n  compactInterceptDriveTelemetry,\n  compactPredictiveAnalysis,\n  compactParryGateAttempt,\n  compactReachableInterceptTarget,\n  compactLiveContactConstraint,\n  compactThreatSelection,\n} from './diagnostic-telemetry.js';\nimport { describeContactGeometry } from './diagnostic-formatters.js';\n\nexport function buildShieldParryVerificationReport(context) {\n  const {\n    combatSnapshot,\n    exchangeState,\n    labStage,\n    recoilStage,\n    ready,\n    selectedDirection,\n    selectedMode,\n    parryProfile,\n    defenderReleaseGate,\n    ownsLiveContact,\n    inspectionCameraSnapshot,\n    debugMode,\n    debugStanceProfile,\n    recentCompactTraceFrames,\n    liveContactPhaseLatch,\n  } = context;\n${assembly}\n  return report;\n}\n`;
 
-const builderImport = "import { buildShieldParryVerificationReport } from './shield-parry-r281/verification-report.js';";
-entry = entry.replace(importAnchor, `${importAnchor}\n${builderImport}`);
-
 const wrapper = `function buildReport(combatSnapshot = combat.snapshot) {\n  const report = buildShieldParryVerificationReport({\n    combatSnapshot,\n    exchangeState,\n    labStage: LAB_STAGE,\n    recoilStage: RECOIL_STAGE,\n    ready,\n    selectedDirection,\n    selectedMode,\n    parryProfile: parryGate.profile,\n    defenderReleaseGate: defenderDeflectReleaseGate(),\n    ownsLiveContact: step3AOwnsLiveContact(),\n    inspectionCameraSnapshot: freeCamera.snapshot(),\n    debugMode: DEBUG_MODE,\n    debugStanceProfile,\n    recentCompactTraceFrames: RECENT_COMPACT_TRACE_FRAMES,\n    liveContactPhaseLatch: TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT,\n  });\n${publicationTail}`;
 
 entry = entry.slice(0, functionStart) + wrapper + entry.slice(mainStart);
+const builderImport = "import { buildShieldParryVerificationReport } from './shield-parry-r281/verification-report.js';";
+entry = entry.replace(importAnchor, `${importAnchor}\n${builderImport}`);
 
 if (entry.includes('const report = {\n    stage: LAB_STAGE')) throw new Error('inline report assembly remains in entry');
 requireExactlyOnce(entry, 'buildShieldParryVerificationReport({', 'builder delegation');
