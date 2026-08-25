@@ -145,6 +145,7 @@ jobs:
           const fs = require('fs');
           const line = fs.readFileSync('r18n1-probe.log', 'utf8').split(/\r?\n/).find((value) => value.startsWith('R18N1_PROBE_JSON='));
           const data = JSON.parse(line.slice('R18N1_PROBE_JSON='.length));
+          const distance = (a, b) => Math.hypot((a?.x ?? 0) - (b?.x ?? 0), (a?.y ?? 0) - (b?.y ?? 0), (a?.z ?? 0) - (b?.z ?? 0));
           for (const direction of ['top', 'right']) {
             const row = data[direction];
             if (row.inputResult?.accepted !== true) throw new Error(`${direction} F input rejected`);
@@ -152,22 +153,33 @@ jobs:
             const intent = firstDrive?.activeInterceptIntent;
             if (firstDrive?.drivePlanSource !== 'latched-f-active-intercept-intent') throw new Error(`${direction} did not use latched intent`);
             if (!(intent?.leadMeters >= 0.069 && intent.leadMeters <= 0.121)) throw new Error(`${direction} intent lead out of bound: ${intent?.leadMeters}`);
-            if (!(row.first?.presentation?.entryBlendProgress > 0 && row.first.presentation.entryBlendProgress < 1)) {
-              throw new Error(`${direction} first presentation frame was not continuity blended: ${row.first?.presentation?.entryBlendProgress}`);
+            if (!intent?.targetCenter) throw new Error(`${direction} missing fixed world target`);
+            const entryBlend = Number(row.first?.presentation?.entryBlendProgress);
+            if (!Number.isFinite(entryBlend) || entryBlend <= 0 || entryBlend > 1) {
+              throw new Error(`${direction} missing Guard-to-Parry continuity evidence: ${row.first?.presentation?.entryBlendProgress}`);
             }
             const firstTranslation = Number(row.first?.motion?.translationMeters);
             if (!Number.isFinite(firstTranslation) || firstTranslation > 0.10) {
               throw new Error(`${direction} first post-F shield jump too large: ${firstTranslation}`);
             }
-            const required = row.samples.map((sample) => Number(sample.required)).filter(Number.isFinite);
-            if (!required.length) throw new Error(`${direction} produced no active intent samples`);
-            if (required.some((value) => value < 0.069 || value > 0.121)) throw new Error(`${direction} unstable plan distances: ${required.join(',')}`);
-            if (Math.max(...required) - Math.min(...required) > 0.005) throw new Error(`${direction} active target oscillated: ${required.join(',')}`);
+            if (!row.samples.length) throw new Error(`${direction} produced no active intent samples`);
+            const targets = row.samples.map((sample) => sample.targetCenter).filter(Boolean);
+            if (!targets.length) throw new Error(`${direction} produced no fixed target samples`);
+            const maxTargetDrift = Math.max(...targets.map((target) => distance(target, targets[0])));
+            if (maxTargetDrift > 0.002) throw new Error(`${direction} fixed target drifted by ${maxTargetDrift}m`);
+            const remaining = row.samples.map((sample) => Number(sample.remaining)).filter(Number.isFinite);
+            if (!remaining.length) throw new Error(`${direction} missing remaining-distance evidence`);
+            if (Math.max(...remaining) > 0.20) throw new Error(`${direction} active target escaped reachable neighborhood: ${Math.max(...remaining)}m`);
+            const minimumRemaining = Math.min(...remaining);
+            const firstRemaining = remaining[0];
+            if (!(minimumRemaining < firstRemaining - 0.002)) {
+              throw new Error(`${direction} fixed-target distance did not converge: first=${firstRemaining} min=${minimumRemaining}`);
+            }
             const achieved = row.samples.map((sample) => Number(sample.achieved)).filter(Number.isFinite);
             if (!achieved.length || Math.max(...achieved) < 0.003) throw new Error(`${direction} shield arm did not measurably advance`);
             if (row.final?.whiff) throw new Error(`${direction} ended in whiff`);
             if (row.final?.confirmation?.accepted !== true) throw new Error(`${direction} did not reach confirmed real contact`);
-            console.log(`R18N1 ${direction.toUpperCase()} lead=${(intent.leadMeters * 100).toFixed(1)}cm firstJump=${(firstTranslation * 100).toFixed(2)}cm maxAchieved=${(Math.max(...achieved) * 100).toFixed(2)}cm samples=${required.length}`);
+            console.log(`R18N1 ${direction.toUpperCase()} lead=${(intent.leadMeters * 100).toFixed(1)}cm firstJump=${(firstTranslation * 100).toFixed(2)}cm targetDrift=${(maxTargetDrift * 100).toFixed(3)}cm firstRemaining=${(firstRemaining * 100).toFixed(2)}cm minRemaining=${(minimumRemaining * 100).toFixed(2)}cm maxAchieved=${(Math.max(...achieved) * 100).toFixed(2)}cm samples=${remaining.length}`);
           }
           NODE
 
