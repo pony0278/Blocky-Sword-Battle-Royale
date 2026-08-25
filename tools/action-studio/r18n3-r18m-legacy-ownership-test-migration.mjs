@@ -37,5 +37,15 @@ source = replaceExact(
   'Step 3A bounded arm hierarchy ownership contract',
 );
 
+const oldWhiffDiagnostic = `test('Step 3A classifies a Parry whiff from measured sweep geometry without changing contact authority', () => {\n  assert.match(html, /outside shield edge \\/ missed shield plane \\/ outside active window/);\n  assert.match(html, /final plane\\/edge gap · persistent arm tracking/);\n  assert.match(source, /buildParryWhiffDiagnostic/);\n  assert.match(source, /function recordWhiffProbe/);\n  assert.match(source, /diagnostics\\?\\.closestApproach/);\n  assert.match(source, /CONTACT_OUTSIDE_ACTIVE_WINDOW: 'CONTACT OUTSIDE ACTIVE WINDOW'/);\n  assert.match(source, /OUTSIDE_SHIELD_EDGE: 'OUTSIDE SHIELD EDGE'/);\n  assert.match(source, /MISSED_SHIELD_PLANE: 'MISSED SHIELD PLANE'/);\n  assert.match(source, /authority: 'presentation-diagnostic-only-no-combat-authority'/);\n  assert.match(source, /if \\(!latestContact\\.contact\\) return/);\n});`;
+const newWhiffDiagnostic = `test('Step 3A classifies a Parry whiff from measured sweep geometry without changing contact authority', () => {\n  assert.match(html, /outside shield edge \\/ missed shield plane \\/ outside active window/);\n  assert.match(html, /final plane\\/edge gap · persistent arm tracking/);\n  assert.match(source, /buildParryWhiffDiagnostic/);\n  assert.match(preContactSource, /function recordWhiffProbe/);\n  assert.match(preContactSource, /probe\\.diagnostics\\?\\.closestApproach/);\n  assert.match(diagnosticFormattersSource, /CONTACT_OUTSIDE_ACTIVE_WINDOW: 'CONTACT OUTSIDE ACTIVE WINDOW'/);\n  assert.match(diagnosticFormattersSource, /OUTSIDE_SHIELD_EDGE: 'OUTSIDE SHIELD EDGE'/);\n  assert.match(diagnosticFormattersSource, /MISSED_SHIELD_PLANE: 'MISSED SHIELD PLANE'/);\n  assert.match(verificationReportSource, /authority: 'presentation-diagnostic-only-no-combat-authority'/);\n  assert.match(contactHandoffSource, /if \\(!exchangeState\\.latestContact\\.contact\\) return/);\n  assert.doesNotMatch(preContactSource, /parryGate\\.confirm|combat\\.resolveContact/);\n});`;
+
+source = replaceExact(
+  source,
+  oldWhiffDiagnostic,
+  newWhiffDiagnostic,
+  'Parry whiff diagnostic ownership and no-authority contract',
+);
+
 writeFileSync(path, source);
 console.log('R18N.3 v6.4 legacy R18M ownership contracts migrated.');
