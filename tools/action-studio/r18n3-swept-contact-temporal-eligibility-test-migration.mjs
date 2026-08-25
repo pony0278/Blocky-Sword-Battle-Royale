@@ -5,6 +5,9 @@ function migrateExact(path, oldSource, newSource, label) {
   if (!source.includes(oldSource)) {
     throw new Error(`R18N.3 v6.4 could not locate ${label}`);
   }
+  if (source.indexOf(oldSource) !== source.lastIndexOf(oldSource)) {
+    throw new Error(`R18N.3 v6.4 expected one ${label}`);
+  }
   if (source.includes(newSource)) {
     throw new Error(`R18N.3 v6.4 ${label} already migrated`);
   }
@@ -55,14 +58,26 @@ migrateExact(
   'Step 3A live contact inspection ownership contract',
 );
 
-const oldR18EDebugOwnership = `  assert.match(source, /rawQueryValue == null \\|\\| rawQueryValue\\.trim\\(\\) === ''/);\n  assert.match(source, /\\? Number\\.NaN/);\n  assert.match(source, /query: 'leadMs'/);\n  assert.match(source, /query: 'crouchCm'/);\n  assert.match(source, /query: 'crouchSpeed'/);\n  assert.match(source, /query: 'edgeCm'/);\n  assert.match(source, /query: 'planeCm'/);\n  assert.match(source, /query: 'lowGapCm'/);\n  assert.match(source, /query: 'downRatio'/);\n  assert.match(source, /query: 'kneeBandCm'/);\n  assert.match(source, /query: 'armAttemptCm'/);\n  assert.match(source, /profile: DEBUG_MODE \\? debugStanceProfile : null/);\n  assert.match(source, /DEBUG pred \\${predictedDecision}/);\n  assert.match(source, /anticipatedEligibilityReason/);\n  assert.match(source, /pflags \\${predictedFlags}/);\n  assert.match(source, /latestThreatSelection/);\n  assert.match(source, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);\n  assert.match(source, /if \\(!latestContact\\.contact\\) return/);`;
-const newR18EDebugOwnership = `  assert.match(stanceDebugSource, /rawQueryValue == null \\|\\| rawQueryValue\\.trim\\(\\) === ''/);\n  assert.match(stanceDebugSource, /\\? Number\\.NaN/);\n  assert.match(stanceDebugSource, /query: 'leadMs'/);\n  assert.match(stanceDebugSource, /query: 'crouchCm'/);\n  assert.match(stanceDebugSource, /query: 'crouchSpeed'/);\n  assert.match(stanceDebugSource, /query: 'edgeCm'/);\n  assert.match(stanceDebugSource, /query: 'planeCm'/);\n  assert.match(stanceDebugSource, /query: 'lowGapCm'/);\n  assert.match(stanceDebugSource, /query: 'downRatio'/);\n  assert.match(stanceDebugSource, /query: 'kneeBandCm'/);\n  assert.match(stanceDebugSource, /query: 'armAttemptCm'/);\n  assert.match(source, /profile: DEBUG_MODE \\? debugStanceProfile : null/);\n  assert.match(diagnosticFormattersSource, /DEBUG pred \\${predictedDecision}/);\n  assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/);\n  assert.match(diagnosticFormattersSource, /pflags \\${predictedFlags}/);\n  assert.match(verificationReportSource, /latestThreatSelection/);\n  assert.match(verificationReportSource, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);\n  assert.match(contactHandoffSource, /if \\(!exchangeState\\.latestContact\\.contact\\) return/);`;
-
-migrateExact(
-  step3ATestPath,
-  oldR18EDebugOwnership,
-  newR18EDebugOwnership,
-  'R18E extracted debug ownership contract',
-);
+for (const [needle, owner, label] of [
+  ['assert.match(source, /rawQueryValue', 'assert.match(stanceDebugSource, /rawQueryValue', 'R18E raw query parser ownership'],
+  ['assert.match(source, /\\? Number\\.NaN/', 'assert.match(stanceDebugSource, /\\? Number\\.NaN/', 'R18E NaN fallback ownership'],
+  ["assert.match(source, /query: 'leadMs'/", "assert.match(stanceDebugSource, /query: 'leadMs'/", 'R18E lead query ownership'],
+  ["assert.match(source, /query: 'crouchCm'/", "assert.match(stanceDebugSource, /query: 'crouchCm'/", 'R18E crouch query ownership'],
+  ["assert.match(source, /query: 'crouchSpeed'/", "assert.match(stanceDebugSource, /query: 'crouchSpeed'/", 'R18E crouch speed ownership'],
+  ["assert.match(source, /query: 'edgeCm'/", "assert.match(stanceDebugSource, /query: 'edgeCm'/", 'R18E edge query ownership'],
+  ["assert.match(source, /query: 'planeCm'/", "assert.match(stanceDebugSource, /query: 'planeCm'/", 'R18E plane query ownership'],
+  ["assert.match(source, /query: 'lowGapCm'/", "assert.match(stanceDebugSource, /query: 'lowGapCm'/", 'R18E low gap ownership'],
+  ["assert.match(source, /query: 'downRatio'/", "assert.match(stanceDebugSource, /query: 'downRatio'/", 'R18E down ratio ownership'],
+  ["assert.match(source, /query: 'kneeBandCm'/", "assert.match(stanceDebugSource, /query: 'kneeBandCm'/", 'R18E knee band ownership'],
+  ["assert.match(source, /query: 'armAttemptCm'/", "assert.match(stanceDebugSource, /query: 'armAttemptCm'/", 'R18E arm attempt ownership'],
+  ['assert.match(source, /DEBUG pred', 'assert.match(diagnosticFormattersSource, /DEBUG pred', 'R18E debug prediction ownership'],
+  ['assert.match(source, /anticipatedEligibilityReason/', 'assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/', 'R18E eligibility reason ownership'],
+  ['assert.match(source, /pflags', 'assert.match(diagnosticFormattersSource, /pflags', 'R18E prediction flags ownership'],
+  ['assert.match(source, /latestThreatSelection/', 'assert.match(verificationReportSource, /latestThreatSelection/', 'R18E threat report ownership'],
+  ['assert.match(source, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/', 'assert.match(verificationReportSource, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/', 'R18E debug authority report ownership'],
+  ['assert.match(source, /if \\(!latestContact\\.contact\\) return/', 'assert.match(contactHandoffSource, /if \\(!exchangeState\\.latestContact\\.contact\\) return/', 'R18E real-contact reject ownership'],
+]) {
+  migrateExact(step3ATestPath, needle, owner, label);
+}
 
 console.log('R18N.3 v6.4 contact authority source contracts migrated.');
