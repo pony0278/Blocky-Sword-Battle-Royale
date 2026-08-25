@@ -35,12 +35,28 @@ test('R18N.3 fixed-target support chain follows the same F-latched world target'
   assert.match(bodyReach, /feetModified: false/);
 });
 
+test('R18N.3 closes the fixed target after support and stance without mutating persistent carry', () => {
+  assert.match(tracking, /function refineWorldTarget\(targetInput = \{\}, refinementOptions = \{\}\)/);
+  assert.match(tracking, /mode: 'active-intercept-world-target-closure'/);
+  assert.match(tracking, /persistentCarryModified: false/);
+  assert.match(tracking, /fixed-world-target-arm-closure-no-persistent-carry-no-contact-authority/);
+  const stanceIndex = preContact.indexOf('const residualStanceReach = residualStanceReachRuntime.update({');
+  const closureIndex = preContact.indexOf('fineTrackingRuntime.refineWorldTarget(', stanceIndex);
+  const finalUpdateIndex = preContact.indexOf('defender.update(0, camera);', closureIndex);
+  assert.ok(stanceIndex >= 0 && closureIndex > stanceIndex && finalUpdateIndex > closureIndex,
+    'fixed-target arm closure must be the final bone solver after support/stance and before final defender geometry update');
+  assert.match(preContact.slice(closureIndex, finalUpdateIndex), /jointBudgetScale: 0\.35/);
+  assert.match(preContact.slice(closureIndex, finalUpdateIndex), /iterations: 2/);
+  assert.match(preContact, /activeInterceptArmClosure/);
+});
+
 test('R18N.3 publishes world-target before/after evidence without contact authority', () => {
   assert.match(preContact, /activeInterceptTargetErrorBeforeMeters/);
   assert.match(preContact, /activeInterceptTargetErrorAfterMeters/);
   assert.match(preContact, /activeInterceptPrimaryCarryMeters/);
   assert.match(preContact, /activeInterceptResidualCarryMeters/);
   assert.match(preContact, /activeInterceptSupportAuthority/);
+  assert.match(preContact, /activeInterceptArmClosure/);
   assert.doesNotMatch(preContact, /parryGate\.confirm\(/);
   assert.doesNotMatch(preContact, /combat\.resolveContact\(/);
   assert.doesNotMatch(preContact, /probeSweptSwordBucklerContact\(/);
@@ -64,4 +80,5 @@ test('R18N.3 does not promote the fixed target into contact authority', () => {
   assert.match(intent, /reason: 'latched-active-shield-intercept'/);
   assert.doesNotMatch(intent, /parryGate\.confirm|probeSweptSwordBucklerContact|combat\.resolveContact/);
   assert.doesNotMatch(bodyReach, /parryGate\.confirm|probeSweptSwordBucklerContact|combat\.resolveContact/);
+  assert.doesNotMatch(tracking, /parryGate\.confirm|probeSweptSwordBucklerContact|combat\.resolveContact/);
 });
