@@ -36,7 +36,7 @@ migrateExact(
 
 const step3ATestPath = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
 const oldStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
-const newStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst labUiSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url),\n  'utf8',\n);\nconst diagnosticFormattersSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/diagnostic-formatters.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
+const newStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst labUiSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url),\n  'utf8',\n);\nconst diagnosticFormattersSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/diagnostic-formatters.js', import.meta.url),\n  'utf8',\n);\nconst stanceDebugSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/stance-debug-controls.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
 
 migrateExact(
   step3ATestPath,
@@ -53,6 +53,16 @@ migrateExact(
   oldStep3AInspection,
   newStep3AInspection,
   'Step 3A live contact inspection ownership contract',
+);
+
+const oldR18EDebugOwnership = `  assert.match(source, /rawQueryValue == null \\|\\| rawQueryValue\\.trim\\(\\) === ''/);\n  assert.match(source, /\\? Number\\.NaN/);\n  assert.match(source, /query: 'leadMs'/);\n  assert.match(source, /query: 'crouchCm'/);\n  assert.match(source, /query: 'crouchSpeed'/);\n  assert.match(source, /query: 'edgeCm'/);\n  assert.match(source, /query: 'planeCm'/);\n  assert.match(source, /query: 'lowGapCm'/);\n  assert.match(source, /query: 'downRatio'/);\n  assert.match(source, /query: 'kneeBandCm'/);\n  assert.match(source, /query: 'armAttemptCm'/);\n  assert.match(source, /profile: DEBUG_MODE \\? debugStanceProfile : null/);\n  assert.match(source, /DEBUG pred \\${predictedDecision}/);\n  assert.match(source, /anticipatedEligibilityReason/);\n  assert.match(source, /pflags \\${predictedFlags}/);\n  assert.match(source, /latestThreatSelection/);\n  assert.match(source, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);\n  assert.match(source, /if \\(!latestContact\\.contact\\) return/);`;
+const newR18EDebugOwnership = `  assert.match(stanceDebugSource, /rawQueryValue == null \\|\\| rawQueryValue\\.trim\\(\\) === ''/);\n  assert.match(stanceDebugSource, /\\? Number\\.NaN/);\n  assert.match(stanceDebugSource, /query: 'leadMs'/);\n  assert.match(stanceDebugSource, /query: 'crouchCm'/);\n  assert.match(stanceDebugSource, /query: 'crouchSpeed'/);\n  assert.match(stanceDebugSource, /query: 'edgeCm'/);\n  assert.match(stanceDebugSource, /query: 'planeCm'/);\n  assert.match(stanceDebugSource, /query: 'lowGapCm'/);\n  assert.match(stanceDebugSource, /query: 'downRatio'/);\n  assert.match(stanceDebugSource, /query: 'kneeBandCm'/);\n  assert.match(stanceDebugSource, /query: 'armAttemptCm'/);\n  assert.match(source, /profile: DEBUG_MODE \\? debugStanceProfile : null/);\n  assert.match(diagnosticFormattersSource, /DEBUG pred \\${predictedDecision}/);\n  assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/);\n  assert.match(diagnosticFormattersSource, /pflags \\${predictedFlags}/);\n  assert.match(verificationReportSource, /latestThreatSelection/);\n  assert.match(verificationReportSource, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);\n  assert.match(contactHandoffSource, /if \\(!exchangeState\\.latestContact\\.contact\\) return/);`;
+
+migrateExact(
+  step3ATestPath,
+  oldR18EDebugOwnership,
+  newR18EDebugOwnership,
+  'R18E extracted debug ownership contract',
 );
 
 console.log('R18N.3 v6.4 contact authority source contracts migrated.');
