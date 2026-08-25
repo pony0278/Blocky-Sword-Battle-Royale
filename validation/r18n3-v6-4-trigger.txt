@@ -1,2 +1,2 @@
 R18N.3 v6.4 validation trigger — do not merge.
-Evidence capture rerun: stale Parry input + cue source ownership contracts repaired.
+Evidence capture rerun: stale UI ownership contracts repaired; R18M.5 swept-contact order contract migrated to temporal eligibility chain.
