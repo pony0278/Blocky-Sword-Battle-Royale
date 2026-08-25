@@ -17,10 +17,10 @@ function removeExact(block, label) {
 }
 
 requireCount('step3AOwnsLiveContact()', 4);
-requireCount('defenderDeflectReleaseGate()', 3);
-requireCount('updateDefenderDeflectReleaseGate()', 1);
+requireCount('defenderDeflectReleaseGate()', 4);
+requireCount('updateDefenderDeflectReleaseGate()', 2);
 requireCount('releaseLiveContactToOldB3()', 1);
-requireCount('recordVisibleOldB3Sample(', 1);
+requireCount('recordVisibleOldB3Sample(', 2);
 requireCount('requestedOutcome()', 2);
 
 removeExact(`function step3AOwnsLiveContact() {\n  return contactHandoffController.ownsLiveContact();\n}\n\n`, 'step3AOwnsLiveContact');
