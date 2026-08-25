@@ -39,7 +39,7 @@ migrateExact(
 
 const step3ATestPath = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
 const oldStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
-const newStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst labUiSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url),\n  'utf8',\n);\nconst diagnosticFormattersSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/diagnostic-formatters.js', import.meta.url),\n  'utf8',\n);\nconst stanceDebugSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/stance-debug-controls.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
+const newStep3AImports = `const contactHandoffSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),\n  'utf8',\n);\nconst labUiSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url),\n  'utf8',\n);\nconst diagnosticFormattersSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/diagnostic-formatters.js', import.meta.url),\n  'utf8',\n);\nconst stanceDebugSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/stance-debug-controls.js', import.meta.url),\n  'utf8',\n);\nconst inspectionOverlaySource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/inspection-overlay.js', import.meta.url),\n  'utf8',\n);\nconst postContactOwnershipSource = \`${'${source}'}\\n${'${contactHandoffSource}'}\`;`;
 
 migrateExact(
   step3ATestPath,
@@ -74,6 +74,10 @@ for (const [needle, owner, label] of [
   ['assert.match(source, /DEBUG pred', 'assert.match(diagnosticFormattersSource, /DEBUG pred', 'R18E debug prediction ownership'],
   ['assert.match(source, /anticipatedEligibilityReason/', 'assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/', 'R18E eligibility reason ownership'],
   ['assert.match(source, /pflags', 'assert.match(diagnosticFormattersSource, /pflags', 'R18E prediction flags ownership'],
+  ['assert.match(source, /originalAttackAxisLine/)', 'assert.match(inspectionOverlaySource, /originalAttackAxisLine/)', 'Step 3A original attack-axis overlay ownership'],
+  ['assert.match(source, /currentSwordAxisLine/)', 'assert.match(inspectionOverlaySource, /currentSwordAxisLine/)', 'Step 3A current sword-axis overlay ownership'],
+  ['assert.match(source, /currentWristGripLine/)', 'assert.match(inspectionOverlaySource, /currentWristGripLine/)', 'Step 3A wrist-grip overlay ownership'],
+  ['assert.match(source, /LINE CLEAR \\$\\{lineGate\\(lineClearance\\.pass\\)\\}/)', 'assert.match(labUiSource, /LINE CLEAR \\$\\{lineGate\\(lineClearance\\.pass\\)\\}/)', 'Step 3A line-clearance HUD ownership'],
 ]) {
   migrateExact(step3ATestPath, needle, owner, label);
 }
