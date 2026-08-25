@@ -58,12 +58,14 @@ jobs:
           sed -i 's/[[:space:]]\+$//' tools/action-studio/shield-parry-r281/verification-report.js
           sed -i 's/[[:space:]]\+$//' tools/action-studio/shield-driven-contact-coupling-lab-r281.js
           sed -i 's/[[:space:]]\+$//' tests/shield-parry-r281-verification-report.test.js
+          sed -i 's/[[:space:]]\+$//' tests/shield-driven-contact-coupling-r281-regression.test.js
 
       - name: Syntax and C3 direct contracts
         run: |
           node --check tools/action-studio/shield-parry-r281/verification-report.js
           node --check tools/action-studio/shield-driven-contact-coupling-lab-r281.js
           node --check tests/shield-parry-r281-verification-report.test.js
+          node --check tests/shield-driven-contact-coupling-r281-regression.test.js
           node --test tests/shield-parry-r281-verification-report.test.js
 
       - name: R18M focused regression contracts
@@ -116,7 +118,7 @@ jobs:
           rm -f c3-baseline.log c3-candidate.log c3-baseline.failures c3-candidate.failures package-lock.json
           rm -f .github/workflows/r18mc3-verification-report.yml
           rm -f tools/action-studio/r18mc3-verification-report-migration.mjs
-          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/verification-report\.js|tests/shield-parry-r281-verification-report\.test\.js|\.github/workflows/r18mc3-verification-report\.yml|tools/action-studio/r18mc3-verification-report-migration\.mjs)$'
+          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-driven-contact-coupling-lab-r281\.js|tools/action-studio/shield-parry-r281/verification-report\.js|tests/shield-parry-r281-verification-report\.test\.js|tests/shield-driven-contact-coupling-r281-regression\.test\.js|\.github/workflows/r18mc3-verification-report\.yml|tools/action-studio/r18mc3-verification-report-migration\.mjs)$'
           git status --short
           UNEXPECTED=$(git status --short | grep -Ev "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
@@ -135,6 +137,7 @@ jobs:
             tools/action-studio/shield-driven-contact-coupling-lab-r281.js \
             tools/action-studio/shield-parry-r281/verification-report.js \
             tests/shield-parry-r281-verification-report.test.js \
+            tests/shield-driven-contact-coupling-r281-regression.test.js \
             .github/workflows/r18mc3-verification-report.yml \
             tools/action-studio/r18mc3-verification-report-migration.mjs
           git diff --cached --check
