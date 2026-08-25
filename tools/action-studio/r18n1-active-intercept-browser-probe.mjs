@@ -74,6 +74,28 @@ await cdp('Runtime.enable');
 await waitFor("window.__G43B5R281_LAB__ && document.documentElement.dataset.g43b5r281 !== 'fail'");
 await waitFor("window.__G43B5R281_LAB__.attackRuntime.snapshot?.action && window.__G43B5R281_LAB__.attackRuntime.snapshot.direction === 'right'");
 
+function compactFirst(first) {
+  const intent = first?.drive?.activeInterceptIntent || null;
+  return {
+    drive: {
+      drivePlanSource: first?.drive?.drivePlanSource ?? null,
+      activeInterceptIntent: intent ? {
+        leadMeters: intent.leadMeters ?? null,
+        targetCenter: intent.targetCenter ?? null,
+      } : null,
+    },
+    motion: { translationMeters: first?.motion?.translationMeters ?? null },
+    presentation: { entryBlendProgress: first?.presentation?.entryBlendProgress ?? null },
+  };
+}
+
+function compactFinal(final) {
+  return {
+    confirmation: final?.confirmation ? { accepted: final.confirmation.accepted === true } : null,
+    whiff: Boolean(final?.whiff),
+  };
+}
+
 async function diagnoseDirection(direction) {
   const restarted = await evaluate(`window.__G43B5R281_LAB__.restartAttack(${JSON.stringify(direction)})`);
   if (restarted !== true) throw new Error(`R18N.1 could not restart ${direction} attack`);
@@ -84,7 +106,6 @@ async function diagnoseDirection(direction) {
   const first = await evaluate(`({
     drive: window.__G43B5R281_LAB__.latestInterceptDriveReport,
     motion: window.__G43B5R281_LAB__.latestShieldLeadMotion,
-    diagnosis: window.__G43B5R281_LAB__.activeParryInterceptDiagnosis,
     presentation: window.__G43B5R281_LAB__.predictivePresentation?.report ?? null,
   })`);
 
@@ -93,7 +114,6 @@ async function diagnoseDirection(direction) {
   while (Date.now() - started < 900) {
     const sample = await evaluate(`({
       drive: window.__G43B5R281_LAB__.latestInterceptDriveReport,
-      motion: window.__G43B5R281_LAB__.latestShieldLeadMotion,
       confirmation: window.__G43B5R281_LAB__.latestParryConfirmation,
       whiff: window.__G43B5R281_LAB__.latestParryWhiff,
     })`);
@@ -102,11 +122,7 @@ async function diagnoseDirection(direction) {
       samples.push({
         targetCenter: report?.targetCenter ?? null,
         remaining: report?.remainingDistanceMeters ?? sample.drive.planRequiredDistanceMeters ?? null,
-        required: sample.drive.planRequiredDistanceMeters,
-        applied: sample.drive.planAppliedDistanceMeters,
         achieved: sample.drive.trackingAchievedDistanceMeters,
-        shieldStep: sample.drive.shieldStepTranslationMeters,
-        motionTranslation: sample.motion?.translationMeters ?? null,
       });
     }
     if (sample.confirmation?.accepted === true || sample.whiff) break;
@@ -114,21 +130,85 @@ async function diagnoseDirection(direction) {
   }
   await waitFor(`window.__G43B5R281_LAB__.latestParryConfirmation?.accepted === true || window.__G43B5R281_LAB__.latestParryWhiff`);
   const final = await evaluate(`({
-    drive: window.__G43B5R281_LAB__.latestInterceptDriveReport,
-    motion: window.__G43B5R281_LAB__.latestShieldLeadMotion,
     confirmation: window.__G43B5R281_LAB__.latestParryConfirmation,
     whiff: window.__G43B5R281_LAB__.latestParryWhiff,
-    diagnosis: window.__G43B5R281_LAB__.activeParryInterceptDiagnosis,
   })`);
-  return { direction, inputResult, first, samples, final };
+  return {
+    direction,
+    inputResult: { accepted: inputResult?.accepted === true },
+    first: compactFirst(first),
+    samples,
+    final: compactFinal(final),
+  };
+}
+
+function metricSummary(row) {
+  const distance = (a, b) => Math.hypot(
+    (a?.x ?? 0) - (b?.x ?? 0),
+    (a?.y ?? 0) - (b?.y ?? 0),
+    (a?.z ?? 0) - (b?.z ?? 0),
+  );
+  const targets = row.samples.map((sample) => sample.targetCenter).filter(Boolean);
+  const remaining = row.samples.map((sample) => Number(sample.remaining)).filter(Number.isFinite);
+  const achieved = row.samples.map((sample) => Number(sample.achieved)).filter(Number.isFinite);
+  const targetDrift = targets.length
+    ? Math.max(...targets.map((target) => distance(target, targets[0])))
+    : null;
+  return {
+    accepted: row.inputResult?.accepted === true,
+    leadCm: Number.isFinite(row.first?.drive?.activeInterceptIntent?.leadMeters)
+      ? row.first.drive.activeInterceptIntent.leadMeters * 100
+      : null,
+    firstJumpCm: Number.isFinite(row.first?.motion?.translationMeters)
+      ? row.first.motion.translationMeters * 100
+      : null,
+    targetDriftCm: Number.isFinite(targetDrift) ? targetDrift * 100 : null,
+    firstRemainingCm: remaining.length ? remaining[0] * 100 : null,
+    minRemainingCm: remaining.length ? Math.min(...remaining) * 100 : null,
+    maxRemainingCm: remaining.length ? Math.max(...remaining) * 100 : null,
+    maxAchievedCm: achieved.length ? Math.max(...achieved) * 100 : null,
+    confirmation: row.final?.confirmation?.accepted === true,
+    whiff: Boolean(row.final?.whiff),
+    samples: remaining.length,
+  };
+}
+
+async function stopChromeAndCleanup() {
+  try { socket.close(); } catch {}
+  if (chrome.exitCode === null) {
+    chrome.kill('SIGTERM');
+    await Promise.race([
+      new Promise((resolve) => chrome.once('exit', resolve)),
+      sleep(1200),
+    ]);
+  }
+  if (chrome.exitCode === null) {
+    chrome.kill('SIGKILL');
+    await Promise.race([
+      new Promise((resolve) => chrome.once('exit', resolve)),
+      sleep(500),
+    ]);
+  }
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      rmSync(profileDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(error?.code) || attempt === 5) {
+        console.warn(`R18N1_CLEANUP_WARNING=${error?.code || error?.message || 'unknown'}`);
+        return;
+      }
+      await sleep(100 * (attempt + 1));
+    }
+  }
 }
 
 try {
   const top = await diagnoseDirection('top');
   const right = await diagnoseDirection('right');
+  console.log(`R18N1_METRICS_TOP=${JSON.stringify(metricSummary(top))}`);
+  console.log(`R18N1_METRICS_RIGHT=${JSON.stringify(metricSummary(right))}`);
   console.log(`R18N1_PROBE_JSON=${JSON.stringify({ stage: 'R18N.1', top, right })}`);
 } finally {
-  socket.close();
-  chrome.kill('SIGTERM');
-  rmSync(profileDir, { recursive: true, force: true });
+  await stopChromeAndCleanup();
 }
