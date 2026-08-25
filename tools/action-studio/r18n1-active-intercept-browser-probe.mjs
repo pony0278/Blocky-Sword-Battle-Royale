@@ -98,7 +98,10 @@ async function diagnoseDirection(direction) {
       whiff: window.__G43B5R281_LAB__.latestParryWhiff,
     })`);
     if (sample.drive?.drivePlanSource === 'latched-f-active-intercept-intent') {
+      const report = sample.drive.activeInterceptIntent || null;
       samples.push({
+        targetCenter: report?.targetCenter ?? null,
+        remaining: report?.remainingDistanceMeters ?? sample.drive.planRequiredDistanceMeters ?? null,
         required: sample.drive.planRequiredDistanceMeters,
         applied: sample.drive.planAppliedDistanceMeters,
         achieved: sample.drive.trackingAchievedDistanceMeters,
