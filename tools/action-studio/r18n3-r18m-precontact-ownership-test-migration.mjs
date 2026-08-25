@@ -2,60 +2,112 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const path = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
 
-function replaceExact(source, oldSource, newSource, label) {
-  if (!source.includes(oldSource)) {
+function replaceUnique(block, oldSource, newSource, label) {
+  if (!block.includes(oldSource)) {
     throw new Error(`R18N.3 v6.4 pre-contact ownership migration could not locate ${label}`);
   }
-  if (source.indexOf(oldSource) !== source.lastIndexOf(oldSource)) {
+  if (block.indexOf(oldSource) !== block.lastIndexOf(oldSource)) {
     throw new Error(`R18N.3 v6.4 pre-contact ownership migration expected one ${label}`);
   }
-  if (source.includes(newSource)) {
+  if (block.includes(newSource)) {
     throw new Error(`R18N.3 v6.4 pre-contact ownership migration found ${label} already migrated`);
   }
-  return source.replace(oldSource, newSource);
+  return block.replace(oldSource, newSource);
+}
+
+function migrateTest(source, testName, changes) {
+  const marker = `test('${testName}'`;
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error(`R18N.3 v6.4 pre-contact ownership migration missing test: ${testName}`);
+  const next = source.indexOf('\ntest(', start + marker.length);
+  const end = next < 0 ? source.length : next;
+  let block = source.slice(start, end);
+  for (const [oldSource, newSource, label] of changes) {
+    block = replaceUnique(block, oldSource, newSource, `${testName}: ${label}`);
+  }
+  return source.slice(0, start) + block + source.slice(end);
 }
 
 let source = readFileSync(path, 'utf8');
 
-const oldMeasuredGuidance = `test('Step 3A replaces only an unreachable linear target with reachable measured sweep guidance', () => {\n  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);\n  assert.match(source, /selectReachableParryInterceptTarget/);\n  assert.match(update, /measureSweptSwordBucklerClosestApproach/);\n  assert.match(update, /predictedTrackingPlan: latestPredictiveAnalysis\\?\\.trackingPlan/);\n  assert.match(update, /threat: latestReachableInterceptTarget\\.threat/);\n  assert.match(source, /measuredSweepFallbackIsGuidanceOnly/);\n  assert.match(source, /real contact still required/);\n  assert.match(html, /MEASURED SWEEP preserves world direction \\+ 1\\.2cm inset/);\n  assert.match(html, /real contact still required/);\n});`;
-const newMeasuredGuidance = `test('Step 3A replaces only an unreachable linear target with reachable measured sweep guidance', () => {\n  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');\n  assert.match(preContactSource, /selectReachableParryInterceptTarget/);\n  assert.match(update, /measureSweptSwordBucklerClosestApproach/);\n  assert.match(update, /predictedTrackingPlan: exchangeState\\.latestPredictiveAnalysis\\?\\.trackingPlan/);\n  assert.match(update, /threat: exchangeState\\.latestReachableInterceptTarget\\.threat/);\n  assert.match(verificationReportSource, /measuredSweepFallbackIsGuidanceOnly/);\n  assert.match(verificationReportSource, /realSweptContactRequired/);\n  assert.match(html, /MEASURED SWEEP preserves world direction \\+ 1\\.2cm inset/);\n  assert.match(html, /real contact still required/);\n});`;
+source = migrateTest(source,
+  'Step 3A replaces only an unreachable linear target with reachable measured sweep guidance', [
+    [
+      `  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);`,
+      `  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');`,
+      'pre-contact function ownership',
+    ],
+    ['assert.match(source, /selectReachableParryInterceptTarget/);', 'assert.match(preContactSource, /selectReachableParryInterceptTarget/);', 'reachable selector ownership'],
+    ['assert.match(update, /predictedTrackingPlan: latestPredictiveAnalysis\\?\\.trackingPlan/);', 'assert.match(update, /predictedTrackingPlan: exchangeState\\.latestPredictiveAnalysis\\?\\.trackingPlan/);', 'predictive tracking state ownership'],
+    ['assert.match(update, /threat: latestReachableInterceptTarget\\.threat/);', 'assert.match(update, /threat: exchangeState\\.latestReachableInterceptTarget\\.threat/);', 'selected threat state ownership'],
+    ['assert.match(source, /measuredSweepFallbackIsGuidanceOnly/);', 'assert.match(verificationReportSource, /measuredSweepFallbackIsGuidanceOnly/);', 'guidance-only invariant ownership'],
+    ['assert.match(source, /real contact still required/);', 'assert.match(verificationReportSource, /realSweptContactRequired/);', 'real-contact invariant ownership'],
+  ]);
 
-source = replaceExact(
-  source,
-  oldMeasuredGuidance,
-  newMeasuredGuidance,
-  'measured sweep guidance ownership contract',
-);
+source = migrateTest(source,
+  'armed Parry samples a continuous post-tracking shield surface before selecting and driving the next frame', [
+    [
+      `  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);`,
+      `  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');`,
+      'pre-contact function ownership',
+    ],
+    ["const continuity = update.indexOf('const continuitySurface = previousShieldLeadSurface');", "const continuity = update.indexOf('const continuitySurface = exchangeState.previousShieldLeadSurface');", 'continuity state ownership'],
+    ["assert.match(source, /selectorBaseline: 'previous-frame-post-tracking-world-shield-surface'/);", "assert.match(preContactSource, /selectorBaseline: 'previous-frame-post-tracking-world-shield-surface'/);", 'selector baseline ownership'],
+    ['assert.match(update, /latestReachableInterceptTarget\\?\\.fallbackApplied[\\s\\S]*latestReachableInterceptTarget\\.trackingPlan/);', 'assert.match(update, /exchangeState\\.latestReachableInterceptTarget\\?\\.fallbackApplied[\\s\\S]*exchangeState\\.latestReachableInterceptTarget\\.trackingPlan/);', 'fallback tracking state ownership'],
+    ['assert.match(source, /drivePlanSource: latestReachableInterceptTarget\\?\\.fallbackApplied/);', 'assert.match(preContactSource, /drivePlanSource: exchangeState\\.latestReachableInterceptTarget\\?\\.fallbackApplied/);', 'drive source ownership'],
+    ['assert.match(source, /surface-relative-measured-contact-correction/);', 'assert.match(preContactSource, /surface-relative-measured-contact-correction/);', 'surface-relative correction ownership'],
+    ['assert.match(source, /correctionDirectionDot/);', 'assert.match(preContactSource, /correctionDirectionDot/);', 'direction telemetry ownership'],
+    ['assert.match(source, /measuredRadialContactCorrectionMeters/);', 'assert.match(preContactSource, /measuredRadialContactCorrectionMeters/);', 'radial correction ownership'],
+    [
+      "assert.match(source, /if \\(selectedMode !== 'parry' \\|\\| !parryGate\\.armed/);",
+      "assert.match(source, /if \\(exchangeState\\.latestParryInput\\.accepted\\) \\{[\\s\\S]*predictivePresentation\\.start/);\n  assert.match(update, /if \\(predictivePresentation\\.active\\) \\{/);",
+      'accepted-arm predictive-presentation gate',
+    ],
+    ['assert.match(source, /selector NO ARMED DRIVE FRAME/);', 'assert.match(diagnosticFormattersSource, /selector NO ARMED DRIVE FRAME/);', 'no-drive formatter ownership'],
+  ]);
 
-const oldContinuousSurface = `test('armed Parry samples a continuous post-tracking shield surface before selecting and driving the next frame', () => {\n  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);\n  const presentation = update.indexOf('predictivePresentation.update');\n  const continuity = update.indexOf('const continuitySurface = previousShieldLeadSurface');\n  const measure = update.indexOf('measureSweptSwordBucklerClosestApproach');\n  const select = update.indexOf('selectReachableParryInterceptTarget');\n  const plan = update.indexOf('planGuardThreatCorrection');\n  const drive = update.indexOf('fineTrackingRuntime.update');\n  assert.ok(presentation >= 0 && continuity > presentation && measure > continuity && select > measure && plan > select && drive > plan);\n  assert.match(source, /selectorBaseline: 'previous-frame-post-tracking-world-shield-surface'/);\n  assert.match(update, /latestReachableInterceptTarget\\?\\.fallbackApplied[\\s\\S]*latestReachableInterceptTarget\\.trackingPlan/);\n  assert.match(source, /drivePlanSource: latestReachableInterceptTarget\\?\\.fallbackApplied/);\n  assert.match(source, /surface-relative-measured-contact-correction/);\n  assert.match(source, /correctionDirectionDot/);\n  assert.match(source, /measuredRadialContactCorrectionMeters/);\n  assert.match(source, /if \\(selectedMode !== 'parry' \\|\\| !parryGate\\.armed/);\n  assert.match(source, /selector NO ARMED DRIVE FRAME/);\n  assert.match(html, /BEST PARRY TIMING · R18I/);\n});`;
-const newContinuousSurface = `test('armed Parry samples a continuous post-tracking shield surface before selecting and driving the next frame', () => {\n  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');\n  const presentation = update.indexOf('predictivePresentation.update');\n  const continuity = update.indexOf('const continuitySurface = exchangeState.previousShieldLeadSurface');\n  const measure = update.indexOf('measureSweptSwordBucklerClosestApproach');\n  const select = update.indexOf('selectReachableParryInterceptTarget');\n  const plan = update.indexOf('planGuardThreatCorrection');\n  const drive = update.indexOf('fineTrackingRuntime.update');\n  assert.ok(presentation >= 0 && continuity > presentation && measure > continuity && select > measure && plan > select && drive > plan);\n  assert.match(preContactSource, /selectorBaseline: 'previous-frame-post-tracking-world-shield-surface'/);\n  assert.match(update, /exchangeState\\.latestReachableInterceptTarget\\?\\.fallbackApplied[\\s\\S]*exchangeState\\.latestReachableInterceptTarget\\.trackingPlan/);\n  assert.match(preContactSource, /drivePlanSource: exchangeState\\.latestReachableInterceptTarget\\?\\.fallbackApplied/);\n  assert.match(preContactSource, /surface-relative-measured-contact-correction/);\n  assert.match(preContactSource, /correctionDirectionDot/);\n  assert.match(preContactSource, /measuredRadialContactCorrectionMeters/);\n  assert.match(source, /if \\(exchangeState\\.latestParryInput\\.accepted\\) \\{[\\s\\S]*predictivePresentation\\.start/);\n  assert.match(update, /if \\(predictivePresentation\\.active\\) \\{/);\n  assert.match(diagnosticFormattersSource, /selector NO ARMED DRIVE FRAME/);\n  assert.match(html, /BEST PARRY TIMING · R18I/);\n});`;
+source = migrateTest(source,
+  'armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority', [
+    [
+      `  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);`,
+      `  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');`,
+      'pre-contact function ownership',
+    ],
+    ['assert.match(update, /anticipatedClosestApproach: latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);', 'assert.match(update, /anticipatedClosestApproach: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);', 'anticipated closest approach ownership'],
+    ['assert.match(update, /point: latestPredictiveAnalysis\\.threat\\.worldPoint/);', 'assert.match(update, /point: exchangeState\\.latestPredictiveAnalysis\\.threat\\.worldPoint/);', 'anticipated point ownership'],
+    ['assert.match(update, /anticipatedLeadSeconds: latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);', 'assert.match(update, /anticipatedLeadSeconds: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);', 'anticipated lead ownership'],
+    ['assert.match(source, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);', 'assert.match(preContactSource, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);', 'stance authority telemetry ownership'],
+    ['assert.match(source, /residual edge \\${edgeBefore}→\\${edgeAfter}/);', 'assert.match(diagnosticFormattersSource, /residual edge \\${edgeBefore}→\\${edgeAfter}/);', 'residual edge formatter ownership'],
+    ['assert.match(source, /carry \\${carryBefore}→\\${carryAfter}/);', 'assert.match(diagnosticFormattersSource, /carry \\${carryBefore}→\\${carryAfter}/);', 'carry formatter ownership'],
+    ['assert.match(source, /refine \\${refinementStep} · rdir \\${refinementDirection}/);', 'assert.match(diagnosticFormattersSource, /refine \\${refinementStep} · rdir \\${refinementDirection}/);', 'refinement formatter ownership'],
+    ['assert.match(source, /arm \\${armReach} · aedge \\${edgeBefore}→\\${armEdgeAfter} · wrist \\${wristDegrees}/);', 'assert.match(diagnosticFormattersSource, /arm \\${armReach} · aedge \\${edgeBefore}→\\${armEdgeAfter} · wrist \\${wristDegrees}/);', 'arm formatter ownership'],
+    ['assert.match(source, /torso \\${torsoDegrees} · reach \\${bodyReachBefore}→\\${bodyReachAfter}/);', 'assert.match(diagnosticFormattersSource, /torso \\${torsoDegrees} · reach \\${bodyReachBefore}→\\${bodyReachAfter}/);', 'torso formatter ownership'],
+    ['assert.match(source, /sampledThreat\\?\\.kneeLineThreat/);', 'assert.match(diagnosticFormattersSource, /sampledThreat\\?\\.kneeLineThreat/);', 'sampled threat formatter ownership'],
+    ['assert.match(source, /y blade\\/rim\\/kneeL\\/kneeR/);', 'assert.match(diagnosticFormattersSource, /y blade\\/rim\\/kneeL\\/kneeR/);', 'height formatter ownership'],
+    ['assert.match(source, /earlyLowThreatRecruitment/);', 'assert.match(diagnosticFormattersSource, /earlyLowThreatRecruitment/);', 'early stance formatter ownership'],
+    ['assert.match(source, /stance src/);', 'assert.match(diagnosticFormattersSource, /stance src/);', 'stance source formatter ownership'],
+    ["assert.match(source, /lead ' \\+ stanceLead/);", "assert.match(diagnosticFormattersSource, /lead ' \\+ stanceLead/);", 'stance lead formatter ownership'],
+    ["assert.match(source, /hold ' \\+ stanceHold/);", "assert.match(diagnosticFormattersSource, /hold ' \\+ stanceHold/);", 'stance hold formatter ownership'],
+    ["assert.match(source, /target ' \\+ crouchTarget/);", "assert.match(diagnosticFormattersSource, /target ' \\+ crouchTarget/);", 'stance target formatter ownership'],
+    ['assert.match(source, /stance \\${stanceState} · down \\${downwardRatio} · crouch/);', 'assert.match(diagnosticFormattersSource, /stance \\${stanceState} · down \\${downwardRatio} · crouch/);', 'stance state formatter ownership'],
+    ['assert.match(source, /feet \\${footL}\\/\\${footR} \\${planted}/);', 'assert.match(diagnosticFormattersSource, /feet \\${footL}\\/\\${footR} \\${planted}/);', 'foot formatter ownership'],
+    ["const block = functionBody('updateBlockPreContact', 'updateParryPreContact');", "const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');", 'Block negative-path ownership'],
+  ]);
 
-source = replaceExact(
-  source,
-  oldContinuousSurface,
-  newContinuousSurface,
-  'armed continuous shield-surface ownership and gate contract',
-);
-
-const oldLowStance = `test('armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority', () => {\n  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);\n  const primaryDrive = update.indexOf('fineTrackingRuntime.update');\n  const primarySurface = update.indexOf('const primaryTrackingSurfaceAfter', primaryDrive);\n  const residualBefore = update.indexOf('const residualBeforeRefinement', primarySurface);\n  const residualSelect = update.indexOf('const residualInterceptTarget', residualBefore);\n  const refine = update.indexOf('fineTrackingRuntime.refineMeasuredContact', residualSelect);\n  const residualAfterArm = update.indexOf('const residualAfterArmRefinement', refine);\n  const bodyReach = update.indexOf('residualBodyReachRuntime.update', residualAfterArm);\n  const residualAfterBody = update.indexOf('const residualAfterBodyReach', bodyReach);\n  const stanceReach = update.indexOf('residualStanceReachRuntime.update', residualAfterBody);\n  const residualAfter = update.indexOf('const residualAfterRefinement', stanceReach);\n  assert.ok(primaryDrive >= 0 && primarySurface > primaryDrive && residualBefore > primarySurface);\n  assert.ok(residualSelect > residualBefore && refine > residualSelect);\n  assert.ok(residualAfterArm > refine && bodyReach > residualAfterArm);\n  assert.ok(residualAfterBody > bodyReach && stanceReach > residualAfterBody && residualAfter > stanceReach);\n  assert.match(update, /jointBudgetScale: 0\\.35/);\n  assert.match(update, /maxResidualMeters: 0\\.06/);\n  assert.match(update, /residualEdgeReductionMeters/);\n  assert.match(update, /residualPlaneReductionMeters/);\n  assert.match(update, /bodyEdgeReductionMeters/);\n  assert.match(update, /bodyPlaneReductionMeters/);\n  assert.match(update, /stanceEdgeReductionMeters/);\n  assert.match(update, /stancePlaneReductionMeters/);\n  assert.match(source, /createGuardResidualBodyReachRuntime/);\n  assert.match(source, /createGuardResidualStanceReachRuntime/);\n  assert.match(update, /anticipatedClosestApproach: latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);\n  assert.match(update, /point: latestPredictiveAnalysis\\.threat\\.worldPoint/);\n  assert.match(update, /anticipatedLeadSeconds: latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);  assert.match(source, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);\n  assert.match(source, /residual edge \\${'${edgeBefore}'}→\\${'${edgeAfter}'}/);\n  assert.match(source, /carry \\${'${carryBefore}'}→\\${'${carryAfter}'}/);\n  assert.match(source, /refine \\${'${refinementStep}'} · rdir \\${'${refinementDirection}'}/);\n  assert.match(source, /arm \\${'${armReach}'} · aedge \\${'${edgeBefore}'}→\\${'${armEdgeAfter}'} · wrist \\${'${wristDegrees}'}/);\n  assert.match(source, /torso \\${'${torsoDegrees}'} · reach \\${'${bodyReachBefore}'}→\\${'${bodyReachAfter}'}/);\n  assert.match(source, /sampledThreat\\?\\.kneeLineThreat/);\n  assert.match(source, /y blade\\/rim\\/kneeL\\/kneeR/);\n  assert.match(source, /earlyLowThreatRecruitment/);\n  assert.match(source, /stance src/);\n  assert.match(source, /lead ' \\+ stanceLead/);\n  assert.match(source, /hold ' \\+ stanceHold/);\n  assert.match(source, /target ' \\+ crouchTarget/);  assert.match(source, /stance \\${'${stanceState}'} · down \\${'${downwardRatio}'} · crouch/);\n  assert.match(source, /feet \\${'${footL}'}\\/\\${'${footR}'} \\${'${planted}'}/);\n  assert.match(html, /compares the measured sword point with the predicted future sword point/);\n  assert.match(html, /defender wrist\\.l · chest · spine · hips · upper\\/lower legs · foot orientation correction/);\n  assert.match(html, /both foot world positions \\(no step\\)/);\n  const block = functionBody('updateBlockPreContact', 'updateParryPreContact');\n  assert.doesNotMatch(block, /refineMeasuredContact/);\n  assert.doesNotMatch(block, /residualBodyReachRuntime\\.update/);\n  assert.doesNotMatch(block, /residualStanceReachRuntime\\.update/);\n});`;
-const newLowStance = `test('armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority', () => {\n  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');\n  const primaryDrive = update.indexOf('fineTrackingRuntime.update');\n  const primarySurface = update.indexOf('const primaryTrackingSurfaceAfter', primaryDrive);\n  const residualBefore = update.indexOf('const residualBeforeRefinement', primarySurface);\n  const residualSelect = update.indexOf('const residualInterceptTarget', residualBefore);\n  const refine = update.indexOf('fineTrackingRuntime.refineMeasuredContact', residualSelect);\n  const residualAfterArm = update.indexOf('const residualAfterArmRefinement', refine);\n  const bodyReach = update.indexOf('residualBodyReachRuntime.update', residualAfterArm);\n  const residualAfterBody = update.indexOf('const residualAfterBodyReach', bodyReach);\n  const stanceReach = update.indexOf('residualStanceReachRuntime.update', residualAfterBody);\n  const residualAfter = update.indexOf('const residualAfterRefinement', stanceReach);\n  assert.ok(primaryDrive >= 0 && primarySurface > primaryDrive && residualBefore > primarySurface);\n  assert.ok(residualSelect > residualBefore && refine > residualSelect);\n  assert.ok(residualAfterArm > refine && bodyReach > residualAfterArm);\n  assert.ok(residualAfterBody > bodyReach && stanceReach > residualAfterBody && residualAfter > stanceReach);\n  assert.match(update, /jointBudgetScale: 0\\.35/);\n  assert.match(update, /maxResidualMeters: 0\\.06/);\n  assert.match(update, /residualEdgeReductionMeters/);\n  assert.match(update, /residualPlaneReductionMeters/);\n  assert.match(update, /bodyEdgeReductionMeters/);\n  assert.match(update, /bodyPlaneReductionMeters/);\n  assert.match(update, /stanceEdgeReductionMeters/);\n  assert.match(update, /stancePlaneReductionMeters/);\n  assert.match(source, /createGuardResidualBodyReachRuntime/);\n  assert.match(source, /createGuardResidualStanceReachRuntime/);\n  assert.match(update, /anticipatedClosestApproach: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);\n  assert.match(update, /point: exchangeState\\.latestPredictiveAnalysis\\.threat\\.worldPoint/);\n  assert.match(update, /anticipatedLeadSeconds: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);\n  assert.match(preContactSource, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);\n  assert.match(diagnosticFormattersSource, /residual edge \\${'${edgeBefore}'}→\\${'${edgeAfter}'}/);\n  assert.match(diagnosticFormattersSource, /carry \\${'${carryBefore}'}→\\${'${carryAfter}'}/);\n  assert.match(diagnosticFormattersSource, /refine \\${'${refinementStep}'} · rdir \\${'${refinementDirection}'}/);\n  assert.match(diagnosticFormattersSource, /arm \\${'${armReach}'} · aedge \\${'${edgeBefore}'}→\\${'${armEdgeAfter}'} · wrist \\${'${wristDegrees}'}/);\n  assert.match(diagnosticFormattersSource, /torso \\${'${torsoDegrees}'} · reach \\${'${bodyReachBefore}'}→\\${'${bodyReachAfter}'}/);\n  assert.match(diagnosticFormattersSource, /sampledThreat\\?\\.kneeLineThreat/);\n  assert.match(diagnosticFormattersSource, /y blade\\/rim\\/kneeL\\/kneeR/);\n  assert.match(diagnosticFormattersSource, /earlyLowThreatRecruitment/);\n  assert.match(diagnosticFormattersSource, /stance src/);\n  assert.match(diagnosticFormattersSource, /lead ' \\+ stanceLead/);\n  assert.match(diagnosticFormattersSource, /hold ' \\+ stanceHold/);\n  assert.match(diagnosticFormattersSource, /target ' \\+ crouchTarget/);\n  assert.match(diagnosticFormattersSource, /stance \\${'${stanceState}'} · down \\${'${downwardRatio}'} · crouch/);\n  assert.match(diagnosticFormattersSource, /feet \\${'${footL}'}\\/\\${'${footR}'} \\${'${planted}'}/);\n  assert.match(html, /compares the measured sword point with the predicted future sword point/);\n  assert.match(html, /defender wrist\\.l · chest · spine · hips · upper\\/lower legs · foot orientation correction/);\n  assert.match(html, /both foot world positions \\(no step\\)/);\n  const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');\n  assert.doesNotMatch(block, /refineMeasuredContact/);\n  assert.doesNotMatch(block, /residualBodyReachRuntime\\.update/);\n  assert.doesNotMatch(block, /residualStanceReachRuntime\\.update/);\n});`;
-
-source = replaceExact(
-  source,
-  oldLowStance,
-  newLowStance,
-  'predicted/measured low-stance ownership contract',
-);
-
-const oldReviewPerformance = `test('F review batches presentation rebuilds and avoids dynamic debug bounds work', () => {\n  const update = functionBody('updateParryPreContact', 'updatePreContact');\n  const defenderUpdateCount = update.split('defender.update(0, camera)').length - 1;\n  const swordUpdateCount = update.split('defenderSword?.update()').length - 1;\n  const stanceSolve = update.indexOf('residualStanceReachRuntime.update');\n  const presentationUpdate = update.indexOf('defender.update(0, camera)', stanceSolve);\n\n  assert.equal(defenderUpdateCount, 1);\n  assert.equal(swordUpdateCount, 1);\n  assert.ok(stanceSolve >= 0 && presentationUpdate > stanceSolve);\n\n  const markerSetter = functionBody('setInspectionLine', 'updateLiveContactMarkers');\n  const markerUpdate = functionBody('updateLiveContactMarkers', 'resize');\n  assert.ok(!markerSetter.includes('computeBoundingSphere'));\n  assert.ok(!markerUpdate.includes('computeBoundingSphere'));\n  assert.ok(source.includes('contactTravelLine.frustumCulled = false'));\n  assert.ok(source.includes('line.frustumCulled = false'));\n\n  const cue = functionBody('showParryCue', 'updateParryCue');\n  assert.ok(cue.includes('state === parryCueState'));\n  assert.ok(cue.includes(') return;'));\n});`;
-const newReviewPerformance = `test('F review batches presentation rebuilds and avoids dynamic debug bounds work', () => {\n  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');\n  const defenderUpdateCount = update.split('defender.update(0, camera)').length - 1;\n  const swordUpdateCount = update.split('defenderSword?.update()').length - 1;\n  const stanceSolve = update.indexOf('residualStanceReachRuntime.update');\n  const presentationUpdate = update.indexOf('defender.update(0, camera)', stanceSolve);\n\n  assert.equal(defenderUpdateCount, 1);\n  assert.equal(swordUpdateCount, 1);\n  assert.ok(stanceSolve >= 0 && presentationUpdate > stanceSolve);\n\n  assert.doesNotMatch(inspectionOverlaySource, /computeBoundingSphere/);\n  assert.match(inspectionOverlaySource, /contactTravelLine\\.frustumCulled = false/);\n  assert.match(inspectionOverlaySource, /line\\.frustumCulled = false/);\n\n  const cueStart = labUiSource.indexOf('function showParryCue(');\n  const cueEnd = labUiSource.indexOf('function updateParryCue(', cueStart);\n  assert.ok(cueStart >= 0 && cueEnd > cueStart);\n  const cue = labUiSource.slice(cueStart, cueEnd);\n  assert.ok(cue.includes('state === parryCueState'));\n  assert.ok(cue.includes(') return;'));\n});`;
-
-source = replaceExact(
-  source,
-  oldReviewPerformance,
-  newReviewPerformance,
-  'F review presentation/overlay ownership contract',
-);
+source = migrateTest(source,
+  'F review batches presentation rebuilds and avoids dynamic debug bounds work', [
+    ["const update = functionBody('updateParryPreContact', 'updatePreContact');", "const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');", 'pre-contact function ownership'],
+    [
+      `  const markerSetter = functionBody('setInspectionLine', 'updateLiveContactMarkers');\n  const markerUpdate = functionBody('updateLiveContactMarkers', 'resize');\n  assert.ok(!markerSetter.includes('computeBoundingSphere'));\n  assert.ok(!markerUpdate.includes('computeBoundingSphere'));\n  assert.ok(source.includes('contactTravelLine.frustumCulled = false'));\n  assert.ok(source.includes('line.frustumCulled = false'));`,
+      `  assert.doesNotMatch(inspectionOverlaySource, /computeBoundingSphere/);\n  assert.match(inspectionOverlaySource, /contactTravelLine\\.frustumCulled = false/);\n  assert.match(inspectionOverlaySource, /line\\.frustumCulled = false/);`,
+      'inspection-overlay performance ownership',
+    ],
+    [
+      `  const cue = functionBody('showParryCue', 'updateParryCue');\n  assert.ok(cue.includes('state === parryCueState'));\n  assert.ok(cue.includes(') return;'));`,
+      `  const cueStart = labUiSource.indexOf('function showParryCue(');\n  const cueEnd = labUiSource.indexOf('function updateParryCue(', cueStart);\n  assert.ok(cueStart >= 0 && cueEnd > cueStart);\n  const cue = labUiSource.slice(cueStart, cueEnd);\n  assert.ok(cue.includes('state === parryCueState'));\n  assert.ok(cue.includes(') return;'));`,
+      'cue dedup ownership',
+    ],
+  ]);
 
 writeFileSync(path, source);
 console.log('R18N.3 v6.4 pre-contact ownership contracts migrated.');
