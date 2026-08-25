@@ -49,7 +49,7 @@ test('R18N.1 keeps manual Parry authority in the entry and only latches intent a
 });
 
 test('R18N.1 makes the F-latched intent the primary shield drive without moving contact authority', () => {
-  assert.match(preContact, /activeInterceptIntent\.plan\(\{/);
+  assert.match(preContact, /activeInterceptIntent\?\.plan\(\{/);
   assert.match(preContact, /exchangeState\.latestFinePlan = activeIntentPlan \|\|/);
   assert.match(preContact, /drivePlanSource: activeIntentPlan/);
   assert.match(preContact, /function armActiveIntercept\(snapshot\)/);
@@ -60,7 +60,7 @@ test('R18N.1 makes the F-latched intent the primary shield drive without moving 
   assert.doesNotMatch(preContact, /probeSweptSwordBucklerContact\(/);
 });
 
-test('R18N.1 blends the first Guard-to-Parry shield-arm frame instead of teleporting to the sampled pose', () => {
+test('R18N.1 blends the first Guard-to-Parry shield-arm frames instead of teleporting to the sampled pose', () => {
   const bones = Object.fromEntries(
     ['spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l']
       .map((name) => [name, { quaternion: new FakeQuaternion() }]),
@@ -84,7 +84,9 @@ test('R18N.1 blends the first Guard-to-Parry shield-arm frame instead of telepor
   assert.ok(first.entryBlendProgress > 0 && first.entryBlendProgress < 1);
   assert.ok(firstAngle > 0 && firstAngle < 90, `expected blended first-frame arm angle, got ${firstAngle}`);
 
-  const settled = runtime.update({ deltaSeconds: 0.06, timeToContactSeconds: 0.05 });
+  runtime.update({ deltaSeconds: 0.02, timeToContactSeconds: 0.09 });
+  runtime.update({ deltaSeconds: 0.02, timeToContactSeconds: 0.07 });
+  const settled = runtime.update({ deltaSeconds: 0.02, timeToContactSeconds: 0.05 });
   assert.equal(settled.entryBlendProgress, 1);
   assert.ok(angleDegrees(bones['upperarm.l'].quaternion) > firstAngle);
 });
