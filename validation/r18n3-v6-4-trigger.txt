@@ -1,3 +1,3 @@
 R18N.3 v6.4 validation trigger — do not merge.
-Evidence capture rerun after migrating Step 3A real-contact orchestration and R18I deflect-release ownership.
-Implementation candidate head: a2f5a8b625f2a88ce429d29ff22a709e8ccd66ed
+Evidence capture rerun after isolating legacy R18M arm-hierarchy ownership migration.
+Implementation candidate head: 67317314afd94c78e575b1c5e8ad95b5547b6ab5
