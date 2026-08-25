@@ -74,6 +74,9 @@ test('R18N.1 makes the F-latched intent the primary incremental shield drive wit
   const updateIndex = preContact.indexOf('exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);', resetIndex);
   assert.ok(planIndex >= 0 && resetIndex > planIndex && updateIndex > resetIndex, 'active intent must clear absolute runtime carry immediately before its persistent-pose tracking step');
   assert.match(preContact.slice(resetIndex, updateIndex), /if \(activeIntentPlan\) fineTrackingRuntime\.reset\(\);/);
+  assert.match(preContact, /fineTrackingRuntime\.refineMeasuredContact\(/, 'bounded arm residual refinement must remain available');
+  assert.match(preContact, /residualBodyReachRuntime\.update\(\{[\s\S]*mode: activeIntentPlan \? 'off' : 'parry'/, 'body reach must not fight the F-latched world target');
+  assert.match(preContact, /residualStanceReachRuntime\.update\(\{[\s\S]*mode: 'parry'/, 'stance refinement remains independently available');
   assert.match(preContact, /function armActiveIntercept\(snapshot\)/);
   assert.match(preContact, /function resetActiveIntercept\(\)/);
   assert.doesNotMatch(preContact, /parryGate\.arm\(/);
