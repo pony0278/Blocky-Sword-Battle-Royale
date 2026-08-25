@@ -64,6 +64,12 @@ update('tools/action-studio/shield-parry-r281/pre-contact-controller.js', (sourc
   );
   next = replaceOnce(
     next,
+    '        timeToContactSeconds: exchangeState.latestPredictiveAnalysis?.timeToContactSeconds,\n        camera,',
+    '        timeToContactSeconds: exchangeState.latestPredictiveAnalysis?.timeToContactSeconds,\n        preserveShieldArm: Boolean(activeInterceptIntent?.active),\n        camera,',
+    'external shield-arm ownership during active intercept',
+  );
+  next = replaceOnce(
+    next,
     '      const measuredClosestApproach = measureSweptSwordBucklerClosestApproach({\n        previousBlade,\n        currentBlade,\n        bucklerSurface: continuitySurface,\n      });\n      exchangeState.latestReachableInterceptTarget = selectReachableParryInterceptTarget({',
     '      const measuredClosestApproach = measureSweptSwordBucklerClosestApproach({\n        previousBlade,\n        currentBlade,\n        bucklerSurface: continuitySurface,\n      });\n      const activeIntentPlan = activeInterceptIntent?.plan({\n        sequence: snapshot.sequence,\n        bucklerSurface: predictiveSurface,\n      }) || null;\n      exchangeState.latestReachableInterceptTarget = selectReachableParryInterceptTarget({',
     'active intent plan',
@@ -105,14 +111,14 @@ update('src/combat/predictive-intercept-parry.js', (source) => {
   let next = replaceOnce(
     source,
     "export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';\n",
-    "export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';\nexport const PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS = 0.055;\nconst PREDICTIVE_PARRY_ENTRY_BLEND_BONES = Object.freeze(['spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l']);\n",
+    "export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';\nexport const PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS = 0.055;\nconst PREDICTIVE_PARRY_ENTRY_BLEND_BONES = Object.freeze(['spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l']);\nconst PREDICTIVE_PARRY_EXTERNAL_SHIELD_ARM_BONES = Object.freeze(['upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l']);\n",
     'presentation bridge constants',
   );
   next = replaceOnce(
     next,
     'function freeze(value) {\n  return Object.freeze(value);\n}\n',
-    "function freeze(value) {\n  return Object.freeze(value);\n}\n\nfunction capturePresentationEntryPose(character) {\n  const bones = character?.rig?.bones || {};\n  return Object.freeze(Object.fromEntries(\n    PREDICTIVE_PARRY_ENTRY_BLEND_BONES\n      .filter((boneId) => bones[boneId]?.quaternion?.clone)\n      .map((boneId) => [boneId, bones[boneId].quaternion.clone().normalize()]),\n  ));\n}\n\nfunction blendPresentationEntryPose(character, entryPose, alpha) {\n  if (alpha >= 1) return;\n  const bones = character?.rig?.bones || {};\n  for (const [boneId, from] of Object.entries(entryPose || {})) {\n    const bone = bones[boneId];\n    if (!bone?.quaternion?.clone) continue;\n    const sampled = bone.quaternion.clone().normalize();\n    bone.quaternion.copy(from).slerp(sampled, alpha).normalize();\n  }\n}\n",
-    'presentation bridge helpers',
+    "function freeze(value) {\n  return Object.freeze(value);\n}\n\nfunction captureBoneQuaternionPose(character, boneIds) {\n  const bones = character?.rig?.bones || {};\n  return Object.freeze(Object.fromEntries(\n    boneIds\n      .filter((boneId) => bones[boneId]?.quaternion?.clone)\n      .map((boneId) => [boneId, bones[boneId].quaternion.clone().normalize()]),\n  ));\n}\n\nfunction capturePresentationEntryPose(character) {\n  return captureBoneQuaternionPose(character, PREDICTIVE_PARRY_ENTRY_BLEND_BONES);\n}\n\nfunction restoreBoneQuaternionPose(character, pose) {\n  const bones = character?.rig?.bones || {};\n  for (const [boneId, saved] of Object.entries(pose || {})) {\n    const bone = bones[boneId];\n    if (!bone?.quaternion?.copy) continue;\n    bone.quaternion.copy(saved).normalize();\n  }\n}\n\nfunction blendPresentationEntryPose(character, entryPose, alpha) {\n  if (alpha >= 1) return;\n  const bones = character?.rig?.bones || {};\n  for (const [boneId, from] of Object.entries(entryPose || {})) {\n    const bone = bones[boneId];\n    if (!bone?.quaternion?.clone) continue;\n    const sampled = bone.quaternion.clone().normalize();\n    bone.quaternion.copy(from).slerp(sampled, alpha).normalize();\n  }\n}\n",
+    'presentation bridge and ownership helpers',
   );
   next = replaceOnce(
     next,
@@ -123,26 +129,26 @@ update('src/combat/predictive-intercept-parry.js', (source) => {
   next = replaceOnce(
     next,
     '      sourceTimeSeconds: active.sourceTimeSeconds,\n      triggerTtcSeconds,',
-    '      sourceTimeSeconds: active.sourceTimeSeconds,\n      entryBlendProgress: 0,\n      triggerTtcSeconds,',
+    '      sourceTimeSeconds: active.sourceTimeSeconds,\n      entryBlendProgress: 0,\n      shieldArmOwnership: \'predictive-presentation\',\n      triggerTtcSeconds,',
     'initial bridge report',
   );
   next = replaceOnce(
     next,
     '    active.elapsedMs += deltaSeconds * 1000;\n    const ttc = Math.max(0, finite(input.timeToContactSeconds, active.triggerTtcSeconds));',
-    '    active.elapsedMs += deltaSeconds * 1000;\n    active.entryBlendElapsedMs += Math.min(deltaSeconds * 1000, 20);\n    const entryBlendProgress = clamp(active.entryBlendElapsedMs / (PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS * 1000), 0, 1);\n    const ttc = Math.max(0, finite(input.timeToContactSeconds, active.triggerTtcSeconds));',
-    'bridge clock',
+    '    active.elapsedMs += deltaSeconds * 1000;\n    active.entryBlendElapsedMs += Math.min(deltaSeconds * 1000, 20);\n    const entryBlendProgress = clamp(active.entryBlendElapsedMs / (PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS * 1000), 0, 1);\n    const preserveShieldArm = input.preserveShieldArm === true;\n    const shieldArmPose = preserveShieldArm\n      ? captureBoneQuaternionPose(character, PREDICTIVE_PARRY_EXTERNAL_SHIELD_ARM_BONES)\n      : null;\n    const ttc = Math.max(0, finite(input.timeToContactSeconds, active.triggerTtcSeconds));',
+    'bridge clock and shield-arm ownership capture',
   );
   next = replaceOnce(
     next,
     '    applyGuardQuaternionOffsetsWeighted(THREE, character.rig, guardOffsets, active.profile.correctionWeight);\n    character.update?.(0, input.camera);',
-    '    applyGuardQuaternionOffsetsWeighted(THREE, character.rig, guardOffsets, active.profile.correctionWeight);\n    blendPresentationEntryPose(character, active.entryPose, entryBlendProgress);\n    character.update?.(0, input.camera);',
-    'apply bridge',
+    '    applyGuardQuaternionOffsetsWeighted(THREE, character.rig, guardOffsets, active.profile.correctionWeight);\n    blendPresentationEntryPose(character, active.entryPose, entryBlendProgress);\n    if (shieldArmPose) restoreBoneQuaternionPose(character, shieldArmPose);\n    character.update?.(0, input.camera);',
+    'apply bridge while preserving externally-owned shield arm',
   );
   next = replaceOnce(
     next,
     '      progress,\n      readyForAuthoritativeHandoff:',
-    '      progress,\n      entryBlendProgress,\n      readyForAuthoritativeHandoff:',
-    'bridge telemetry',
+    "      progress,\n      entryBlendProgress,\n      shieldArmOwnership: preserveShieldArm ? 'external-active-intercept-tracking' : 'predictive-presentation',\n      readyForAuthoritativeHandoff:",
+    'bridge and ownership telemetry',
   );
   return next;
 });
