@@ -29,6 +29,7 @@ jobs:
           node tools/action-studio/r18n3-swept-contact-temporal-eligibility-migration.mjs
           node tools/action-studio/r18n3-swept-contact-temporal-eligibility-test-migration.mjs
           node tools/action-studio/r18n3-r18m-legacy-ownership-test-migration.mjs
+          node tools/action-studio/r18n3-r18m-precontact-ownership-test-migration.mjs
       - name: Capture first failing full-regression assertion
         shell: bash
         run: |
