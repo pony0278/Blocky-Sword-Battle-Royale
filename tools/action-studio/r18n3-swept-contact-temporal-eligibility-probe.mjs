@@ -116,6 +116,8 @@ async function runTrial(index) {
     const lab = window.__G43B5R281_LAB__;
     const contact = lab.latestContact || null;
     const temporal = contact?.temporalEligibility || null;
+    const relative = contact?.diagnostics?.relativeMovingShieldTranslation || null;
+    const relativeClosest = relative?.closestApproach || null;
     const confirmation = lab.latestParryConfirmation || null;
     const combatResult = lab.latestCombatResult || null;
     const interruption = lab.attackRuntime?.snapshot?.interruption || null;
@@ -127,6 +129,16 @@ async function runTrial(index) {
       geometricContact: contact?.geometricContact === true,
       contactReason: contact?.reason ?? null,
       sweepAlpha: contact?.sweepAlpha ?? null,
+      relativeMovingShieldContact: relative?.contact === true,
+      relativeMovingShieldGeometricContact: relative?.geometricContact === true,
+      relativeMovingShieldReason: relative?.reason ?? null,
+      relativeMovingShieldSweepAlpha: relative?.sweepAlpha ?? null,
+      relativeMovingShieldClosestGapMeters: relativeClosest?.combinedGapMeters ?? null,
+      relativeMovingShieldPlaneGapMeters: relativeClosest?.planeGapMeters ?? null,
+      relativeMovingShieldRadialGapMeters: relativeClosest?.radialGapMeters ?? null,
+      shieldTranslationMeters: relative?.shieldTranslationMeters ?? null,
+      shieldAngularRadians: relative?.shieldAngularRadians ?? null,
+      relativeMovingShieldAuthority: relative?.authority ?? null,
       temporalAuthority: temporal?.authority ?? null,
       temporalEligible: temporal?.eligible ?? null,
       contactElapsedSeconds: temporal?.contactElapsedSeconds ?? null,
@@ -163,13 +175,14 @@ try {
     await sleep(70);
   }
   console.log(`R18N3_V64_PROBE_JSON=${JSON.stringify({
-    stage: 'R18N.3-v6.4-swept-contact-temporal-eligibility',
+    stage: 'R18N.3-v6.4.2-relative-moving-shield-observer',
     targetTtc,
     hitchAtSeconds,
     hitchMs,
     trials,
     confirmed: trials.filter((row) => row.confirmed).length,
     whiffs: trials.filter((row) => row.whiff).length,
+    relativeRecovered: trials.filter((row) => row.geometricContact !== true && row.relativeMovingShieldGeometricContact === true).length,
   })}`);
 } finally {
   await cleanup();
