@@ -44,8 +44,8 @@ test('R18N.1 clamps the F-latched intercept to a reachable visible lead instead 
   const plan = intent.plan({ sequence: 2, bucklerSurface: surface });
   assert.equal(plan.reason, 'latched-active-shield-intercept');
   assert.equal(plan.reachable, true);
-  assert.equal(plan.requiredDistance, 0.12);
-  assert.equal(plan.appliedDistance, 0.12);
+  assert.ok(Math.abs(plan.requiredDistance - 0.12) < 1e-9);
+  assert.ok(Math.abs(plan.appliedDistance - 0.12) < 1e-9);
 });
 
 test('R18N.1 preserves one fixed world-space target while remaining correction shrinks as the shield advances', () => {
