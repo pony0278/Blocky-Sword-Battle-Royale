@@ -28,6 +28,19 @@ function migrateTest(source, testName, changes) {
   return source.slice(0, start) + block + source.slice(end);
 }
 
+function migrateAssertionOwner(source, testName, assertionPrefix, newOwner, label) {
+  const marker = `test('${testName}'`;
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error(`R18N.3 v6.4 pre-contact ownership migration missing test: ${testName}`);
+  const next = source.indexOf('\ntest(', start + marker.length);
+  const end = next < 0 ? source.length : next;
+  const block = source.slice(start, end);
+  const oldSource = `assert.match(source, /${assertionPrefix}`;
+  const newSource = `assert.match(${newOwner}, /${assertionPrefix}`;
+  const migrated = replaceUnique(block, oldSource, newSource, `${testName}: ${label}`);
+  return source.slice(0, start) + migrated + source.slice(end);
+}
+
 let source = readFileSync(path, 'utf8');
 
 source = migrateTest(source,
@@ -66,33 +79,38 @@ source = migrateTest(source,
     ['assert.match(source, /selector NO ARMED DRIVE FRAME/);', 'assert.match(diagnosticFormattersSource, /selector NO ARMED DRIVE FRAME/);', 'no-drive formatter ownership'],
   ]);
 
-source = migrateTest(source,
-  'armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority', [
-    [
-      `  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);`,
-      `  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');`,
-      'pre-contact function ownership',
-    ],
-    ['assert.match(update, /anticipatedClosestApproach: latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);', 'assert.match(update, /anticipatedClosestApproach: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);', 'anticipated closest approach ownership'],
-    ['assert.match(update, /point: latestPredictiveAnalysis\\.threat\\.worldPoint/);', 'assert.match(update, /point: exchangeState\\.latestPredictiveAnalysis\\.threat\\.worldPoint/);', 'anticipated point ownership'],
-    ['assert.match(update, /anticipatedLeadSeconds: latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);', 'assert.match(update, /anticipatedLeadSeconds: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);', 'anticipated lead ownership'],
-    ['assert.match(source, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);', 'assert.match(preContactSource, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);', 'stance authority telemetry ownership'],
-    ['assert.match(source, /residual edge \\${edgeBefore}→\\${edgeAfter}/);', 'assert.match(diagnosticFormattersSource, /residual edge \\${edgeBefore}→\\${edgeAfter}/);', 'residual edge formatter ownership'],
-    ['assert.match(source, /carry \\${carryBefore}→\\${carryAfter}/);', 'assert.match(diagnosticFormattersSource, /carry \\${carryBefore}→\\${carryAfter}/);', 'carry formatter ownership'],
-    ['assert.match(source, /refine \\${refinementStep} · rdir \\${refinementDirection}/);', 'assert.match(diagnosticFormattersSource, /refine \\${refinementStep} · rdir \\${refinementDirection}/);', 'refinement formatter ownership'],
-    ['assert.match(source, /arm \\${armReach} · aedge \\${edgeBefore}→\\${armEdgeAfter} · wrist \\${wristDegrees}/);', 'assert.match(diagnosticFormattersSource, /arm \\${armReach} · aedge \\${edgeBefore}→\\${armEdgeAfter} · wrist \\${wristDegrees}/);', 'arm formatter ownership'],
-    ['assert.match(source, /torso \\${torsoDegrees} · reach \\${bodyReachBefore}→\\${bodyReachAfter}/);', 'assert.match(diagnosticFormattersSource, /torso \\${torsoDegrees} · reach \\${bodyReachBefore}→\\${bodyReachAfter}/);', 'torso formatter ownership'],
-    ['assert.match(source, /sampledThreat\\?\\.kneeLineThreat/);', 'assert.match(diagnosticFormattersSource, /sampledThreat\\?\\.kneeLineThreat/);', 'sampled threat formatter ownership'],
-    ['assert.match(source, /y blade\\/rim\\/kneeL\\/kneeR/);', 'assert.match(diagnosticFormattersSource, /y blade\\/rim\\/kneeL\\/kneeR/);', 'height formatter ownership'],
-    ['assert.match(source, /earlyLowThreatRecruitment/);', 'assert.match(diagnosticFormattersSource, /earlyLowThreatRecruitment/);', 'early stance formatter ownership'],
-    ['assert.match(source, /stance src/);', 'assert.match(diagnosticFormattersSource, /stance src/);', 'stance source formatter ownership'],
-    ["assert.match(source, /lead ' \\+ stanceLead/);", "assert.match(diagnosticFormattersSource, /lead ' \\+ stanceLead/);", 'stance lead formatter ownership'],
-    ["assert.match(source, /hold ' \\+ stanceHold/);", "assert.match(diagnosticFormattersSource, /hold ' \\+ stanceHold/);", 'stance hold formatter ownership'],
-    ["assert.match(source, /target ' \\+ crouchTarget/);", "assert.match(diagnosticFormattersSource, /target ' \\+ crouchTarget/);", 'stance target formatter ownership'],
-    ['assert.match(source, /stance \\${stanceState} · down \\${downwardRatio} · crouch/);', 'assert.match(diagnosticFormattersSource, /stance \\${stanceState} · down \\${downwardRatio} · crouch/);', 'stance state formatter ownership'],
-    ['assert.match(source, /feet \\${footL}\\/\\${footR} \\${planted}/);', 'assert.match(diagnosticFormattersSource, /feet \\${footL}\\/\\${footR} \\${planted}/);', 'foot formatter ownership'],
-    ["const block = functionBody('updateBlockPreContact', 'updateParryPreContact');", "const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');", 'Block negative-path ownership'],
-  ]);
+const lowStanceTestName = 'armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority';
+source = migrateTest(source, lowStanceTestName, [
+  [
+    `  const updateStart = source.indexOf('function updateParryPreContact(');\n  const updateEnd = source.indexOf('function updatePreContact(', updateStart);\n  const update = source.slice(updateStart, updateEnd);`,
+    `  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');`,
+    'pre-contact function ownership',
+  ],
+  ['assert.match(update, /anticipatedClosestApproach: latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);', 'assert.match(update, /anticipatedClosestApproach: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.worldPoint/);', 'anticipated closest approach ownership'],
+  ['assert.match(update, /point: latestPredictiveAnalysis\\.threat\\.worldPoint/);', 'assert.match(update, /point: exchangeState\\.latestPredictiveAnalysis\\.threat\\.worldPoint/);', 'anticipated point ownership'],
+  ['assert.match(update, /anticipatedLeadSeconds: latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);', 'assert.match(update, /anticipatedLeadSeconds: exchangeState\\.latestPredictiveAnalysis\\?\\.threat\\?\\.futureSeconds/);', 'anticipated lead ownership'],
+  ['assert.match(source, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);', 'assert.match(preContactSource, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);', 'stance authority telemetry ownership'],
+  ['assert.match(source, /sampledThreat\\?\\.kneeLineThreat/);', 'assert.match(diagnosticFormattersSource, /sampledThreat\\?\\.kneeLineThreat/);', 'sampled threat formatter ownership'],
+  ['assert.match(source, /y blade\\/rim\\/kneeL\\/kneeR/);', 'assert.match(diagnosticFormattersSource, /y blade\\/rim\\/kneeL\\/kneeR/);', 'height formatter ownership'],
+  ['assert.match(source, /earlyLowThreatRecruitment/);', 'assert.match(diagnosticFormattersSource, /earlyLowThreatRecruitment/);', 'early stance formatter ownership'],
+  ['assert.match(source, /stance src/);', 'assert.match(diagnosticFormattersSource, /stance src/);', 'stance source formatter ownership'],
+  ["assert.match(source, /lead ' \\+ stanceLead/);", "assert.match(diagnosticFormattersSource, /lead ' \\+ stanceLead/);", 'stance lead formatter ownership'],
+  ["assert.match(source, /hold ' \\+ stanceHold/);", "assert.match(diagnosticFormattersSource, /hold ' \\+ stanceHold/);", 'stance hold formatter ownership'],
+  ["assert.match(source, /target ' \\+ crouchTarget/);", "assert.match(diagnosticFormattersSource, /target ' \\+ crouchTarget/);", 'stance target formatter ownership'],
+  ["const block = functionBody('updateBlockPreContact', 'updateParryPreContact');", "const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');", 'Block negative-path ownership'],
+]);
+
+for (const [prefix, label] of [
+  ['residual edge ', 'residual edge formatter ownership'],
+  ['carry ', 'carry formatter ownership'],
+  ['refine ', 'refinement formatter ownership'],
+  ['arm ', 'arm formatter ownership'],
+  ['torso ', 'torso formatter ownership'],
+  ['stance ', 'stance state formatter ownership'],
+  ['feet ', 'foot formatter ownership'],
+]) {
+  source = migrateAssertionOwner(source, lowStanceTestName, prefix, 'diagnosticFormattersSource', label);
+}
 
 source = migrateTest(source,
   'F review batches presentation rebuilds and avoids dynamic debug bounds work', [
