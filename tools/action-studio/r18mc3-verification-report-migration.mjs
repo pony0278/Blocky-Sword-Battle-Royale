@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const entryPath = 'tools/action-studio/shield-driven-contact-coupling-lab-r281.js';
 const modulePath = 'tools/action-studio/shield-parry-r281/verification-report.js';
 const packagePath = 'package.json';
+const legacyRegressionPath = 'tests/shield-driven-contact-coupling-r281-regression.test.js';
 
 function requireExactlyOnce(text, token, label) {
   const count = text.split(token).length - 1;
@@ -70,6 +71,21 @@ requireExactlyOnce(migratedBuildReport, 'maxCharacters: MAX_REPORT_DOM_CHARACTER
 
 fs.writeFileSync(modulePath, moduleSource.replace(/[ \t]+$/gm, ''));
 fs.writeFileSync(entryPath, entry.replace(/[ \t]+$/gm, ''));
+
+let legacy = fs.readFileSync(legacyRegressionPath, 'utf8');
+const htmlAnchor = "const html = await readFile(\n";
+requireExactlyOnce(legacy, htmlAnchor, 'legacy html source anchor');
+legacy = legacy.replace(
+  htmlAnchor,
+  "const verificationReportSource = await readFile(\n  new URL('../tools/action-studio/shield-parry-r281/verification-report.js', import.meta.url),\n  'utf8',\n);\nconst html = await readFile(\n",
+);
+const movedTelemetryAssertion = "  assert.match(source, /telemetryDetail: 'compact-scalar-frames-only'/);";
+requireExactlyOnce(legacy, movedTelemetryAssertion, 'legacy compact telemetry assertion');
+legacy = legacy.replace(
+  movedTelemetryAssertion,
+  "  assert.match(verificationReportSource, /telemetryDetail: 'compact-scalar-frames-only'/);",
+);
+fs.writeFileSync(legacyRegressionPath, legacy.replace(/[ \t]+$/gm, ''));
 
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 const testToken = 'tests/shield-parry-r281-verification-report.test.js';
