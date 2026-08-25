@@ -1,3 +1,5 @@
+import { buildActiveParryInterceptDiagnosis } from './active-parry-intercept-diagnosis.js';
+
 // R18M.C5 — debug facade composition only.
 // This module exposes injected actions/runtimes and read-only exchange getters; it owns no gameplay authority.
 
@@ -41,5 +43,11 @@ export function createShieldParryDebugApi({
     get latestParryWhiff() { return getExchangeState().latestParryWhiff; },
     get latestInterceptDriveReport() { return getExchangeState().latestInterceptDriveReport; },
     get latestInputSignal() { return getExchangeState().latestInputSignal; },
+    get activeParryInterceptDiagnosis() {
+      return buildActiveParryInterceptDiagnosis({
+        attackSnapshot: runtimes.attackRuntime.snapshot,
+        exchangeState: getExchangeState(),
+      });
+    },
   };
 }
