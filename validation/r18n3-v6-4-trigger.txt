@@ -1,2 +1,2 @@
 R18N.3 v6.4 validation trigger — do not merge.
-Evidence capture rerun: R18M.5 order, debug facade, and Step 3A inspection ownership contracts repaired.
+Evidence capture rerun: R18E debug parser/presentation/report/contact ownership contract migrated.
