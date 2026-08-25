@@ -4,10 +4,16 @@ const entryPath = 'tools/action-studio/shield-driven-contact-coupling-lab-r281.j
 const modulePath = 'tools/action-studio/shield-parry-r281/verification-report.js';
 const packagePath = 'package.json';
 const legacyRegressionPath = 'tests/shield-driven-contact-coupling-r281-regression.test.js';
+const legacyLifecyclePath = 'tests/shield-sword-hand-contact-coupling-lab.test.js';
 
 function requireExactlyOnce(text, token, label) {
   const count = text.split(token).length - 1;
   if (count !== 1) throw new Error(`${label}: expected exactly one occurrence, got ${count}`);
+}
+
+function replaceExactlyOnce(text, from, to, label) {
+  requireExactlyOnce(text, from, label);
+  return text.replace(from, to);
 }
 
 let entry = fs.readFileSync(entryPath, 'utf8');
@@ -74,18 +80,76 @@ fs.writeFileSync(entryPath, entry.replace(/[ \t]+$/gm, ''));
 
 let legacy = fs.readFileSync(legacyRegressionPath, 'utf8');
 const htmlAnchor = "const html = await readFile(\n";
-requireExactlyOnce(legacy, htmlAnchor, 'legacy html source anchor');
-legacy = legacy.replace(
+legacy = replaceExactlyOnce(
+  legacy,
   htmlAnchor,
   "const verificationReportSource = await readFile(\n  new URL('../tools/action-studio/shield-parry-r281/verification-report.js', import.meta.url),\n  'utf8',\n);\nconst html = await readFile(\n",
+  'legacy regression html source anchor',
 );
-const movedTelemetryAssertion = "  assert.match(source, /telemetryDetail: 'compact-scalar-frames-only'/);";
-requireExactlyOnce(legacy, movedTelemetryAssertion, 'legacy compact telemetry assertion');
-legacy = legacy.replace(
-  movedTelemetryAssertion,
+legacy = replaceExactlyOnce(
+  legacy,
+  "  assert.match(source, /telemetryDetail: 'compact-scalar-frames-only'/);",
   "  assert.match(verificationReportSource, /telemetryDetail: 'compact-scalar-frames-only'/);",
+  'legacy compact telemetry assertion',
 );
 fs.writeFileSync(legacyRegressionPath, legacy.replace(/[ \t]+$/gm, ''));
+
+let lifecycle = fs.readFileSync(legacyLifecyclePath, 'utf8');
+const lifecycleAttackerAnchor = "const attackerPresentationSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/attacker-presentation.js', import.meta.url),\n  'utf8',\n);\n";
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  lifecycleAttackerAnchor,
+  `${lifecycleAttackerAnchor}const verificationReportSource = readFileSync(\n  new URL('../tools/action-studio/shield-parry-r281/verification-report.js', import.meta.url),\n  'utf8',\n);\n`,
+  'lifecycle verification report source anchor',
+);
+
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  "  assert.match(source, /inspectionCamera: freeCamera\\.snapshot\\(\\)/);",
+  "  assert.match(source, /inspectionCameraSnapshot: freeCamera\\.snapshot\\(\\)/);\n  assert.match(verificationReportSource, /inspectionCamera: inspectionCameraSnapshot/);",
+  'free inspection camera report ownership assertion',
+);
+
+for (const marker of [
+  'weaponArmRemainsContactConstrainedDuringStep3A',
+  'frozenContactPoseRestoredBeforeEveryBodyOverlay',
+  'bodyCompletionCannotReleaseContactOwnedPose',
+  'contactOwnsFinalPoseBeforeVisibleOldB3',
+  'b3PresentationParkedAtOriginDuringLiveContact',
+]) {
+  lifecycle = replaceExactlyOnce(
+    lifecycle,
+    `  assert.ok(source.includes('${marker}'));`,
+    `  assert.ok(verificationReportSource.includes('${marker}'));`,
+    `live-contact report invariant ${marker}`,
+  );
+}
+
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  "  assert.ok(source.includes('parryImpactSelectsExaggeratedOldB3ReactionDefinition'));",
+  "  assert.ok(verificationReportSource.includes('parryImpactSelectsExaggeratedOldB3ReactionDefinition'));",
+  'OLD B3 reaction report invariant',
+);
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  "  assert.ok(postContactOwnershipSource.includes('deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero'));",
+  "  assert.ok(verificationReportSource.includes('deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero'));",
+  'OLD B3 continuation report authority',
+);
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  "  assert.ok(source.includes('deflectImpulseStartsOldB3FromZeroWithoutBodyRestart'));",
+  "  assert.ok(verificationReportSource.includes('deflectImpulseStartsOldB3FromZeroWithoutBodyRestart'));",
+  'OLD B3 zero-start report invariant',
+);
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  "  assert.ok(source.includes('visibleOldB3Peak?.readable === true'));",
+  "  assert.ok(verificationReportSource.includes('visibleOldB3Peak?.readable === true'));",
+  'OLD B3 readable peak report invariant',
+);
+fs.writeFileSync(legacyLifecyclePath, lifecycle.replace(/[ \t]+$/gm, ''));
 
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 const testToken = 'tests/shield-parry-r281-verification-report.test.js';
