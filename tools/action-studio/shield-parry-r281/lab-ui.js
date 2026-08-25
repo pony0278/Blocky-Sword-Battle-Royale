@@ -31,7 +31,7 @@ export function createShieldParryLabUi(elements) {
     parryCue.className = `parry-cue ${state}`;
     parryCueMain.textContent = main;
     parryCueDetail.textContent = detail;
-    retryAttackButton.classList.toggle('retry-attention', state === 'used');
+    retryAttack.classList.toggle('retry-attention', state === 'used');
   }
 
   function updateParryCue(model) {
