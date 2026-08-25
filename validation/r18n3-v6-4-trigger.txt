@@ -1,2 +1,2 @@
 R18N.3 v6.4 validation trigger — do not merge.
-Evidence capture rerun: R18E debug parser/presentation/report/contact ownership contract migrated.
+Evidence capture rerun: R18E ownership migration rewritten as unique owner-prefix replacements.
