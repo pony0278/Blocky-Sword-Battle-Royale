@@ -1,2 +1,2 @@
 R18N.3 v6.4 validation trigger — do not merge.
-Evidence capture rerun: stale Parry input source ownership contract repaired.
+Evidence capture rerun: stale Parry input + cue source ownership contracts repaired.
