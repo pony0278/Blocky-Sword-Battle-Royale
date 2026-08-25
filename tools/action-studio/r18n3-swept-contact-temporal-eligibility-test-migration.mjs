@@ -73,11 +73,18 @@ for (const [needle, owner, label] of [
   ['assert.match(source, /DEBUG pred', 'assert.match(diagnosticFormattersSource, /DEBUG pred', 'R18E debug prediction ownership'],
   ['assert.match(source, /anticipatedEligibilityReason/', 'assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/', 'R18E eligibility reason ownership'],
   ['assert.match(source, /pflags', 'assert.match(diagnosticFormattersSource, /pflags', 'R18E prediction flags ownership'],
-  ['assert.match(source, /latestThreatSelection/', 'assert.match(verificationReportSource, /latestThreatSelection/', 'R18E threat report ownership'],
-  ['assert.match(source, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/', 'assert.match(verificationReportSource, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/', 'R18E debug authority report ownership'],
-  ['assert.match(source, /if \\(!latestContact\\.contact\\) return/', 'assert.match(contactHandoffSource, /if \\(!exchangeState\\.latestContact\\.contact\\) return/', 'R18E real-contact reject ownership'],
 ]) {
   migrateExact(step3ATestPath, needle, owner, label);
 }
+
+const oldR18EAuthorityBlock = `  assert.match(source, /latestThreatSelection/);\n  assert.match(source, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);\n  assert.match(source, /if \\(!latestContact\\.contact\\) return/);`;
+const newR18EAuthorityBlock = `  assert.match(verificationReportSource, /latestThreatSelection/);\n  assert.match(verificationReportSource, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);\n  assert.match(contactHandoffSource, /if \\(!exchangeState\\.latestContact\\.contact\\) return/);`;
+
+migrateExact(
+  step3ATestPath,
+  oldR18EAuthorityBlock,
+  newR18EAuthorityBlock,
+  'R18E report plus real-contact authority ownership block',
+);
 
 console.log('R18N.3 v6.4 contact authority source contracts migrated.');
