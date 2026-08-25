@@ -94,6 +94,12 @@ update('tools/action-studio/shield-parry-r281/pre-contact-controller.js', (sourc
   );
   next = replaceOnce(
     next,
+    "      const residualBodyReach = residualBodyReachRuntime.update({\n        mode: 'parry',\n        closestApproach: residualAfterArmRefinement,\n      }, deltaSeconds);",
+    "      const residualBodyReach = residualBodyReachRuntime.update({\n        // The F-latched world target owns chest/spine placement while active. Keep\n        // the legacy body-reach solver for non-active Parry, but do not let its\n        // separate measured-contact target fight the fixed Active Intercept target.\n        mode: activeIntentPlan ? 'off' : 'parry',\n        closestApproach: residualAfterArmRefinement,\n      }, deltaSeconds);",
+    'active intent body reach ownership',
+  );
+  next = replaceOnce(
+    next,
     "        drivePlanSource: exchangeState.latestReachableInterceptTarget?.fallbackApplied\n          ? 'surface-relative-measured-contact-correction'\n          : 'current-presentation-linear-contact-correction',",
     "        drivePlanSource: activeIntentPlan\n          ? 'latched-f-active-intercept-intent'\n          : exchangeState.latestReachableInterceptTarget?.fallbackApplied\n            ? 'surface-relative-measured-contact-correction'\n            : 'current-presentation-linear-contact-correction',\n        activeInterceptIntent: activeInterceptIntent?.report ?? null,",
     'drive plan telemetry',
