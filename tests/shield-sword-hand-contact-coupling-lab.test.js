@@ -31,6 +31,10 @@ const attackerPresentationSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/attacker-presentation.js', import.meta.url),
   'utf8',
 );
+const verificationReportSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/verification-report.js', import.meta.url),
+  'utf8',
+);
 
 function functionBody(name, nextName) {
   const start = source.indexOf(`function ${name}(`);
@@ -66,7 +70,8 @@ test('Step 3A exposes an explicit live contact inspection state and markers', ()
 test('Step 3A provides a free inspection camera without changing combat time', () => {
   assert.match(sceneCompositionSource, /createFreeInspectionCameraControls/);
   assert.match(source, /freeCamera\.update\(rawDeltaMs \/ 1000\)/);
-  assert.match(source, /inspectionCamera: freeCamera\.snapshot\(\)/);
+  assert.match(source, /inspectionCameraSnapshot: freeCamera\.snapshot\(\)/);
+  assert.match(verificationReportSource, /inspectionCamera: inspectionCameraSnapshot/);
   assert.match(html, /Free inspection camera/);
   assert.match(html, /W A S D · Q down · E up/);
   assert.match(cameraSource, /pointerdown/);
@@ -164,18 +169,18 @@ test('R18I lets live contact own the final pose while OLD B3 waits at presentati
     'b3BodyClockStartedAtImpact: false',
     'fullOldB3ReactionIntentActiveAtImpact: false',
     'contactConstraintOwnsUntilDeflectImpulse: true',
-    'boundedProximalArmCorrectionBeforeForearmAndWrist',
     'proximalAssistBone',
   ]) assert.ok(postContactOwnershipSource.includes(marker), marker);
-  assert.ok(source.includes('weaponArmRemainsContactConstrainedDuringStep3A'));
+  assert.ok(verificationReportSource.includes('boundedProximalArmCorrectionBeforeForearmAndWrist'));
+  assert.ok(verificationReportSource.includes('weaponArmRemainsContactConstrainedDuringStep3A'));
   assert.ok(contactHandoffSource.includes('exchangeState.frozenAttackerContactPose = captureRigPose(attacker.rig)'));
   assert.ok(attackerPresentationSource.includes('applyRigPose(attacker.rig, exchangeState.frozenAttackerContactPose)'));
   assert.ok(attackerPresentationSource.includes('exchangeState.canonicalAttackerOldB3Pose = captureRigPose(attacker.rig)'));
   assert.ok(attackerPresentationSource.includes('sampleCanonicalInterruptionPose(interruption)'));
-  assert.ok(source.includes('frozenContactPoseRestoredBeforeEveryBodyOverlay'));
-  assert.ok(source.includes('bodyCompletionCannotReleaseContactOwnedPose'));
-  assert.ok(source.includes('contactOwnsFinalPoseBeforeVisibleOldB3'));
-  assert.ok(source.includes('b3PresentationParkedAtOriginDuringLiveContact'));
+  assert.ok(verificationReportSource.includes('frozenContactPoseRestoredBeforeEveryBodyOverlay'));
+  assert.ok(verificationReportSource.includes('bodyCompletionCannotReleaseContactOwnedPose'));
+  assert.ok(verificationReportSource.includes('contactOwnsFinalPoseBeforeVisibleOldB3'));
+  assert.ok(verificationReportSource.includes('b3PresentationParkedAtOriginDuringLiveContact'));
 });
 
 test('R18I preserves predictive defender time and latches the defender deflect marker', () => {
@@ -225,13 +230,13 @@ test('R18I releases contact through 28ms continuity and starts canonical OLD B3 
     'OLD B3 STARTED',
     'full-rig-live-contact-pose-to-canonical-interruption-pose',
   ]) assert.ok(contactHandoffSource.includes(marker), marker);
-  assert.ok(source.includes('parryImpactSelectsExaggeratedOldB3ReactionDefinition'));
-  assert.ok(postContactOwnershipSource.includes('deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero'));
+  assert.ok(verificationReportSource.includes('parryImpactSelectsExaggeratedOldB3ReactionDefinition'));
+  assert.ok(verificationReportSource.includes('deflect-impulse-continuity-bridge-to-canonical-old-b3-from-zero'));
   assert.ok(source.includes("from '../../src/combat/post-coupling-recoil-stagger-handoff.js';"));
   assert.ok(!source.includes('post-coupling-recoil-stagger-handoff.js?v='));
-  assert.ok(source.includes('deflectImpulseStartsOldB3FromZeroWithoutBodyRestart'));
+  assert.ok(verificationReportSource.includes('deflectImpulseStartsOldB3FromZeroWithoutBodyRestart'));
   assert.ok(postContactOwnershipSource.includes('measureAttackerRecoilWorldSilhouette'));
-  assert.ok(source.includes('visibleOldB3Peak?.readable === true'));
+  assert.ok(verificationReportSource.includes('visibleOldB3Peak?.readable === true'));
   assert.ok(!source.includes('visibleOldB3Peak?.backwardChainPitchDegrees'));
   assert.match(html, /canonical OLD B3.*elapsed 0/);
 });
