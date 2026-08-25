@@ -210,10 +210,10 @@ async function runTrial(variant, index) {
       }
       if (lab.latestParryConfirmation?.accepted === true || lab.latestParryWhiff) return finish();
       if (Number.isFinite(elapsed) && elapsed > 0.325) return finish();
-      requestAnimationFrame(() => setTimeout(step, 0));
+      requestAnimationFrame(step);
     }
 
-    requestAnimationFrame(() => setTimeout(step, 0));
+    requestAnimationFrame(step);
   })`);
 
   const frames = (result.frames || []).map(compactFrame);
@@ -269,7 +269,7 @@ try {
     await sleep(70);
   }
   const data = {
-    stage: 'R18N.3-v6.4.1-hitch-geometry-bracketing-diagnosis',
+    stage: 'R18N.3-v6.4.2-hitch-harness-raf-parity',
     targetTtc,
     hitchAtSeconds,
     hitchMs,
