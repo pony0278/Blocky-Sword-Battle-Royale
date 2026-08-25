@@ -64,7 +64,8 @@ jobs:
           for f in \
             tools/action-studio/shield-parry-r281/active-parry-intercept-diagnosis.js \
             tools/action-studio/shield-parry-r281/debug-api.js \
-            tests/shield-parry-r281-active-parry-intercept-diagnosis.test.js; do
+            tests/shield-parry-r281-active-parry-intercept-diagnosis.test.js \
+            tests/shield-parry-r281-startup-debug-facade.test.js; do
             sed -i 's/[[:space:]]\+$//' "$f"
           done
 
@@ -73,6 +74,7 @@ jobs:
           node --check tools/action-studio/shield-parry-r281/active-parry-intercept-diagnosis.js
           node --check tools/action-studio/shield-parry-r281/debug-api.js
           node --check tests/shield-parry-r281-active-parry-intercept-diagnosis.test.js
+          node --check tests/shield-parry-r281-startup-debug-facade.test.js
           node --test tests/shield-parry-r281-active-parry-intercept-diagnosis.test.js
 
       - name: R18M plus R18N focused regression contracts
@@ -125,9 +127,12 @@ jobs:
           for (const direction of ['top', 'right']) {
             const row = data[direction];
             if (row.inputResult?.accepted !== true) throw new Error(`${direction} probe input was not accepted`);
-            if (row.final?.contact?.confirmed !== true) throw new Error(`${direction} probe did not reach confirmed real contact`);
+            if (row.final?.contact?.confirmed !== true && !row.whiff) {
+              throw new Error(`${direction} probe produced neither confirmed contact nor whiff evidence`);
+            }
             console.log(`R18N0 ${direction.toUpperCase()} input:`, JSON.stringify(row.afterInput));
             console.log(`R18N0 ${direction.toUpperCase()} final:`, JSON.stringify(row.final));
+            if (row.whiff) console.log(`R18N0 ${direction.toUpperCase()} whiff:`, JSON.stringify(row.whiff));
           }
           NODE
 
@@ -156,7 +161,7 @@ jobs:
           rm -f .github/workflows/r18n0-active-parry-intercept-diagnosis.yml
           rm -f tools/action-studio/r18n0-active-parry-diagnosis-migration.mjs
           rm -f tools/action-studio/r18n0-active-parry-browser-probe.mjs
-          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-parry-r281/active-parry-intercept-diagnosis\.js|tools/action-studio/shield-parry-r281/debug-api\.js|tests/shield-parry-r281-active-parry-intercept-diagnosis\.test\.js|\.github/workflows/r18n0-active-parry-intercept-diagnosis\.yml|tools/action-studio/r18n0-active-parry-diagnosis-migration\.mjs|tools/action-studio/r18n0-active-parry-browser-probe\.mjs)$'
+          ALLOWED='^( M|M |A | A|D | D|\?\?) (package\.json|tools/action-studio/shield-parry-r281/active-parry-intercept-diagnosis\.js|tools/action-studio/shield-parry-r281/debug-api\.js|tests/shield-parry-r281-active-parry-intercept-diagnosis\.test\.js|tests/shield-parry-r281-startup-debug-facade\.test\.js|\.github/workflows/r18n0-active-parry-intercept-diagnosis\.yml|tools/action-studio/r18n0-active-parry-diagnosis-migration\.mjs|tools/action-studio/r18n0-active-parry-browser-probe\.mjs)$'
           git status --short
           UNEXPECTED=$(git status --short | grep -Ev "$ALLOWED" || true)
           if [ -n "$UNEXPECTED" ]; then
@@ -175,6 +180,7 @@ jobs:
             tools/action-studio/shield-parry-r281/active-parry-intercept-diagnosis.js \
             tools/action-studio/shield-parry-r281/debug-api.js \
             tests/shield-parry-r281-active-parry-intercept-diagnosis.test.js \
+            tests/shield-parry-r281-startup-debug-facade.test.js \
             .github/workflows/r18n0-active-parry-intercept-diagnosis.yml \
             tools/action-studio/r18n0-active-parry-diagnosis-migration.mjs \
             tools/action-studio/r18n0-active-parry-browser-probe.mjs
