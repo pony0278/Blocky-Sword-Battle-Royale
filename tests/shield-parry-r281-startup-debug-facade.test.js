@@ -1,16 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createShieldParryDebugApi } from '../tools/action-studio/shield-parry-r281/debug-api.js';
 
 const source = readFileSync(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url),
   'utf8',
 );
-const bootstrapSource = readFileSync(
-  new URL('../tools/action-studio/shield-parry-r281/lab-bootstrap.js', import.meta.url),
-  'utf8',
-);
+const bootstrapUrl = new URL('../tools/action-studio/shield-parry-r281/lab-bootstrap.js', import.meta.url);
+const bootstrapSource = readFileSync(bootstrapUrl, 'utf8');
 const debugApiSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/debug-api.js', import.meta.url),
   'utf8',
@@ -58,6 +56,15 @@ test('R18M.C5 bootstrap owns only async asset registration and defender weapon b
     'ready = true',
     'requestAnimationFrame',
   ]) assert.ok(!bootstrapSource.includes(forbidden), forbidden);
+});
+
+test('R18M.C5 bootstrap relative imports resolve to real repository files', () => {
+  const imports = [...bootstrapSource.matchAll(/from\s+['"](\.\.\/[^'"]+)['"]/g)].map((match) => match[1]);
+  assert.equal(imports.length, 6);
+  for (const specifier of imports) {
+    const resolved = new URL(specifier, bootstrapUrl);
+    assert.ok(existsSync(resolved), `${specifier} must resolve from lab-bootstrap.js`);
+  }
 });
 
 test('R18M.C5 debug facade preserves the public API shape without owning gameplay execution', () => {
