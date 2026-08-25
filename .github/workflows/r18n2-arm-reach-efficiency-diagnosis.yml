@@ -99,13 +99,14 @@ jobs:
             tests/shield-parry-r281-thin-entry-audit.test.js \
             tests/old-two-actor-b3-direct-diagnostic.test.js
 
-      - name: Preserve tuning and authority locks
+      - name: Preserve tuning solver and authority locks
         shell: bash
         run: |
           set -euo pipefail
           grep -q "maxTrackingSpeedMps: 1.6" src/combat/guard-threat-tracking.js
           grep -q "upperArmMaxDegrees: 14" src/combat/guard-threat-tracking.js
           grep -q "lowerArmMaxDegrees: 18" src/combat/guard-threat-tracking.js
+          ! grep -Eq 'reachEfficiency|radialDemandRatio|applyJointSolvePass|R18N\.2' src/combat/guard-threat-tracking.js
           LINES=$(wc -l < tools/action-studio/shield-driven-contact-coupling-lab-r281.js)
           echo "R281 lines: $LINES"
           test "$LINES" -le 725
@@ -120,7 +121,7 @@ jobs:
       - name: Verify Guard Runtime browser surface
         run: bash tools/action-studio/verify-guard-runtime-surface.sh
 
-      - name: Run TOP and RIGHT arm-efficiency browser diagnosis
+      - name: Run TOP and RIGHT read-only retention diagnosis
         shell: bash
         run: |
           set -euo pipefail
@@ -134,7 +135,7 @@ jobs:
             node tools/action-studio/r18n1-active-intercept-browser-probe.mjs | tee r18n2-probe.log
           grep -q '^R18N1_PROBE_JSON=' r18n2-probe.log
 
-      - name: Summarize R18N.2 reach efficiency evidence
+      - name: Summarize R18N.2 cross-frame evidence
         shell: bash
         run: |
           node <<'NODE' | tee r18n2-summary.log
@@ -144,48 +145,62 @@ jobs:
           if (!line) throw new Error('R18N.2 missing probe JSON');
           const data = JSON.parse(line.slice('R18N1_PROBE_JSON='.length));
           const finite = (values) => values.map(Number).filter(Number.isFinite);
-          const avg = (values) => values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+          const sum = (values) => values.reduce((a, b) => a + b, 0);
+          const avg = (values) => values.length ? sum(values) / values.length : null;
           const summarize = (row) => {
             if (row.inputResult?.accepted !== true) throw new Error(`${row.direction} F input rejected`);
             if (row.final?.confirmation?.accepted !== true || row.final?.whiff) {
               throw new Error(`${row.direction} lost authoritative real-contact confirmation`);
             }
-            const reports = row.samples.map((sample) => sample.primaryArmReachEfficiency).filter(Boolean);
-            if (!reports.length) throw new Error(`${row.direction} missing primary arm reach telemetry`);
-            const passes = reports.flatMap((report) => report.passes || []);
-            if (!passes.length) throw new Error(`${row.direction} missing per-joint solve passes`);
-            const requested = finite(reports.map((report) => report.requestedDistanceMeters));
-            const achieved = finite(reports.map((report) => report.achievedDistanceMeters));
-            const reduction = finite(reports.map((report) => report.targetDistanceReductionMeters));
-            const displacementEfficiency = finite(reports.map((report) => report.displacementEfficiency));
-            const convergenceEfficiency = finite(reports.map((report) => report.convergenceEfficiency));
-            const radial = finite(passes.map((pass) => pass.radialDemandRatio));
-            const tangential = finite(passes.map((pass) => pass.tangentialTargetMeters));
-            const upperUse = finite(reports.map((report) => report.budgetUtilization?.['upperarm.l']));
-            const lowerUse = finite(reports.map((report) => report.budgetUtilization?.['lowerarm.l']));
-            const saturated = passes.filter((pass) => pass.budgetSaturated === true).length;
-            const saturatedRatio = passes.length ? saturated / passes.length : 0;
-            const meanDisplacementEfficiency = avg(displacementEfficiency);
-            const maxRadialDemandRatio = radial.length ? Math.max(...radial) : null;
+            const reports = row.samples.map((sample) => sample.crossFrameRetention).filter(Boolean);
+            if (!reports.length) throw new Error(`${row.direction} missing cross-frame retention telemetry`);
+            const entryReset = finite(reports.map((report) => report.frameEntryResetMeters));
+            const entryLoss = finite(reports.map((report) => report.entryLostConvergenceMeters));
+            const presentationDelta = finite(reports.map((report) => report.presentationTargetDeltaMeters));
+            const primaryReduction = finite(reports.map((report) => report.primaryTargetReductionMeters));
+            const postPrimaryDelta = finite(reports.map((report) => report.postPrimaryTargetDeltaMeters));
+            const requested = finite(reports.map((report) => report.primaryRequestedMeters));
+            const achieved = finite(reports.map((report) => report.primaryAchievedMeters));
+            const displacementEfficiency = finite(reports.map((report) => report.primaryDisplacementEfficiency));
+            const convergenceEfficiency = finite(reports.map((report) => report.primaryConvergenceEfficiency));
+            const upperDegrees = finite(reports.map((report) => report.appliedDegrees?.['upperarm.l']));
+            const lowerDegrees = finite(reports.map((report) => report.appliedDegrees?.['lowerarm.l']));
+            const positiveEntryLoss = entryLoss.filter((value) => value > 0);
+            const positivePresentationLoss = presentationDelta.filter((value) => value > 0);
+            const positivePostPrimaryLoss = postPrimaryDelta.filter((value) => value > 0);
+            const totalPrimaryReduction = sum(primaryReduction.filter((value) => value > 0));
+            const totalEntryLoss = sum(positiveEntryLoss);
+            const totalPresentationLoss = sum(positivePresentationLoss);
+            const totalPostPrimaryLoss = sum(positivePostPrimaryLoss);
+            const entryLossVsPrimary = totalPrimaryReduction > 1e-9 ? totalEntryLoss / totalPrimaryReduction : null;
+            const presentationLossVsPrimary = totalPrimaryReduction > 1e-9 ? totalPresentationLoss / totalPrimaryReduction : null;
+            const postPrimaryLossVsPrimary = totalPrimaryReduction > 1e-9 ? totalPostPrimaryLoss / totalPrimaryReduction : null;
+            const maxUpperBudgetUtilization = upperDegrees.length ? Math.max(...upperDegrees) / 14 : null;
+            const maxLowerBudgetUtilization = lowerDegrees.length ? Math.max(...lowerDegrees) / 18 : null;
             let diagnosisHint = 'mixed-or-insufficient-evidence';
-            if (saturatedRatio >= 0.5) diagnosisHint = 'joint-angle-budget-pressure';
-            else if ((maxRadialDemandRatio ?? 0) >= 0.7 && (meanDisplacementEfficiency ?? 1) < 0.5) diagnosisHint = 'rotation-geometry-radial-demand';
-            else if ((meanDisplacementEfficiency ?? 1) < 0.5) diagnosisHint = 'low-effector-translation-efficiency';
+            if ((entryLossVsPrimary ?? 0) >= 0.5) diagnosisHint = 'cross-frame-pre-contact-pose-retention-loss';
+            else if ((presentationLossVsPrimary ?? 0) >= 0.25) diagnosisHint = 'predictive-presentation-retention-leak';
+            else if ((postPrimaryLossVsPrimary ?? 0) >= 0.25) diagnosisHint = 'post-primary-solver-retention-loss';
+            else if ((avg(convergenceEfficiency) ?? 1) < 0.5) diagnosisHint = 'arm-solver-convergence-efficiency';
+            else diagnosisHint = 'arm-solver-efficient-retention-mostly-preserved';
             return {
               frames: reports.length,
-              solverPasses: passes.length,
+              maxFrameEntryResetCm: entryReset.length ? Math.max(...entryReset) * 100 : null,
+              totalEntryLostConvergenceCm: totalEntryLoss * 100,
+              totalPresentationLossCm: totalPresentationLoss * 100,
+              totalPrimaryTargetReductionCm: totalPrimaryReduction * 100,
+              totalPostPrimaryLossCm: totalPostPrimaryLoss * 100,
+              entryLossVsPrimary,
+              presentationLossVsPrimary,
+              postPrimaryLossVsPrimary,
               maxRequestedStepCm: requested.length ? Math.max(...requested) * 100 : null,
               maxAchievedStepCm: achieved.length ? Math.max(...achieved) * 100 : null,
-              maxTargetReductionCm: reduction.length ? Math.max(...reduction) * 100 : null,
-              meanDisplacementEfficiency,
+              meanDisplacementEfficiency: avg(displacementEfficiency),
               meanConvergenceEfficiency: avg(convergenceEfficiency),
-              minDisplacementEfficiency: displacementEfficiency.length ? Math.min(...displacementEfficiency) : null,
-              maxUpperBudgetUtilization: upperUse.length ? Math.max(...upperUse) : null,
-              maxLowerBudgetUtilization: lowerUse.length ? Math.max(...lowerUse) : null,
-              saturatedPasses: saturated,
-              saturatedRatio,
-              maxRadialDemandRatio,
-              maxTangentialDemandCm: tangential.length ? Math.max(...tangential) * 100 : null,
+              maxUpperArmDegrees: upperDegrees.length ? Math.max(...upperDegrees) : null,
+              maxLowerArmDegrees: lowerDegrees.length ? Math.max(...lowerDegrees) : null,
+              maxUpperBudgetUtilization,
+              maxLowerBudgetUtilization,
               diagnosisHint,
             };
           };
