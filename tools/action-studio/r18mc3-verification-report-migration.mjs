@@ -110,6 +110,19 @@ lifecycle = replaceExactlyOnce(
   'free inspection camera report ownership assertion',
 );
 
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  "    'boundedProximalArmCorrectionBeforeForearmAndWrist',\n",
+  '',
+  'move bounded proximal correction report invariant out of runtime marker list',
+);
+lifecycle = replaceExactlyOnce(
+  lifecycle,
+  "  assert.ok(source.includes('weaponArmRemainsContactConstrainedDuringStep3A'));",
+  "  assert.ok(verificationReportSource.includes('boundedProximalArmCorrectionBeforeForearmAndWrist'));\n  assert.ok(source.includes('weaponArmRemainsContactConstrainedDuringStep3A'));",
+  'bounded proximal correction report invariant assertion',
+);
+
 for (const marker of [
   'weaponArmRemainsContactConstrainedDuringStep3A',
   'frozenContactPoseRestoredBeforeEveryBodyOverlay',
