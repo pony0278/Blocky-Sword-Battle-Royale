@@ -51,8 +51,7 @@ jobs:
             tools/action-studio/shield-parry-r281/exchange-state.js \
             tools/action-studio/shield-parry-r281/debug-api.js \
             tests/shield-parry-r281-exchange-state.test.js \
-            tests/shield-parry-r281-visual-ownership-baseline.test.js \
-            .github/workflows/r18n4-1-runtime-taps-apply.yml
+            tests/shield-parry-r281-visual-ownership-baseline.test.js
           if git diff --cached --quiet; then
             echo "No materialized R18N.4.1-B changes to publish."
             exit 0
