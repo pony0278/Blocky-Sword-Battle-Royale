@@ -134,19 +134,14 @@ async function waitFor(client, expression, timeoutMs = 10000, intervalMs = 10) {
 }
 
 async function runTrial(client, trialIndex) {
-  if (trialIndex === 0) {
-    const started = await client.evaluate(`(() => {
-      const api = window.__G43B5R281_LAB__;
-      api.setMode('parry');
-      document.getElementById('slowReview').checked = true;
-      document.getElementById('autoRepeat').checked = false;
-      return api.startAttack('top');
-    })()`);
-    if (!started) throw new Error('startAttack(top) rejected');
-  } else {
-    const restarted = await client.evaluate(`window.__G43B5R281_LAB__.restartAttack('top')`);
-    if (!restarted) throw new Error(`restartAttack(top) rejected for trial ${trialIndex}`);
-  }
+  const restarted = await client.evaluate(`(() => {
+    const api = window.__G43B5R281_LAB__;
+    api.setMode('parry');
+    document.getElementById('slowReview').checked = true;
+    document.getElementById('autoRepeat').checked = false;
+    return api.restartAttack('top');
+  })()`);
+  if (!restarted) throw new Error(`restartAttack(top) rejected for trial ${trialIndex}`);
 
   await waitFor(client, `window.__G43B5R281_LAB__?.latestParryOpportunity?.accepted === true`, 15000, 5);
   const beforeInput = await client.evaluate(captureExpression);
