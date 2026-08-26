@@ -49,11 +49,11 @@ test('G4.3B.5R.2.7 enters old Two-Actor late impulse immediately after Parry rel
   assert.equal(result.profileOverrides.releaseSeparationWindowMs, 0);
   assert.equal(result.profileOverrides.releaseSeparationDistanceMeters, 0);
   assert.equal(result.powerFrame.separationBypassed, true);
-  assert.equal(result.profileOverrides.powerFrameHoldMs, 72);
-  assert.equal(result.powerFrame.holdDurationMs, 72);
+  assert.equal(result.profileOverrides.powerFrameHoldMs, 96);
+  assert.equal(result.powerFrame.holdDurationMs, 96);
   assert.equal(result.powerFrame.oldTwoActorArmAuthorityRestored, true);
   assert.equal(result.plan.weapon.deflectDegrees, 30);
-  assert.ok(result.plan.body.pitchDegrees <= -25);
+  assert.ok(result.plan.body.pitchDegrees <= -32);
   assert.ok(Math.abs(result.plan.body.yawDegrees) >= 10.7, 'open-shoulder yaw channel should be slightly stronger than old Two-Actor');
   assert.ok(Math.abs(result.plan.body.rollDegrees) >= 3.0, 'roll channel should help widen the two-shoulder silhouette');
   const next30FpsFrameMs = result.initialElapsedMs + 1000 / 30;
@@ -64,8 +64,8 @@ test('G4.3B.5R.2.7 preserves backward almost-fall bias and owns the release legs
   const result = buildTwoActorWholeBodyRecoilBurst({
     plan: parryPlan(), outcome: 'parry', momentum: 1.05, weaponMomentum: 1,
   });
-  assert.ok(Math.abs(result.plan.body.pitchDegrees) * 0.46 >= 11.5);
-  assert.equal(result.profileOverrides.legStrengthScale, 1.45);
+  assert.ok(Math.abs(result.plan.body.pitchDegrees) * 0.42 >= 13.4);
+  assert.equal(result.profileOverrides.legStrengthScale, 1.95);
   assert.equal(result.powerFrame.parentChainFreeArmMotion, true);
   assert.equal(result.rootMotion, false);
 });
@@ -109,7 +109,7 @@ test('post-coupling Parry handoff bypasses explicit separation and keeps absolut
   assert.equal(handoff.initialElapsedMs, 68);
   assert.equal(handoff.separation.releaseWindowMs, 0);
   assert.equal(handoff.separation.bypassedForWholeBodyBurst, true);
-  assert.equal(handoff.profileOverrides.legStrengthScale, 1.45, 'historical 0.78 leg scale must not attenuate .2.7');
+  assert.equal(handoff.profileOverrides.legStrengthScale, 1.95, 'historical 0.78 leg scale must not attenuate .2.7');
   assert.equal(handoff.wholeBodyBurst.powerFrame.oldTwoActorArmAuthorityRestored, true);
   assert.equal(handoff.channelIntent.freeArm, 'parent-chain-motion-no-explicit-flail');
 });
@@ -130,12 +130,12 @@ test('R18I selects the exaggerated OLD B3 plan at impact for deflect activation 
   assert.equal(reaction.sourceBurst.powerFrame.entryElapsedMs, 0);
   assert.equal(reaction.sourceBurst.powerFrame.startsAtParryImpact, false);
   assert.equal(reaction.sourceBurst.powerFrame.startsAtDeflectImpulse, true);
-  assert.ok(reaction.plan.body.pitchDegrees <= -25);
+  assert.ok(reaction.plan.body.pitchDegrees <= -32);
   assert.equal(reaction.profileOverrides.impulseEndMs, 112);
-  assert.equal(reaction.profileOverrides.recoilEndMs, 245);
-  assert.equal(reaction.profileOverrides.settleEndMs, 420);
-  assert.equal(reaction.profileOverrides.powerFrameHoldMs, 72);
-  assert.equal(reaction.profileOverrides.legStrengthScale, 1.45);
+  assert.equal(reaction.profileOverrides.recoilEndMs, 300);
+  assert.equal(reaction.profileOverrides.settleEndMs, 520);
+  assert.equal(reaction.profileOverrides.powerFrameHoldMs, 96);
+  assert.equal(reaction.profileOverrides.legStrengthScale, 1.95);
   assert.equal(reaction.timeline.releaseRestartsBody, false);
   assert.equal(
     reaction.channelPolicy.atImpact,

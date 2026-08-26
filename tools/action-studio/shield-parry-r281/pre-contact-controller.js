@@ -300,7 +300,7 @@ export function createShieldParryPreContactController({
       visualOwnership.afterTopPrepReadabilityHold(topPrepReadabilityHold);
       const activeInterceptArmClosure = activeIntentPlan
         ? fineTrackingRuntime.refineWorldTarget(activeInterceptIntent?.report?.targetCenter, {
-            jointBudgetScale: 0.35,
+            jointBudgetScale: 0.6,
             iterations: 2,
           })
         : null;

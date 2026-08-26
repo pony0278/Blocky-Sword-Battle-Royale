@@ -138,7 +138,7 @@ test('R18I resolves Parry by selecting OLD B3 while live contact owns the frozen
   assert.equal(result.attackerReaction.channelPolicy.separateBalanceBreakRuntime, false);
   assert.equal(harness.attackerRecoil.lastStartOptions.initialElapsedMs, 0);
   assert.equal(harness.attackerRecoil.lastStartOptions.profileOverrides.impulseEndMs, 112);
-  assert.equal(harness.attackerRecoil.lastStartOptions.profileOverrides.legStrengthScale, 1.45);
+  assert.equal(harness.attackerRecoil.lastStartOptions.profileOverrides.legStrengthScale, 1.95);
   assert.equal(harness.attackRuntime.interrupted, true);
   assert.equal(harness.attackRuntime.snapshot.phase, LONGSWORD_ATTACK_PHASES.INTERRUPTED);
   assert.equal(harness.guardMachine.state, GUARD_STATES.PARRY);

@@ -9,13 +9,13 @@ export const RECOIL_RESPONSE_CLASSES = Object.freeze({
 export const DIRECTIONAL_RECOIL_PROFILES = Object.freeze({
   [RECOIL_RESPONSE_CLASSES.BLOCK]: Object.freeze({
     grade: 'block',
-    baseStrength: 0.28,
-    redirectBlend: 0.18,
-    verticalLift: 0.08,
-    bodyStrength: 0.12,
-    weaponDeflectDegrees: 12,
-    bodyYawDegrees: 4,
-    bodyPitchDegrees: 3,
+    baseStrength: 0.42,
+    redirectBlend: 0.24,
+    verticalLift: 0.12,
+    bodyStrength: 0.30,
+    weaponDeflectDegrees: 22,
+    bodyYawDegrees: 7,
+    bodyPitchDegrees: 7,
     settleClass: 'short-bounce',
   }),
   [RECOIL_RESPONSE_CLASSES.PARRY]: Object.freeze({
@@ -26,7 +26,7 @@ export const DIRECTIONAL_RECOIL_PROFILES = Object.freeze({
     bodyStrength: 0.38,
     weaponDeflectDegrees: 30,
     bodyYawDegrees: 10,
-    bodyPitchDegrees: 7,
+    bodyPitchDegrees: 11,
     settleClass: 'stagger-recoil',
   }),
   [RECOIL_RESPONSE_CLASSES.PERFECT_PARRY]: Object.freeze({
@@ -37,7 +37,7 @@ export const DIRECTIONAL_RECOIL_PROFILES = Object.freeze({
     bodyStrength: 0.56,
     weaponDeflectDegrees: 44,
     bodyYawDegrees: 15,
-    bodyPitchDegrees: 10,
+    bodyPitchDegrees: 15,
     settleClass: 'strong-stagger-recoil',
   }),
 });

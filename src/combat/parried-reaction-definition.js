@@ -103,7 +103,7 @@ export function buildParriedReactionDefinition(input = {}) {
     }),
     silhouette: Object.freeze({
       backwardPitchDegrees: Math.abs(finite(plan.body?.pitchDegrees)),
-      minimumChestBackwardDegreesAtPeak: Math.abs(finite(plan.body?.pitchDegrees)) * 0.46,
+      minimumChestBackwardDegreesAtPeak: Math.abs(finite(plan.body?.pitchDegrees)) * 0.42,
       rootMotion: false,
     }),
     sourceBurst: burst,

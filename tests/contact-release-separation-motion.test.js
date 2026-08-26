@@ -65,7 +65,7 @@ test('G4.3B.5R.2.7 Parry handoff bypasses separation and enters B3 impulse direc
   const sample = sampleAttackerRecoilPresentation(handoff.plan, handoff.initialElapsedMs, handoff.profileOverrides);
   assert.equal(handoff.separation.releaseWindowMs, 0);
   assert.equal(handoff.separation.bypassedForWholeBodyBurst, true);
-  assert.equal(handoff.profileOverrides.legStrengthScale, 1.45);
+  assert.equal(handoff.profileOverrides.legStrengthScale, 1.95);
   assert.equal(sample.phase, ATTACKER_RECOIL_PRESENTATION_PHASES.IMPULSE);
   assert.equal(sample.pose.releaseSeparationDistanceMeters, 0);
   assert.ok(sample.weights.armWeight > 0.35);
@@ -96,7 +96,7 @@ test('G4.3B.5R.2.7 Perfect also bypasses separation and preserves a stronger dir
   });
   assert.equal(parry.separation.releaseWindowMs, 0);
   assert.equal(perfect.separation.releaseWindowMs, 0);
-  assert.equal(perfect.profileOverrides.legStrengthScale, 1.5);
+  assert.equal(perfect.profileOverrides.legStrengthScale, 2.05);
   assert.ok(perfect.plan.weapon.deflectDegrees > parry.plan.weapon.deflectDegrees);
   assert.ok(Math.abs(perfect.plan.body.pitchDegrees) > Math.abs(parry.plan.body.pitchDegrees));
   assert.ok(perfect.profileOverrides.settleEndMs > parry.profileOverrides.settleEndMs);

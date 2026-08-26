@@ -34,18 +34,18 @@ test('R18N.1 clamps the F-latched intercept to a reachable visible lead instead 
   assert.equal(armed.accepted, true);
   assert.equal(armed.intent.stage, ACTIVE_PARRY_INTERCEPT_INTENT_STAGE);
   assert.equal(armed.intent.rawRequiredDistanceMeters, 1.44);
-  assert.equal(armed.intent.leadMeters, 0.12);
+  assert.equal(armed.intent.leadMeters, 0.18);
   assert.ok(Math.abs(magnitude({
     x: armed.intent.targetCenter.x - armed.intent.originCenter.x,
     y: armed.intent.targetCenter.y - armed.intent.originCenter.y,
     z: armed.intent.targetCenter.z - armed.intent.originCenter.z,
-  }) - 0.12) < 1e-9);
+  }) - 0.18) < 1e-9);
 
   const plan = intent.plan({ sequence: 2, bucklerSurface: surface });
   assert.equal(plan.reason, 'latched-active-shield-intercept');
   assert.equal(plan.reachable, true);
-  assert.ok(Math.abs(plan.requiredDistance - 0.12) < 1e-9);
-  assert.ok(Math.abs(plan.appliedDistance - 0.12) < 1e-9);
+  assert.ok(Math.abs(plan.requiredDistance - 0.18) < 1e-9);
+  assert.ok(Math.abs(plan.appliedDistance - 0.18) < 1e-9);
 });
 
 test('R18N.1 preserves one fixed world-space target while remaining correction shrinks as the shield advances', () => {
@@ -81,9 +81,9 @@ test('R18N.1 still creates a distinct active lead when the existing guard alread
     predictiveAnalysis: predictive(0, { x: 0.4, y: 1, z: 0 }),
   });
   assert.equal(armed.accepted, true);
-  assert.equal(armed.intent.leadMeters, 0.07);
+  assert.equal(armed.intent.leadMeters, 0.09);
   const plan = intent.plan({ sequence: 4, bucklerSurface: surface });
-  assert.ok(magnitude(plan.correction) >= 0.07 - 1e-9);
+  assert.ok(magnitude(plan.correction) >= 0.09 - 1e-9);
 });
 
 test('R18N.1 keeps LEFT deferred and never creates contact authority', () => {

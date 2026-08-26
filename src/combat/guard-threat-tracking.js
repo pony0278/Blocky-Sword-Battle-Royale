@@ -13,7 +13,7 @@ export const GUARD_THREAT_TRACKING_PROFILES = Object.freeze({
   }),
   parry: Object.freeze({
     mode: 'parry', horizonSeconds: 0.14, maxCorrectionMeters: 0.18, comfortRadiusRatio: 0.60,
-    maxTrackingSpeedMps: 1.6, returnSpeedMps: 1.4, upperArmMaxDegrees: 14, lowerArmMaxDegrees: 18,
+    maxTrackingSpeedMps: 1.6, returnSpeedMps: 1.4, upperArmMaxDegrees: 20, lowerArmMaxDegrees: 26,
   }),
 });
 

@@ -37,13 +37,13 @@ export const ATTACKER_RECOIL_PRESENTATION_CHANNELS = Object.freeze({
 
 export const ATTACKER_RECOIL_PRESENTATION_PROFILES = Object.freeze({
   'blocked-weapon-bounce': Object.freeze({
-    contactHoldMs: 18,
-    impulseEndMs: 82,
-    recoilEndMs: 142,
-    settleEndMs: 220,
+    contactHoldMs: 26,
+    impulseEndMs: 96,
+    recoilEndMs: 178,
+    settleEndMs: 280,
     armDeflectScale: 0.72,
     forearmDeflectScale: 0.42,
-    legStrengthScale: 0.42,
+    legStrengthScale: 0.85,
   }),
   'parry-directional-recoil': Object.freeze({
     contactHoldMs: 28,
@@ -159,7 +159,7 @@ function resolveProfile(plan, overrides = {}) {
     visibleSettleEndMs: settleEndMs + powerFrameHoldMs,
     armDeflectScale: clamp(overrides.armDeflectScale ?? base.armDeflectScale, 0, 1.5),
     forearmDeflectScale: clamp(overrides.forearmDeflectScale ?? base.forearmDeflectScale, 0, 1.5),
-    legStrengthScale: clamp(overrides.legStrengthScale ?? base.legStrengthScale, 0, 1.5),
+    legStrengthScale: clamp(overrides.legStrengthScale ?? base.legStrengthScale, 0, 2.2),
   });
 }
 
@@ -408,13 +408,13 @@ export function sampleAttackerRecoilPresentation(plan, elapsedMs = 0, overrides 
     upperArmAimDegrees: deflectDegrees * profile.armDeflectScale * weights.armWeight,
     lowerArmAimDegrees: deflectDegrees * profile.forearmDeflectScale * weights.armWeight,
     chestYawDegrees: finite(plan.body?.yawDegrees) * weights.torsoWeight * 0.58,
-    chestPitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.46,
+    chestPitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.42,
     chestRollDegrees: finite(plan.body?.rollDegrees) * weights.torsoWeight * 0.72,
     spineYawDegrees: finite(plan.body?.yawDegrees) * weights.torsoWeight * 0.36,
     spinePitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.34,
     spineRollDegrees: finite(plan.body?.rollDegrees) * weights.torsoWeight * 0.44,
     hipsYawDegrees: finite(plan.body?.yawDegrees) * weights.torsoWeight * 0.20,
-    hipsPitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.18,
+    hipsPitchDegrees: finite(plan.body?.pitchDegrees) * weights.torsoWeight * 0.26,
     hipsRollDegrees: finite(plan.body?.rollDegrees) * weights.torsoWeight * 0.26,
     leftThighBendDegrees: legBase * loadedLeft,
     rightThighBendDegrees: legBase * loadedRight,

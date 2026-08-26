@@ -1,8 +1,8 @@
 export const ACTIVE_PARRY_INTERCEPT_INTENT_STAGE = 'R18N.1';
 
 export const ACTIVE_PARRY_INTERCEPT_INTENT_PROFILE = Object.freeze({
-  minimumLeadMeters: 0.07,
-  maximumLeadMeters: 0.12,
+  minimumLeadMeters: 0.09,
+  maximumLeadMeters: 0.18,
 });
 
 function finite(value, fallback = 0) {

@@ -45,7 +45,7 @@ test('R18N.3 closes the fixed target after support and stance without mutating p
   const finalUpdateIndex = preContact.indexOf('defender.update(0, camera);', closureIndex);
   assert.ok(stanceIndex >= 0 && closureIndex > stanceIndex && finalUpdateIndex > closureIndex,
     'fixed-target arm closure must be the final bone solver after support/stance and before final defender geometry update');
-  assert.match(preContact.slice(closureIndex, finalUpdateIndex), /jointBudgetScale: 0\.35/);
+  assert.match(preContact.slice(closureIndex, finalUpdateIndex), /jointBudgetScale: 0\.6/);
   assert.match(preContact.slice(closureIndex, finalUpdateIndex), /iterations: 2/);
   assert.match(preContact, /activeInterceptArmClosure/);
 });

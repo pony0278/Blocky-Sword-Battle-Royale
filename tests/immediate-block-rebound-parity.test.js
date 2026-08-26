@@ -45,10 +45,10 @@ test('G4.3B.5R.2.4.2 shield give peaks near 3cm and recovers without lateral Par
 test('G4.3B.5R.2.4.2 preserves predictive-lab Block B2/B3 rebound baseline', () => {
   const b2 = DIRECTIONAL_RECOIL_PROFILES[RECOIL_RESPONSE_CLASSES.BLOCK];
   const b3 = ATTACKER_RECOIL_PRESENTATION_PROFILES['blocked-weapon-bounce'];
-  assert.equal(b2.baseStrength, 0.28);
-  assert.equal(b2.weaponDeflectDegrees, 12);
-  assert.equal(b3.contactHoldMs, 18);
-  assert.equal(b3.impulseEndMs, 82);
-  assert.equal(b3.recoilEndMs, 142);
-  assert.equal(b3.settleEndMs, 220);
+  assert.equal(b2.baseStrength, 0.42);
+  assert.equal(b2.weaponDeflectDegrees, 22);
+  assert.equal(b3.contactHoldMs, 26);
+  assert.equal(b3.impulseEndMs, 96);
+  assert.equal(b3.recoilEndMs, 178);
+  assert.equal(b3.settleEndMs, 280);
 });

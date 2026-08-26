@@ -3,8 +3,8 @@ export const R18N_BOUNDED_SHIELD_ARM_ADDITIVE_STAGE = 'R18N.4.3-B.1';
 export const R18N_BOUNDED_SHIELD_ARM_ADDITIVE_POLICY = Object.freeze({
   stage: R18N_BOUNDED_SHIELD_ARM_ADDITIVE_STAGE,
   bones: Object.freeze({
-    'upperarm.l': Object.freeze({ weight: 0.5, maxAngleDegrees: 8, enabled: true }),
-    'lowerarm.l': Object.freeze({ weight: 0.5, maxAngleDegrees: 10, enabled: true }),
+    'upperarm.l': Object.freeze({ weight: 0.72, maxAngleDegrees: 18, enabled: true }),
+    'lowerarm.l': Object.freeze({ weight: 0.72, maxAngleDegrees: 22, enabled: true }),
     'wrist.l': Object.freeze({ weight: 0, maxAngleDegrees: 0, enabled: false, solverOnly: true }),
   }),
   writer: 'predictive-shield-arm-bounded-additive',

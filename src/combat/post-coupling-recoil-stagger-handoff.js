@@ -346,11 +346,11 @@ export function buildPostCouplingRecoilStaggerHandoff(input = {}) {
         legStrengthScale: clamp(
           finite(wholeBodyBurst.profileOverrides.legStrengthScale, 1),
           0,
-          1.5,
+          2.2,
         ),
       })
     : Object.freeze({
-        legStrengthScale: clamp(finite(baseProfile.legStrengthScale, 1) * profile.legStrengthScale, 0, 1.5),
+        legStrengthScale: clamp(finite(baseProfile.legStrengthScale, 1) * profile.legStrengthScale, 0, 2.2),
       });
 
   return Object.freeze({

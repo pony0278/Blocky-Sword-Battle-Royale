@@ -44,17 +44,17 @@ function rig() {
 test('R18N.4.3-B.1 keeps wrist solver-only and caps shoulder/elbow authored motion', () => {
   assert.equal(R18N_BOUNDED_SHIELD_ARM_ADDITIVE_STAGE, 'R18N.4.3-B.1');
   assert.deepEqual(R18N_BOUNDED_SHIELD_ARM_ADDITIVE_POLICY.bones['upperarm.l'], {
-    weight: 0.5, maxAngleDegrees: 8, enabled: true,
+    weight: 0.72, maxAngleDegrees: 18, enabled: true,
   });
   assert.deepEqual(R18N_BOUNDED_SHIELD_ARM_ADDITIVE_POLICY.bones['lowerarm.l'], {
-    weight: 0.5, maxAngleDegrees: 10, enabled: true,
+    weight: 0.72, maxAngleDegrees: 22, enabled: true,
   });
   assert.equal(R18N_BOUNDED_SHIELD_ARM_ADDITIVE_POLICY.bones['wrist.l'].enabled, false);
   assert.equal(R18N_BOUNDED_SHIELD_ARM_ADDITIVE_POLICY.bones['wrist.l'].solverOnly, true);
 
   const plan = planBoundedShieldArmAdditive(authored({ upper: 46.84, lower: 62.80, wrist: 25.90 }));
-  assert.ok(Math.abs(plan.bones['upperarm.l'].targetAngleDegrees - 8) < 1e-9);
-  assert.ok(Math.abs(plan.bones['lowerarm.l'].targetAngleDegrees - 10) < 1e-9);
+  assert.ok(Math.abs(plan.bones['upperarm.l'].targetAngleDegrees - 18) < 1e-9);
+  assert.ok(Math.abs(plan.bones['lowerarm.l'].targetAngleDegrees - 22) < 1e-9);
   assert.equal(plan.bones['wrist.l'].targetAngleDegrees, 0);
   assert.equal(plan.bones['upperarm.l'].capped, true);
   assert.equal(plan.bones['lowerarm.l'].capped, true);
@@ -70,8 +70,8 @@ test('R18N.4.3-B.1 applies only the authored bounded delta increment so identica
     sequence: 7,
     enabled: true,
   });
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 8) < 1e-6);
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 10) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 18) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 22) < 1e-6);
   assert.ok(angleDegrees(defenderRig.bones['wrist.l'].quaternion) < 1e-9);
   assert.deepEqual(first.appliedBones, ['upperarm.l', 'lowerarm.l']);
 
@@ -81,8 +81,8 @@ test('R18N.4.3-B.1 applies only the authored bounded delta increment so identica
     sequence: 7,
     enabled: true,
   });
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 8) < 1e-6);
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 10) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 18) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 22) < 1e-6);
   assert.ok(second.bones['upperarm.l'].incrementalAngleDegrees < 1e-6);
   assert.ok(second.bones['lowerarm.l'].incrementalAngleDegrees < 1e-6);
   assert.deepEqual(second.appliedBones, []);
@@ -92,14 +92,14 @@ test('R18N.4.3-B.1 follows the authored curve progressively before the caps', ()
   const defenderRig = rig();
   const runtime = createBoundedShieldArmAdditiveRuntime();
   runtime.update({ rig: defenderRig, authoredDelta: authored({ upper: 4, lower: 6 }), sequence: 2, enabled: true });
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 2) < 1e-6);
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 3) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 2.88) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 4.32) < 1e-6);
 
   const next = runtime.update({ rig: defenderRig, authoredDelta: authored({ upper: 10, lower: 14 }), sequence: 2, enabled: true });
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 5) < 1e-6);
-  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 7) < 1e-6);
-  assert.ok(Math.abs(next.bones['upperarm.l'].incrementalAngleDegrees - 3) < 1e-6);
-  assert.ok(Math.abs(next.bones['lowerarm.l'].incrementalAngleDegrees - 4) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['upperarm.l'].quaternion) - 7.2) < 1e-6);
+  assert.ok(Math.abs(angleDegrees(defenderRig.bones['lowerarm.l'].quaternion) - 10.08) < 1e-6);
+  assert.ok(Math.abs(next.bones['upperarm.l'].incrementalAngleDegrees - 4.32) < 1e-6);
+  assert.ok(Math.abs(next.bones['lowerarm.l'].incrementalAngleDegrees - 5.76) < 1e-6);
 });
 
 test('R18N.4.3-B.1 disabled path owns no pose and clears prior authored target carry', () => {
