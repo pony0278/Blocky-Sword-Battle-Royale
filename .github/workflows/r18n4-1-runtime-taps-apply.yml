@@ -1,0 +1,58 @@
+name: R18N.4.1 Runtime Tap Apply
+
+on:
+  push:
+    branches: [feature/r18n4-1-visual-ownership-baseline]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: r18n4-1-runtime-tap-apply
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/r18n4-1-visual-ownership-baseline
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply deterministic R18N.4.1-B migration
+        run: node tools/action-studio/r18n4-1-visual-ownership-runtime-taps-migration.mjs
+
+      - name: Run focused ownership regressions
+        run: node --test tests/shield-parry-r281-visual-ownership-baseline.test.js tests/shield-parry-r281-exchange-state.test.js tests/shield-parry-r281-pre-contact-controller.test.js tests/shield-parry-r281-active-intercept-runtime.test.js
+
+      - name: Remove one-shot apply workflow
+        run: git rm .github/workflows/r18n4-1-runtime-taps-apply.yml
+
+      - name: Publish only reviewed R18N.4.1-B paths
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            tools/action-studio/shield-parry-r281/pre-contact-controller.js \
+            tools/action-studio/shield-parry-r281/exchange-state.js \
+            tools/action-studio/shield-parry-r281/debug-api.js \
+            tests/shield-parry-r281-exchange-state.test.js \
+            tests/shield-parry-r281-visual-ownership-baseline.test.js \
+            .github/workflows/r18n4-1-runtime-taps-apply.yml
+          if git diff --cached --quiet; then
+            echo "No materialized R18N.4.1-B changes to publish."
+            exit 0
+          fi
+          git commit -m "R18N.4.1-B wire observer-only runtime ownership taps"
+          git push origin HEAD:feature/r18n4-1-visual-ownership-baseline
