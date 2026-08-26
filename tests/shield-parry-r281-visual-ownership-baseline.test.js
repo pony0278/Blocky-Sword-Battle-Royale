@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   R18N_VISUAL_OWNERSHIP_BASELINE_STAGE,
+  R18N_VISUAL_OWNERSHIP_ORDER,
   R18N_VISUAL_OWNERSHIP_WRITERS,
   captureVisualOwnershipPose,
   createVisualOwnershipBaselineRecorder,
@@ -105,4 +106,80 @@ test('R18N.4.1 telemetry module has no production mutation or contact authority'
   assert.doesNotMatch(source, /\.quaternion\.(?:copy|set|premultiply|multiply|slerp)/);
   assert.doesNotMatch(source, /combat\.resolveContact|parryGate\.(?:arm|confirm)|probeSweptSwordBucklerContact/);
   assert.match(source, /observer-only-no-rig-write-no-contact-authority/);
+});
+
+
+test('R18N.4.1-B reconstructs the cross-frame Guard writer delta and ordered pre-contact taps', async () => {
+  const { createVisualOwnershipRuntimeTaps } = await import('../tools/action-studio/shield-parry-r281/visual-ownership-runtime-taps.js');
+  const rig = fakeRig();
+  const exchangeState = { latestVisualOwnershipBaseline: null, visualOwnershipTrace: [] };
+  const taps = createVisualOwnershipRuntimeTaps({ rig, exchangeState, traceLimit: 4 });
+
+  taps.beginFrame({ sequence: 1, phase: 'attack_active', elapsedSeconds: 0.20 });
+  rig.bones.chest.quaternion = yaw(4);
+  taps.afterPredictive({ active: true, shieldArmOwnership: 'external-active-intercept-tracking' });
+  rig.bones['upperarm.l'].quaternion = yaw(7);
+  taps.afterPrimaryArm({ active: true, achievedDistance: 0.01 });
+  rig.bones['lowerarm.l'].quaternion = yaw(5);
+  taps.afterResidualArm({ achievedDistance: 0.002 });
+  rig.bones.chest.quaternion = yaw(6);
+  taps.afterBody({ active: true, authority: 'fixed-world-target-support-chain-no-contact-authority' });
+  taps.afterStance({ activeCandidate: false, authority: 'pre-contact-guidance-only-real-swept-contact-required' });
+  rig.bones['upperarm.l'].quaternion = yaw(8);
+  taps.afterFinalClosure({ achievedDistance: 0.001 });
+  const first = taps.finishFrame();
+  assert.equal(first.orderValid, true);
+  assert.deepEqual(first.observedOrder, R18N_VISUAL_OWNERSHIP_ORDER);
+  assert.equal(exchangeState.visualOwnershipTrace.length, 1);
+
+  rig.bones.head.quaternion = yaw(3);
+  taps.beginFrame({ sequence: 1, phase: 'attack_active', elapsedSeconds: 0.216 });
+  const second = taps.finishFrame();
+  assert.equal(second.orderValid, true);
+  assert.ok(second.changedByWriter[R18N_VISUAL_OWNERSHIP_WRITERS.GUARD_RUNTIME].includes('head'));
+  assert.equal(second.lastWriterByBone.head, R18N_VISUAL_OWNERSHIP_WRITERS.GUARD_RUNTIME);
+  assert.equal(second.samples[0].metadata.baselineQualified, true);
+  assert.equal(exchangeState.visualOwnershipTrace.length, 2);
+  assert.equal(taps.authority, 'observer-only-cross-frame-guard-baseline-no-rig-write-no-contact-authority');
+});
+
+test('R18N.4.1-B runtime tap adapter remains observer-only', async () => {
+  const source = await readFile(new URL('../tools/action-studio/shield-parry-r281/visual-ownership-runtime-taps.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /\.quaternion\.(?:copy|set|premultiply|multiply|slerp)/);
+  assert.doesNotMatch(source, /combat\.resolveContact|parryGate\.(?:arm|confirm)|probeSweptSwordBucklerContact/);
+  assert.match(source, /observer-only-cross-frame-guard-baseline-no-rig-write-no-contact-authority/);
+});
+
+test('R18N.4.1-B wires taps after existing writers and exposes diagnostics without changing contact authority', async () => {
+  const preContact = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
+  const exchangeStateSource = await readFile(new URL('../tools/action-studio/shield-parry-r281/exchange-state.js', import.meta.url), 'utf8');
+  const debugApi = await readFile(new URL('../tools/action-studio/shield-parry-r281/debug-api.js', import.meta.url), 'utf8');
+  const entry = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
+  function assertBefore(sourceText, earlier, later, label) {
+    const earlierIndex = sourceText.indexOf(earlier);
+    const laterIndex = sourceText.indexOf(later);
+    assert.ok(earlierIndex >= 0, 'missing writer anchor: ' + earlier);
+    assert.ok(laterIndex > earlierIndex, 'tap must follow writer: ' + label);
+  }
+  const parryStart = preContact.indexOf('function updateParryPreContact');
+  const parryEnd = preContact.indexOf('function armActiveIntercept', parryStart);
+  const parrySource = preContact.slice(parryStart, parryEnd);
+  assertBefore(parrySource, 'predictivePresentation.update({', 'visualOwnership.afterPredictive(exchangeState.latestPredictiveReport)', 'predictive presentation');
+  assertBefore(parrySource, 'fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds)', 'visualOwnership.afterPrimaryArm(exchangeState.latestFineTracking)', 'primary active intercept arm');
+  assertBefore(parrySource, 'fineTrackingRuntime.refineMeasuredContact(', 'visualOwnership.afterResidualArm(residualRefinement)', 'residual active intercept arm');
+  assertBefore(parrySource, 'const residualBodyReach = activeIntentPlan', 'visualOwnership.afterBody(residualBodyReach)', 'residual body reach');
+  assertBefore(parrySource, 'const residualStanceReach = residualStanceReachRuntime.update({', 'visualOwnership.afterStance(residualStanceReach)', 'residual stance reach');
+  assertBefore(parrySource, 'fineTrackingRuntime.refineWorldTarget(', 'visualOwnership.afterFinalClosure(activeInterceptArmClosure)', 'final arm closure');
+
+  const updateStart = preContact.indexOf('function updatePreContact');
+  const updateEnd = preContact.indexOf('function recordWhiffProbe', updateStart);
+  const updateSource = preContact.slice(updateStart, updateEnd);
+  assertBefore(updateSource, 'visualOwnership.beginFrame(snapshot)', 'updateParryPreContact(snapshot, currentBlade, deltaSeconds, context)', 'frame begin before parry writers');
+  assertBefore(updateSource, 'updateParryPreContact(snapshot, currentBlade, deltaSeconds, context)', 'visualOwnership.finishFrame()', 'frame finish after parry writers');
+  assert.match(exchangeStateSource, /latestVisualOwnershipBaseline/);
+  assert.match(exchangeStateSource, /visualOwnershipTrace/);
+  assert.match(debugApi, /get latestVisualOwnershipBaseline\(\)/);
+  assert.match(debugApi, /get visualOwnershipTrace\(\)/);
+  assert.doesNotMatch(preContact, /parryGate\.confirm\(|combat\.resolveContact\(|probeSweptSwordBucklerContact\(/);
+  assert.ok(entry.split('\n').length <= 725, 'R18N.4.1-B must not expand the thin R281 entry');
 });

@@ -43,6 +43,8 @@ export function createShieldParryDebugApi({
     get latestGripConstraintReport() { return getExchangeState().latestGripConstraintReport; },
     get latestParryWhiff() { return getExchangeState().latestParryWhiff; },
     get latestInterceptDriveReport() { return getExchangeState().latestInterceptDriveReport; },
+    get latestVisualOwnershipBaseline() { return getExchangeState().latestVisualOwnershipBaseline; },
+    get visualOwnershipTrace() { return getExchangeState().visualOwnershipTrace; },
     get latestInputSignal() { return getExchangeState().latestInputSignal; },
     get activeParryInterceptDiagnosis() {
       return buildActiveParryInterceptDiagnosis({

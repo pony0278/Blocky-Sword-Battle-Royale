@@ -1,3 +1,5 @@
+import { createVisualOwnershipRuntimeTaps } from './visual-ownership-runtime-taps.js';
+
 export function createShieldParryPreContactController({
   exchangeState,
   buckler,
@@ -18,6 +20,7 @@ export function createShieldParryPreContactController({
 }) {
   const LONGSWORD_ATTACK_PHASES = longswordAttackPhases;
   const PARRY_PROMPT_HOLD_MS = promptHoldMs;
+  const visualOwnership = createVisualOwnershipRuntimeTaps({ rig: defender.rig, exchangeState });
   const {
     cloneSurface,
     magnitude,
@@ -104,6 +107,7 @@ export function createShieldParryPreContactController({
         preserveShieldArm: Boolean(activeInterceptIntent?.active),
         camera,
       });
+      visualOwnership.afterPredictive(exchangeState.latestPredictiveReport);
       const predictiveSurface = cloneSurface(buckler.getWorldParrySurface());
       const continuitySurface = exchangeState.previousShieldLeadSurface
         ? cloneSurface(exchangeState.previousShieldLeadSurface)
@@ -138,6 +142,7 @@ export function createShieldParryPreContactController({
       // so currentOffset acts as an absolute additive world-space correction and Active Intercept
       // remains the last writer of the shield-arm pose before real swept contact is evaluated.
       exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);
+      visualOwnership.afterPrimaryArm(exchangeState.latestFineTracking);
       const residualCarryBeforeMeters = magnitude(exchangeState.latestFineTracking?.carriedResidualOffset);
       const primaryTrackingSurfaceAfter = cloneSurface(buckler.getWorldParrySurface());
       const residualBeforeRefinement = measureSweptSwordBucklerClosestApproach({
@@ -166,6 +171,7 @@ export function createShieldParryPreContactController({
             iterations: 2,
           })
         : null;
+      visualOwnership.afterResidualArm(residualRefinement);
       const residualAfterArmRefinement = measureSweptSwordBucklerClosestApproach({
         previousBlade,
         currentBlade,
@@ -179,6 +185,7 @@ export function createShieldParryPreContactController({
             mode: 'parry',
             closestApproach: residualAfterArmRefinement,
           }, deltaSeconds);
+      visualOwnership.afterBody(residualBodyReach);
       const residualAfterBodyReach = measureSweptSwordBucklerClosestApproach({
         previousBlade,
         currentBlade,
@@ -200,12 +207,14 @@ export function createShieldParryPreContactController({
           edgeGapAfterMeters: residualAfterArmRefinement.radialGapMeters,
         },
       }, deltaSeconds);
+      visualOwnership.afterStance(residualStanceReach);
       const activeInterceptArmClosure = activeIntentPlan
         ? fineTrackingRuntime.refineWorldTarget(activeInterceptIntent?.report?.targetCenter, {
             jointBudgetScale: 0.35,
             iterations: 2,
           })
         : null;
+      visualOwnership.afterFinalClosure(activeInterceptArmClosure);
       // Rebuild dynamic line geometry once after all pose solvers have finished.
       defender.update(0, camera);
       defenderSword?.update();
@@ -351,13 +360,19 @@ export function createShieldParryPreContactController({
     }) || Object.freeze({ accepted: false, reason: 'active-intercept-intent-unavailable' });
   }
 
-  function resetActiveIntercept() { activeInterceptIntent?.reset(); }
+  function resetActiveIntercept() { activeInterceptIntent?.reset(); visualOwnership.reset(); }
 
   function updatePreContact(snapshot, currentBlade, deltaSeconds) {
     const context = readContext();
     if (!snapshot.action || exchangeState.firstContact) return;
-    if (context.selectedMode === 'block') updateBlockPreContact(snapshot, currentBlade, deltaSeconds, context);
-    else updateParryPreContact(snapshot, currentBlade, deltaSeconds, context);
+    const observeVisualOwnership = context.selectedMode === 'parry';
+    if (observeVisualOwnership) visualOwnership.beginFrame(snapshot);
+    try {
+      if (context.selectedMode === 'block') updateBlockPreContact(snapshot, currentBlade, deltaSeconds, context);
+      else updateParryPreContact(snapshot, currentBlade, deltaSeconds, context);
+    } finally {
+      if (observeVisualOwnership) visualOwnership.finishFrame();
+    }
   }
 
   function recordWhiffProbe(snapshot, probe) {
