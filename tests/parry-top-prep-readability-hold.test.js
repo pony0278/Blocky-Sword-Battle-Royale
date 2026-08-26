@@ -90,15 +90,20 @@ test('R18N.4.3-B.1.3 is TOP-only', () => {
   }
 });
 
-test('R18N.4.3-B.1.3 captures F-entry pose and boundedly retains upper/lower arm without touching wrist', () => {
+test('R18N.4.3-B.1.3 retains a captured first-final-closure TOP prep pose without touching wrist', () => {
   const rig = rigWithIdentityArm();
   const runtime = createTopPrepReadabilityHoldRuntime();
+
+  // Integration arms only after the first authoritative Active Intercept final closure,
+  // so this pose represents the already-correct high TOP preparation pose, not pre-F Guard.
+  rig.bones['upperarm.l'].quaternion = axisAngle([0, 1, 0], 12);
+  rig.bones['lowerarm.l'].quaternion = axisAngle([1, 0, 0], 18);
   const arm = runtime.arm({ rig, sequence: 7, direction: 'top' });
   assert.equal(arm.accepted, true);
   assert.deepEqual(arm.anchorBones, ['upperarm.l', 'lowerarm.l']);
 
-  rig.bones['upperarm.l'].quaternion = axisAngle([0, 1, 0], 20);
-  rig.bones['lowerarm.l'].quaternion = axisAngle([1, 0, 0], 30);
+  rig.bones['upperarm.l'].quaternion = axisAngle([0, 1, 0], 32);
+  rig.bones['lowerarm.l'].quaternion = axisAngle([1, 0, 0], 48);
   rig.bones['wrist.l'].quaternion = axisAngle([0, 0, 1], 18);
 
   const report = runtime.update({
@@ -115,8 +120,8 @@ test('R18N.4.3-B.1.3 captures F-entry pose and boundedly retains upper/lower arm
   assert.deepEqual(report.appliedBones, ['upperarm.l', 'lowerarm.l']);
   assert.ok(Math.abs(report.bones['upperarm.l'].targetAngleDegrees - 6) < 1e-6);
   assert.ok(Math.abs(report.bones['lowerarm.l'].targetAngleDegrees - 8) < 1e-6);
-  assert.ok(Math.abs(angleDegrees(rig.bones['upperarm.l'].quaternion) - 14) < 1e-5);
-  assert.ok(Math.abs(angleDegrees(rig.bones['lowerarm.l'].quaternion) - 22) < 1e-5);
+  assert.ok(Math.abs(angleDegrees(rig.bones['upperarm.l'].quaternion) - 26) < 1e-5);
+  assert.ok(Math.abs(angleDegrees(rig.bones['lowerarm.l'].quaternion) - 40) < 1e-5);
   assert.ok(Math.abs(angleDegrees(rig.bones['wrist.l'].quaternion) - 18) < 1e-5);
   assert.equal(report.finalPoseOwner, 'active-intercept-final-arm-closure');
 });
@@ -142,21 +147,25 @@ test('R18N.4.3-B.1.3 requires the same armed sequence and releases cleanly', () 
   assert.equal(late.applied, false);
 });
 
-test('R18N.4.3-B.1.3 runtime source keeps hold before actual-target final closure and owns no contact authority', async () => {
+test('R18N.4.3-B.1.3 integration captures anchor only after first actual-target final closure', async () => {
   const [preContact, holdSource] = await Promise.all([
     readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/combat/parry-top-prep-readability-hold.js', import.meta.url), 'utf8'),
   ]);
 
   assert.match(preContact, /createTopPrepReadabilityHoldRuntime/);
-  assert.match(preContact, /topPrepReadabilityHoldRuntime\.arm\(\{/);
   const additiveIndex = preContact.indexOf('shieldArmAdditiveRuntime.update({');
   const holdIndex = preContact.indexOf('topPrepReadabilityHoldRuntime.update({');
   const holdTapIndex = preContact.indexOf('visualOwnership.afterTopPrepReadabilityHold(topPrepReadabilityHold)');
   const closureIndex = preContact.indexOf('fineTrackingRuntime.refineWorldTarget(activeInterceptIntent?.report?.targetCenter');
+  const captureIndex = preContact.indexOf('topPrepReadabilityHoldRuntime.arm({', closureIndex);
+  const closureTapIndex = preContact.indexOf('visualOwnership.afterFinalClosure(activeInterceptArmClosure)');
   assert.ok(additiveIndex >= 0 && holdIndex > additiveIndex, 'readability hold must run after authored bounded additive');
   assert.ok(holdTapIndex > holdIndex, 'ownership telemetry must observe the readability writer immediately');
-  assert.ok(closureIndex > holdTapIndex, 'actual-target Active Intercept final closure must remain last arm writer');
+  assert.ok(closureIndex > holdTapIndex, 'actual-target Active Intercept final closure must remain after readability writer');
+  assert.ok(captureIndex > closureIndex, 'golden TOP prep anchor must be captured only after first final closure');
+  assert.ok(closureTapIndex > captureIndex, 'post-closure anchor capture must be read-only before closure telemetry');
+  assert.equal(preContact.indexOf('topPrepReadabilityHoldRuntime.arm({'), captureIndex, 'there must be no pre-F/entry-pose anchor capture');
   assert.doesNotMatch(holdSource, /parryGate\.confirm\(|combat\.resolveContact\(|probeSweptSwordBucklerContact\(/);
   assert.match(holdSource, /'wrist\.l': Object\.freeze\(\{ weight: 0, maxAngleDegrees: 0, enabled: false, solverOnly: true \}\)/);
 });
