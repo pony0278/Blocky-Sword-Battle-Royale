@@ -83,6 +83,7 @@ export function createVisualOwnershipRuntimeTaps({
     return record(R18N_VISUAL_OWNERSHIP_WRITERS.PREDICTIVE_PRESENTATION, {
       active: report?.active ?? null,
       shieldArmOwnership: report?.shieldArmOwnership ?? null,
+      upperBodyAnticipationOwnership: report?.upperBodyAnticipationOwnership ?? null,
       sourceTimeSeconds: report?.sourceTimeSeconds ?? null,
       entryBlendProgress: report?.entryBlendProgress ?? null,
     });

@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createPredictiveInterceptParryPresentationRuntime } from '../src/combat/predictive-intercept-parry.js';
+import {
+  R18N_ACTIVE_INTERCEPT_PRESERVED_BONES,
+  R18N_UPPER_BODY_ANTICIPATION_BONES,
+} from '../src/combat/predictive-parry-ownership-policy.js';
 
 const entry = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
 const preContact = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
@@ -112,12 +116,15 @@ test('R18N.1 blends the first Guard-to-Parry shield-arm frames instead of telepo
   assert.ok(angleDegrees(bones['upperarm.l'].quaternion) > firstAngle);
 });
 
-test('R18N.1 lets active intercept tracking own the full shield support chain while unrelated presentation continues', () => {
-  const shieldSupportChain = [
-    'root', 'hips', 'spine', 'chest',
-    'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l',
-  ];
-  const { bones, character } = fakePresentationCharacter([...shieldSupportChain, 'head']);
+test('R18N.4.2 splits predictive torso anticipation from active intercept arm authority', () => {
+  assert.deepEqual([...R18N_UPPER_BODY_ANTICIPATION_BONES], ['spine', 'chest']);
+  assert.deepEqual([...R18N_ACTIVE_INTERCEPT_PRESERVED_BONES], [
+    'root', 'hips', 'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l',
+  ]);
+
+  const preserved = [...R18N_ACTIVE_INTERCEPT_PRESERVED_BONES];
+  const anticipation = [...R18N_UPPER_BODY_ANTICIPATION_BONES];
+  const { bones, character } = fakePresentationCharacter([...preserved, ...anticipation, 'head']);
   const runtime = createPredictiveInterceptParryPresentationRuntime(
     { Quaternion: FakeQuaternion },
     { character, guardOffsets: {} },
@@ -131,8 +138,14 @@ test('R18N.1 lets active intercept tracking own the full shield support chain wh
   });
 
   assert.equal(report.shieldArmOwnership, 'external-active-intercept-tracking');
-  for (const boneId of shieldSupportChain) {
-    assert.ok(angleDegrees(bones[boneId].quaternion) < 1e-6, `${boneId} was overwritten by presentation`);
+  assert.equal(report.upperBodyAnticipationOwnership, 'predictive-presentation-spine-chest');
+  for (const boneId of preserved) {
+    assert.ok(angleDegrees(bones[boneId].quaternion) < 1e-6, `${boneId} must remain under active-intercept/guard authority`);
+  }
+  for (const boneId of anticipation) {
+    const angle = angleDegrees(bones[boneId].quaternion);
+    assert.ok(angle > 0, `${boneId} should retain predictive Parry anticipation`);
+    assert.ok(angle < 90, `${boneId} should still respect entry blending`);
   }
   assert.ok(angleDegrees(bones.head.quaternion) > 0, 'unrelated presentation should keep advancing');
 });
@@ -143,5 +156,7 @@ test('R18N.1 presentation continuity remains presentation-only', async () => {
   assert.match(source, /entryBlendProgress/);
   assert.match(source, /preserveShieldArm/);
   assert.match(source, /external-active-intercept-tracking/);
+  assert.match(source, /predictive-parry-ownership-policy/);
+  assert.match(source, /predictive-presentation-spine-chest/);
   assert.doesNotMatch(source, /probeSweptSwordBucklerContact|combat\.resolveContact|parryGate\.confirm/);
 });

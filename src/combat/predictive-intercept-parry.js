@@ -10,6 +10,9 @@ import {
 import { applyGuardQuaternionOffsetsWeighted } from './longsword-guard-correction.js';
 import { LONGSWORD_GUARD_AUTHORING_STATE } from './longsword-guard-metadata.js';
 import { getProductionParryDeflectProfile } from '../animation/parry-contact-deflect-runtime-clip.js';
+import {
+  R18N_ACTIVE_INTERCEPT_PRESERVED_BONES,
+} from './predictive-parry-ownership-policy.js';
 
 export const PREDICTIVE_INTERCEPT_PARRY_STAGE = 'G4.3B.5R';
 export const RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE = 'G4.3B.5R.1';
@@ -319,6 +322,7 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       sourceTimeSeconds: active.sourceTimeSeconds,
       entryBlendProgress: 0,
       shieldArmOwnership: 'predictive-presentation',
+      upperBodyAnticipationOwnership: 'predictive-presentation',
       triggerTtcSeconds,
       guardIntentAgeMs: lockedGuardIntentAgeMs,
       lockedGuardIntentAgeMs,
@@ -345,7 +349,7 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
     const entryBlendProgress = clamp(active.entryBlendElapsedMs / (PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS * 1000), 0, 1);
     const preserveShieldArm = input.preserveShieldArm === true;
     const shieldArmPose = preserveShieldArm
-      ? captureBoneQuaternionPose(character, PREDICTIVE_PARRY_EXTERNAL_SHIELD_ARM_BONES)
+      ? captureBoneQuaternionPose(character, R18N_ACTIVE_INTERCEPT_PRESERVED_BONES)
       : null;
     const ttc = Math.max(0, finite(input.timeToContactSeconds, active.triggerTtcSeconds));
     const progress = clamp(1 - ttc / active.triggerTtcSeconds, 0, 1);
@@ -385,6 +389,9 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       progress,
       entryBlendProgress,
       shieldArmOwnership: preserveShieldArm ? 'external-active-intercept-tracking' : 'predictive-presentation',
+      upperBodyAnticipationOwnership: preserveShieldArm
+        ? 'predictive-presentation-spine-chest'
+        : 'predictive-presentation',
       readyForAuthoritativeHandoff: ttc <= 0.02 || progress >= 0.9,
       defenderPresentationOffsetSeconds: sourceTimeSeconds,
       guardIntentAgeMs: active.lockedGuardIntentAgeMs,
