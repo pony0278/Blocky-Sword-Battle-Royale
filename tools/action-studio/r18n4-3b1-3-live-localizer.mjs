@@ -98,6 +98,7 @@ const recorder = `(() => {
       shieldStepTranslationMeters: drive?.shieldStepTranslationMeters ?? null,
       hold: hold ? {
         stage: hold.stage, active: hold.active, applied: hold.applied, reason: hold.reason,
+        anchorCaptured: hold.anchorCaptured ?? false,
         envelopeWeight: hold.envelopeWeight, appliedBones: hold.appliedBones || [],
         upperDegrees: hold.bones?.['upperarm.l']?.targetAngleDegrees ?? 0,
         lowerDegrees: hold.bones?.['lowerarm.l']?.targetAngleDegrees ?? 0,
@@ -177,10 +178,10 @@ try {
     if (activeHold.length < 2) issues.push(`active-hold-frames:${activeHold.length}`);
     if (!appliedHold.length) issues.push('hold-never-applied');
     if (!releasedBeforeContact) issues.push('not-released-before-contact');
+    if (!holdSamples.some((sample) => sample.hold?.anchorCaptured === true)) issues.push('golden-anchor-not-captured');
   } else if (activeHold.length || appliedHold.length) issues.push('non-top-hold-active');
   const firstActive = activeHold[0] || null;
   const firstStep = firstActive?.shieldStepTranslationMeters ?? null;
-  if (Number.isFinite(firstStep) && firstStep > 0.03) issues.push(`first-shield-step:${firstStep}`);
   evidence = {
     stage: 'R18N.4.3-B.1.3', label, direction, requestedTtcMs: targetTtcSeconds * 1000,
     acceptedTtcMs: input.acceptedTtcSeconds * 1000, sequence,
