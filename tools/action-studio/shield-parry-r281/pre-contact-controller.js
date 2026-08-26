@@ -1,5 +1,30 @@
 import { createVisualOwnershipRuntimeTaps } from './visual-ownership-runtime-taps.js';
 import { createBoundedShieldArmAdditiveRuntime } from '../../../src/combat/predictive-parry-arm-additive.js';
+import {
+  analyzeTopDirectionCompatibilityProbe,
+  normalizeTopDirectionCompatibilityVariant,
+  shouldRetainTopDirectionAdditive,
+} from '../../../src/combat/parry-top-direction-compatibility-probe.js';
+
+const TOP_DIRECTION_PROBE_ARM_BONES = Object.freeze(['upperarm.l', 'lowerarm.l']);
+
+function captureTopDirectionProbeArmPose(rig) {
+  const bones = rig?.bones || {};
+  return Object.freeze(Object.fromEntries(
+    TOP_DIRECTION_PROBE_ARM_BONES
+      .filter((boneId) => bones[boneId]?.quaternion?.clone)
+      .map((boneId) => [boneId, bones[boneId].quaternion.clone().normalize()]),
+  ));
+}
+
+function restoreTopDirectionProbeArmPose(rig, pose) {
+  const bones = rig?.bones || {};
+  for (const [boneId, saved] of Object.entries(pose || {})) {
+    const quaternion = bones[boneId]?.quaternion;
+    if (!quaternion?.copy) continue;
+    quaternion.copy(saved).normalize();
+  }
+}
 
 export function createShieldParryPreContactController({
   exchangeState,
@@ -23,6 +48,10 @@ export function createShieldParryPreContactController({
   const PARRY_PROMPT_HOLD_MS = promptHoldMs;
   const visualOwnership = createVisualOwnershipRuntimeTaps({ rig: defender.rig, exchangeState });
   const shieldArmAdditiveRuntime = createBoundedShieldArmAdditiveRuntime();
+  const topDirectionProbeQuery = typeof globalThis.location?.search === 'string'
+    ? new URLSearchParams(globalThis.location.search).get('topProbe')
+    : null;
+  const topDirectionProbeVariant = normalizeTopDirectionCompatibilityVariant(topDirectionProbeQuery);
   const {
     cloneSurface,
     magnitude,
@@ -210,12 +239,53 @@ export function createShieldParryPreContactController({
         },
       }, deltaSeconds);
       visualOwnership.afterStance(residualStanceReach);
+      const topDirectionProbeActive = Boolean(topDirectionProbeVariant)
+        && snapshot.direction === 'top'
+        && Boolean(activeIntentPlan);
+      const topDirectionProbeBeforeSurface = topDirectionProbeActive
+        ? cloneSurface(buckler.getWorldParrySurface())
+        : null;
+      const topDirectionProbeArmPose = topDirectionProbeActive && topDirectionProbeVariant === 'C'
+        ? captureTopDirectionProbeArmPose(defender.rig)
+        : null;
       const shieldArmBoundedAdditive = shieldArmAdditiveRuntime.update({
         rig: defender.rig,
         authoredDelta: exchangeState.latestPredictiveReport?.shieldArmAuthoredDelta,
         sequence: snapshot.sequence,
-        enabled: Boolean(activeIntentPlan),
+        enabled: Boolean(activeIntentPlan)
+          && !(topDirectionProbeActive && topDirectionProbeVariant === 'A'),
       });
+      let topDirectionCompatibilityProbe = null;
+      if (topDirectionProbeActive) {
+        // getWorldParrySurface() updates the parry anchor and its parents, so the probe can
+        // measure the authored arm displacement without an extra full defender presentation rebuild.
+        const probeAfterAdditiveSurface = cloneSurface(buckler.getWorldParrySurface());
+        const baseProbe = analyzeTopDirectionCompatibilityProbe({
+          direction: snapshot.direction,
+          variant: topDirectionProbeVariant,
+          beforeCenter: topDirectionProbeBeforeSurface.center,
+          afterCenter: probeAfterAdditiveSurface.center,
+          targetCenter: activeInterceptIntent?.report?.targetCenter || null,
+          additiveApplied: shieldArmBoundedAdditive?.applied === true,
+        });
+        let retained = true;
+        let appliedBehavior = topDirectionProbeVariant === 'A'
+          ? 'solver-only-baseline'
+          : 'generic-bounded-additive';
+        if (topDirectionProbeVariant === 'C' && !shouldRetainTopDirectionAdditive(baseProbe)) {
+          restoreTopDirectionProbeArmPose(defender.rig, topDirectionProbeArmPose);
+          retained = false;
+          appliedBehavior = 'direction-incompatible-additive-rejected';
+        } else if (topDirectionProbeVariant === 'C') {
+          appliedBehavior = 'direction-compatible-additive-retained';
+        }
+        topDirectionCompatibilityProbe = Object.freeze({
+          ...baseProbe,
+          retained,
+          appliedBehavior,
+          finalProbeCenter: Object.freeze(cloneSurface(buckler.getWorldParrySurface()).center),
+        });
+      }
       visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive);
       const activeInterceptArmClosure = activeIntentPlan
         ? fineTrackingRuntime.refineWorldTarget(activeInterceptIntent?.report?.targetCenter, {
@@ -301,6 +371,7 @@ export function createShieldParryPreContactController({
           : null,
         activeInterceptArmClosure,
         shieldArmBoundedAdditive,
+        topDirectionCompatibilityProbe,
         activeInterceptTargetErrorBeforeMeters,
         activeInterceptTargetErrorAfterMeters,
         fallbackApplied: exchangeState.latestReachableInterceptTarget?.fallbackApplied === true,
