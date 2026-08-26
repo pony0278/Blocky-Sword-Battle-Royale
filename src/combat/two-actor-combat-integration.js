@@ -1,6 +1,9 @@
 import { createLongswordDirectionalAttackRuntime } from './longsword-directional-attack-runtime.js';
 import { createGuardStateMachine, GUARD_EVENTS, GUARD_STATES } from './guard-state-machine.js';
 import { createGuardOutcomeResolutionGate } from './guard-outcome-resolution.js';
+import {
+  SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY,
+} from './swept-contact-temporal-eligibility.js';
 import { createDirectionalRecoilPlanner } from './directional-recoil-planner.js';
 import {
   ATTACKER_RECOIL_PRESENTATION_PHASE_LATCHES,
@@ -386,10 +389,15 @@ export function createTwoActorCombatIntegration(options = {}) {
 
     const attackSnapshot = attackRuntime.snapshot;
     const contact = input.contact || input;
+    const temporalEligibility = contact?.temporalEligibility || null;
+    const sweptTemporalAuthority = temporalEligibility?.authority === SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY;
+    const effectiveAttackPhase = sweptTemporalAuthority && temporalEligibility.eligible === true
+      ? 'attack_active'
+      : attackSnapshot.phase;
     const resolution = outcomeGate.resolve({
       attackSequence: attackSnapshot.sequence,
       attackDirection: attackSnapshot.direction,
-      attackPhase: attackSnapshot.phase,
+      attackPhase: effectiveAttackPhase,
       contact,
       guardSnapshot: input.guardSnapshot || guardMachine.snapshot,
       guardIntentAgeMs: input.guardIntentAgeMs,
@@ -410,7 +418,10 @@ export function createTwoActorCombatIntegration(options = {}) {
       return integrationFailure('defender-event-not-dispatchable', snapshot(), { resolution });
     }
 
-    const interrupted = attackRuntime.interrupt({ resolution });
+    const interrupted = attackRuntime.interrupt({
+      resolution,
+      contactTemporalEligibility: sweptTemporalAuthority ? temporalEligibility : null,
+    });
     if (!interrupted.accepted) {
       outcomeGate.reset(resolution.attackSequence);
       rememberFailure(interrupted.reason || 'attack-interrupt-rejected', {

@@ -1,3 +1,6 @@
+import {
+  SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY,
+} from './swept-contact-temporal-eligibility.js';
 import { createActionDefinition } from './action-definition.js';
 import {
   LONGSWORD_ATTACK_DIRECTIONS,
@@ -253,7 +256,17 @@ export function createLongswordDirectionalAttackRuntime(options = {}) {
     }
 
     const profile = active.runtime;
-    const sourceTimeSeconds = clamp(elapsedMs / 1000, 0, profile.durationSeconds);
+    const contactTemporalEligibility = input.contactTemporalEligibility || null;
+    const sweptTemporalAuthority = contactTemporalEligibility?.authority === SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY
+      && contactTemporalEligibility.eligible === true
+      && Number.isFinite(Number(contactTemporalEligibility.contactElapsedSeconds));
+    const sourceTimeSeconds = clamp(
+      sweptTemporalAuthority
+        ? Number(contactTemporalEligibility.contactElapsedSeconds)
+        : elapsedMs / 1000,
+      0,
+      profile.durationSeconds,
+    );
     const phaseAtInterrupt = getLongswordAttackPhase(profile, sourceTimeSeconds);
     if (phaseAtInterrupt !== LONGSWORD_ATTACK_PHASES.ACTIVE && input.allowOutsideActive !== true) {
       return Object.freeze({ accepted: false, reason: 'attack-not-active', snapshot: snapshot() });
@@ -265,7 +278,11 @@ export function createLongswordDirectionalAttackRuntime(options = {}) {
       direction: profile.direction,
       clipId: profile.clipId,
       sourceTimeSeconds,
-      elapsedMs,
+      elapsedMs: sourceTimeSeconds * 1000,
+      frameEndElapsedMs: elapsedMs,
+      contactTemporalAuthority: sweptTemporalAuthority
+        ? SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY
+        : 'legacy-frame-end-source-time',
       phaseAtInterrupt,
       reason: request.reason,
       outcome: request.outcome,

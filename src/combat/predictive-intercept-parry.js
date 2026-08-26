@@ -14,6 +14,9 @@ import { getProductionParryDeflectProfile } from '../animation/parry-contact-def
 export const PREDICTIVE_INTERCEPT_PARRY_STAGE = 'G4.3B.5R';
 export const RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE = 'G4.3B.5R.1';
 export const RECOIL_PRESENTATION_AUTHORITY_STAGE = 'G4.3B.5R.2.3';
+export const PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS = 0.055;
+const PREDICTIVE_PARRY_ENTRY_BLEND_BONES = Object.freeze(['spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l']);
+const PREDICTIVE_PARRY_EXTERNAL_SHIELD_ARM_BONES = Object.freeze(['root', 'hips', 'spine', 'chest', 'upperarm.l', 'lowerarm.l', 'wrist.l', 'hand.l', 'handslot.l']);
 
 export const PREDICTIVE_PARRY_INPUT_GRADES = Object.freeze({
   TOO_EARLY: 'too-early',
@@ -55,6 +58,39 @@ function clamp(value, min, max) {
 
 function freeze(value) {
   return Object.freeze(value);
+}
+
+function captureBoneQuaternionPose(character, boneIds) {
+  const bones = character?.rig?.bones || {};
+  return Object.freeze(Object.fromEntries(
+    boneIds
+      .filter((boneId) => bones[boneId]?.quaternion?.clone)
+      .map((boneId) => [boneId, bones[boneId].quaternion.clone().normalize()]),
+  ));
+}
+
+function capturePresentationEntryPose(character) {
+  return captureBoneQuaternionPose(character, PREDICTIVE_PARRY_ENTRY_BLEND_BONES);
+}
+
+function restoreBoneQuaternionPose(character, pose) {
+  const bones = character?.rig?.bones || {};
+  for (const [boneId, saved] of Object.entries(pose || {})) {
+    const bone = bones[boneId];
+    if (!bone?.quaternion?.copy) continue;
+    bone.quaternion.copy(saved).normalize();
+  }
+}
+
+function blendPresentationEntryPose(character, entryPose, alpha) {
+  if (alpha >= 1) return;
+  const bones = character?.rig?.bones || {};
+  for (const [boneId, from] of Object.entries(entryPose || {})) {
+    const bone = bones[boneId];
+    if (!bone?.quaternion?.clone) continue;
+    const sampled = bone.quaternion.clone().normalize();
+    bone.quaternion.copy(from).slerp(sampled, alpha).normalize();
+  }
 }
 
 export function classifyPredictiveParryTiming(timeToContactSeconds, overrides = {}) {
@@ -265,6 +301,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       triggerTtcSeconds,
       lockedGuardIntentAgeMs,
       elapsedMs: 0,
+      entryBlendElapsedMs: 0,
+      entryPose: capturePresentationEntryPose(character),
       sourceTimeSeconds: PREDICTIVE_INTERCEPT_PARRY_PROFILE.presentationStartSourceSeconds,
     };
     lastReport = freeze({
@@ -279,6 +317,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       elapsedMs: 0,
       presentationElapsedMs: 0,
       sourceTimeSeconds: active.sourceTimeSeconds,
+      entryBlendProgress: 0,
+      shieldArmOwnership: 'predictive-presentation',
       triggerTtcSeconds,
       guardIntentAgeMs: lockedGuardIntentAgeMs,
       lockedGuardIntentAgeMs,
@@ -301,6 +341,12 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
 
     const deltaSeconds = Math.max(0, finite(input.deltaSeconds, 1 / 60));
     active.elapsedMs += deltaSeconds * 1000;
+    active.entryBlendElapsedMs += Math.min(deltaSeconds * 1000, 20);
+    const entryBlendProgress = clamp(active.entryBlendElapsedMs / (PREDICTIVE_PARRY_ENTRY_BLEND_SECONDS * 1000), 0, 1);
+    const preserveShieldArm = input.preserveShieldArm === true;
+    const shieldArmPose = preserveShieldArm
+      ? captureBoneQuaternionPose(character, PREDICTIVE_PARRY_EXTERNAL_SHIELD_ARM_BONES)
+      : null;
     const ttc = Math.max(0, finite(input.timeToContactSeconds, active.triggerTtcSeconds));
     const progress = clamp(1 - ttc / active.triggerTtcSeconds, 0, 1);
     const targetSource = PREDICTIVE_INTERCEPT_PARRY_PROFILE.presentationStartSourceSeconds
@@ -319,6 +365,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       rootRotationPolicy: 'lock',
     });
     applyGuardQuaternionOffsetsWeighted(THREE, character.rig, guardOffsets, active.profile.correctionWeight);
+    blendPresentationEntryPose(character, active.entryPose, entryBlendProgress);
+    if (shieldArmPose) restoreBoneQuaternionPose(character, shieldArmPose);
     character.update?.(0, input.camera);
 
     lastReport = freeze({
@@ -335,6 +383,8 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       triggerTtcSeconds: active.triggerTtcSeconds,
       timeToContactSeconds: ttc,
       progress,
+      entryBlendProgress,
+      shieldArmOwnership: preserveShieldArm ? 'external-active-intercept-tracking' : 'predictive-presentation',
       readyForAuthoritativeHandoff: ttc <= 0.02 || progress >= 0.9,
       defenderPresentationOffsetSeconds: sourceTimeSeconds,
       guardIntentAgeMs: active.lockedGuardIntentAgeMs,

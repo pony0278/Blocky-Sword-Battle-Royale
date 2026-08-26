@@ -1,3 +1,7 @@
+import {
+  SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY,
+} from './swept-contact-temporal-eligibility.js';
+
 export const COMMITTED_PARRY_CONTACT_GATE_STAGE = 'G4.3B.5R.3';
 
 export const COMMITTED_PARRY_CONTACT_GATE_PROFILE = Object.freeze({
@@ -118,7 +122,11 @@ export function confirmCommittedParryContact(input = {}) {
   const realSweptContact = contact?.contact === true
     && contact?.geometricContact === true
     && contact?.eligible === true;
-  const activeContact = attack.phase === 'attack_active';
+  const temporalEligibility = contact?.temporalEligibility || null;
+  const sweptTemporalAuthority = temporalEligibility?.authority === SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY;
+  const activeContact = sweptTemporalAuthority
+    ? temporalEligibility.eligible === true
+    : attack.phase === 'attack_active';
   const accepted = armed?.accepted === true && sameSequence && realSweptContact && activeContact;
 
   let reason = 'parry-confirmed-by-real-swept-contact';
@@ -139,6 +147,12 @@ export function confirmCommittedParryContact(input = {}) {
       ...(armed?.gates || {}),
       realSweptContact,
       activeContact,
+      activeContactAuthority: sweptTemporalAuthority
+        ? SWEPT_CONTACT_TEMPORAL_ELIGIBILITY_AUTHORITY
+        : 'legacy-frame-end-attack-phase',
+      contactElapsedSeconds: sweptTemporalAuthority
+        ? temporalEligibility.contactElapsedSeconds ?? null
+        : null,
       sameAttackSequence: sameSequence,
     }),
     authority: COMMITTED_PARRY_CONTACT_GATE_PROFILE.authority,

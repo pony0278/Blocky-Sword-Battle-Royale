@@ -23,6 +23,7 @@ import {
   createPredictiveInterceptParryPresentationRuntime,
 } from '../../src/combat/predictive-intercept-parry.js?v=g43b5r281-parry-sync-r2';
 import { sampleActiveShieldLeadMotion } from '../../src/combat/active-shield-lead-parry.js?v=g43b5r281';
+import { createActiveParryInterceptIntent } from '../../src/combat/active-parry-intercept-intent.js?v=r18n1';
 import {
   TWO_ACTOR_PARRY_REACTION_CHANNELS,
   TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES,
@@ -116,6 +117,7 @@ const fineTrackingRuntime = createGuardThreatTrackingRuntime(THREE, { rig: defen
 const residualBodyReachRuntime = createGuardResidualBodyReachRuntime(THREE, { rig: defender.rig, buckler });
 const residualStanceReachRuntime = createGuardResidualStanceReachRuntime(THREE, { rig: defender.rig, buckler });
 const predictivePresentation = createPredictiveInterceptParryPresentationRuntime(THREE, { character: defender });
+const activeParryInterceptIntent = createActiveParryInterceptIntent();
 const parryGate = createCommittedParryContactGate();
 const exchangeState = createShieldParryExchangeState();
 
@@ -191,6 +193,7 @@ const preContactController = createShieldParryPreContactController({
   residualBodyReachRuntime,
   residualStanceReachRuntime,
   predictivePresentation,
+  activeInterceptIntent: activeParryInterceptIntent,
   parryGate,
   longswordAttackPhases: LONGSWORD_ATTACK_PHASES,
   promptHoldMs: PARRY_PROMPT_HOLD_MS,
@@ -363,6 +366,7 @@ function resetExchange() {
   residualBodyReachRuntime.reset();
   residualStanceReachRuntime.reset();
   predictivePresentation.reset();
+  preContactController.resetActiveIntercept();
   resetShieldParryExchangeState(exchangeState, {
     previousShieldLeadSurface: cloneSurface(buckler.getWorldParrySurface()),
   });
@@ -398,6 +402,7 @@ function triggerParryNow(source = 'button') {
     exchangeState.latestReachableInterceptTarget = null;
     exchangeState.latestInterceptDriveReport = null;
     exchangeState.interceptDriveTrace = [];
+    preContactController.armActiveIntercept(snapshot);
     predictivePresentation.start({
       sequence: snapshot.sequence,
       requestedGrade: 'parry',

@@ -50,11 +50,20 @@ test('R18M.5 whiff probing remains diagnostic and real swept contact stays autho
   assert.doesNotMatch(controller, /swordGripConstraint\./);
   assert.doesNotMatch(controller, /buildLiveParryOldB3Handoff\(/);
 
-  const probeIndex = contactHandoffController.indexOf('exchangeState.latestContact = probeSweptSwordBucklerContact({');
-  const whiffIndex = contactHandoffController.indexOf('preContactController.recordWhiffProbe(snapshot, exchangeState.latestContact);', probeIndex);
-  const confirmIndex = contactHandoffController.indexOf('parryGate.confirm({ attackSnapshot: snapshot, contact: exchangeState.latestContact })', probeIndex);
-  const resolveIndex = contactHandoffController.indexOf('exchangeState.latestCombatResult = combat.resolveContact({', probeIndex);
-  assert.ok(probeIndex >= 0 && whiffIndex > probeIndex && confirmIndex > whiffIndex && resolveIndex > confirmIndex);
+  const probeIndex = contactHandoffController.indexOf('const geometricContact = probeSweptSwordBucklerContact({');
+  const temporalEligibilityIndex = contactHandoffController.indexOf('exchangeState.latestContact = evaluateSweptContactTemporalEligibility({', probeIndex);
+  const whiffIndex = contactHandoffController.indexOf('preContactController.recordWhiffProbe(snapshot, exchangeState.latestContact);', temporalEligibilityIndex);
+  const rejectIndex = contactHandoffController.indexOf('if (!exchangeState.latestContact.contact) return;', whiffIndex);
+  const confirmIndex = contactHandoffController.indexOf('parryGate.confirm({ attackSnapshot: snapshot, contact: exchangeState.latestContact })', rejectIndex);
+  const resolveIndex = contactHandoffController.indexOf('exchangeState.latestCombatResult = combat.resolveContact({', confirmIndex);
+  assert.ok(
+    probeIndex >= 0
+      && temporalEligibilityIndex > probeIndex
+      && whiffIndex > temporalEligibilityIndex
+      && rejectIndex > whiffIndex
+      && confirmIndex > rejectIndex
+      && resolveIndex > confirmIndex,
+  );
 });
 
 test('R18M.5 manual timing gate and post-contact handoff authority remain outside the controller', () => {

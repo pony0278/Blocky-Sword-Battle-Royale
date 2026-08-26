@@ -70,12 +70,17 @@ test('R18N.1 makes the F-latched intent the primary incremental shield drive wit
   assert.match(preContact, /drivePlanSource: activeIntentPlan/);
   assert.match(preContact, /preserveShieldArm: Boolean\(activeInterceptIntent\?\.active\)/);
   const planIndex = preContact.indexOf('const activeIntentPlan = activeInterceptIntent?.plan({');
-  const resetIndex = preContact.indexOf('if (activeIntentPlan) fineTrackingRuntime.reset();');
-  const updateIndex = preContact.indexOf('exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);', resetIndex);
-  assert.ok(planIndex >= 0 && resetIndex > planIndex && updateIndex > resetIndex, 'active intent must clear absolute runtime carry immediately before its persistent-pose tracking step');
-  assert.match(preContact.slice(resetIndex, updateIndex), /if \(activeIntentPlan\) fineTrackingRuntime\.reset\(\);/);
+  const updateIndex = preContact.indexOf('exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);', planIndex);
+  assert.ok(planIndex >= 0 && updateIndex > planIndex, 'active intent must remain the primary post-presentation tracking step');
+  assert.doesNotMatch(
+    preContact.slice(planIndex, updateIndex),
+    /if \(activeIntentPlan\) fineTrackingRuntime\.reset\(\);/,
+    'R18N.3 must preserve bounded tracking carry so the absolute additive correction can be reapplied after authored presentation each frame',
+  );
+  assert.match(preContact, /activeInterceptPoseAuthority:[\s\S]*post-guard-post-predictive-absolute-world-offset-last-writer/);
   assert.match(preContact, /fineTrackingRuntime\.refineMeasuredContact\(/, 'bounded arm residual refinement must remain available');
-  assert.match(preContact, /residualBodyReachRuntime\.update\(\{[\s\S]*mode: activeIntentPlan \? 'off' : 'parry'/, 'body reach must not fight the F-latched world target');
+  assert.match(preContact, /activeIntentPlan[\s\S]*residualBodyReachRuntime\.trackWorldTarget\(\{[\s\S]*targetCenter: activeInterceptIntent\?\.report\?\.targetCenter/, 'active intercept support chain must follow the same F-latched fixed world target');
+  assert.match(preContact, /residualBodyReachRuntime\.update\(\{[\s\S]*mode: 'parry'/, 'legacy measured-contact body reach remains available outside active intercept');
   assert.match(preContact, /residualStanceReachRuntime\.update\(\{[\s\S]*mode: 'parry'/, 'stance refinement remains independently available');
   assert.match(preContact, /function armActiveIntercept\(snapshot\)/);
   assert.match(preContact, /function resetActiveIntercept\(\)/);

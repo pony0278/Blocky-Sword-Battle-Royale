@@ -188,6 +188,9 @@ export function createGuardResidualBodyReachRuntime(THREE, options = {}) {
   const bodyReachBefore = new THREE.Vector3();
   const requestedStep = new THREE.Vector3();
   const targetCenter = new THREE.Vector3();
+  const activeTargetOffset = new THREE.Vector3();
+  const activeTargetDesired = new THREE.Vector3();
+  const activeTargetDelta = new THREE.Vector3();
   const effector = new THREE.Vector3();
   const jointPoint = new THREE.Vector3();
 
@@ -204,7 +207,118 @@ export function createGuardResidualBodyReachRuntime(THREE, options = {}) {
     };
   }
 
+  function trackWorldTarget(input = {}, deltaSeconds = 1 / 60) {
+    const profile = Object.freeze({ ...GUARD_RESIDUAL_BODY_REACH_PROFILE, ...(input.profile || {}) });
+    const dt = Math.max(1e-5, finite(deltaSeconds, 1 / 60));
+    const initialSurface = buckler.getWorldParrySurface();
+    const target = input.targetCenter || null;
+    if (!target) {
+      activeTargetOffset.set(0, 0, 0);
+      return Object.freeze({
+        stage: GUARD_RESIDUAL_BODY_REACH_STAGE,
+        mode: 'active-intercept-world-target',
+        active: false,
+        reason: 'missing-fixed-world-target',
+        supportOffset: freezeVector({ x: 0, y: 0, z: 0 }),
+        supportOffsetDistance: 0,
+        targetErrorBeforeMeters: null,
+        targetErrorAfterMeters: null,
+        appliedDegrees: Object.freeze({ chest: 0, spine: 0 }),
+        hipsModified: false,
+        feetModified: false,
+        authority: 'fixed-world-target-support-chain-no-contact-authority',
+      });
+    }
+
+    // Active Intercept owns a fixed world target. Legacy measured-contact body carry must
+    // not mix with this path; chest/spine only reapply a bounded additive residual after
+    // the arm solver has already become the post-presentation last writer.
+    bodyReachOffset.set(0, 0, 0);
+    activeTargetDesired.set(
+      finite(target.x) - finite(initialSurface.center?.x),
+      finite(target.y) - finite(initialSurface.center?.y),
+      finite(target.z) - finite(initialSurface.center?.z),
+    );
+    if (activeTargetDesired.length() > profile.maxBodyReachMeters && profile.maxBodyReachMeters > 0) {
+      activeTargetDesired.setLength(profile.maxBodyReachMeters);
+    }
+    if (!(profile.maxBodyReachMeters > 0)) activeTargetDesired.set(0, 0, 0);
+
+    activeTargetDelta.copy(activeTargetDesired).sub(activeTargetOffset);
+    const maxStep = Math.max(0, profile.bodyReachSpeedMps) * dt;
+    if (activeTargetDelta.length() > maxStep && maxStep > 0) activeTargetDelta.setLength(maxStep);
+    if (!(maxStep > 0)) activeTargetDelta.set(0, 0, 0);
+    activeTargetOffset.add(activeTargetDelta);
+    if (activeTargetOffset.length() > profile.maxBodyReachMeters && profile.maxBodyReachMeters > 0) {
+      activeTargetOffset.setLength(profile.maxBodyReachMeters);
+    }
+
+    targetCenter.set(
+      finite(initialSurface.center?.x),
+      finite(initialSurface.center?.y),
+      finite(initialSurface.center?.z),
+    ).add(activeTargetOffset);
+    const appliedDegrees = { chest: 0, spine: 0 };
+    if (activeTargetOffset.lengthSq() > 1e-10) {
+      for (let iteration = 0; iteration < profile.iterations; iteration += 1) {
+        const surface = buckler.getWorldParrySurface();
+        effector.set(surface.center.x, surface.center.y, surface.center.z);
+        const chestRemaining = Math.max(0, profile.chestMaxDegrees - appliedDegrees.chest);
+        appliedDegrees.chest += aimEffectorWithBone(
+          THREE, rig.bones.chest, effector, targetCenter, chestRemaining,
+        );
+        rig.root?.updateMatrixWorld?.(true);
+        const surfaceAfterChest = buckler.getWorldParrySurface();
+        effector.set(surfaceAfterChest.center.x, surfaceAfterChest.center.y, surfaceAfterChest.center.z);
+        const spineRemaining = Math.max(0, profile.spineMaxDegrees - appliedDegrees.spine);
+        appliedDegrees.spine += aimEffectorWithBone(
+          THREE, rig.bones.spine, effector, targetCenter, spineRemaining,
+        );
+        rig.root?.updateMatrixWorld?.(true);
+      }
+    }
+
+    const finalSurface = buckler.getWorldParrySurface();
+    const achieved = new THREE.Vector3(
+      finalSurface.center.x - initialSurface.center.x,
+      finalSurface.center.y - initialSurface.center.y,
+      finalSurface.center.z - initialSurface.center.z,
+    );
+    const targetVector = new THREE.Vector3(finite(target.x), finite(target.y), finite(target.z));
+    const beforeVector = new THREE.Vector3(
+      finite(initialSurface.center?.x), finite(initialSurface.center?.y), finite(initialSurface.center?.z),
+    );
+    const afterVector = new THREE.Vector3(
+      finite(finalSurface.center?.x), finite(finalSurface.center?.y), finite(finalSurface.center?.z),
+    );
+    const achievedDistance = achieved.length();
+    const directionDot = activeTargetOffset.length() > 1e-6 && achievedDistance > 1e-6
+      ? activeTargetOffset.dot(achieved) / (activeTargetOffset.length() * achievedDistance)
+      : null;
+    return Object.freeze({
+      stage: GUARD_RESIDUAL_BODY_REACH_STAGE,
+      mode: 'active-intercept-world-target',
+      active: activeTargetOffset.lengthSq() > 1e-10,
+      supportOffset: freezeVector(activeTargetOffset),
+      supportOffsetDistance: activeTargetOffset.length(),
+      requestedTargetOffset: freezeVector(activeTargetDesired),
+      requestedTargetDistance: activeTargetDesired.length(),
+      targetErrorBeforeMeters: targetVector.distanceTo(beforeVector),
+      targetErrorAfterMeters: targetVector.distanceTo(afterVector),
+      achievedOffset: freezeVector(achieved),
+      achievedDistance,
+      directionDot,
+      appliedDegrees: Object.freeze({ ...appliedDegrees }),
+      surface: finalSurface,
+      hipsModified: false,
+      feetModified: false,
+      reason: 'fixed-world-target-support-chain-active',
+      authority: 'fixed-world-target-support-chain-no-contact-authority',
+    });
+  }
+
   function update(input = {}, deltaSeconds = 1 / 60) {
+    activeTargetOffset.set(0, 0, 0);
     const mode = String(input.mode || 'off').toLowerCase();
     const profile = Object.freeze({ ...GUARD_RESIDUAL_BODY_REACH_PROFILE, ...(input.profile || {}) });
     const dt = Math.max(1e-5, finite(deltaSeconds, 1 / 60));
@@ -321,10 +435,15 @@ export function createGuardResidualBodyReachRuntime(THREE, options = {}) {
     });
   }
 
-  function reset() { bodyReachOffset.set(0, 0, 0); }
+  function reset() {
+    bodyReachOffset.set(0, 0, 0);
+    activeTargetOffset.set(0, 0, 0);
+  }
   return Object.freeze({
     update,
+    trackWorldTarget,
     reset,
     get offset() { return bodyReachOffset.clone(); },
+    get activeTargetOffset() { return activeTargetOffset.clone(); },
   });
 }

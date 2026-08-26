@@ -1,3 +1,7 @@
+import {
+  evaluateSweptContactTemporalEligibility,
+} from '../../../src/combat/swept-contact-temporal-eligibility.js';
+
 export function createShieldParryContactHandoffController({
   exchangeState,
   buckler,
@@ -191,12 +195,68 @@ export function createShieldParryContactHandoffController({
   function resolveContact(snapshot, currentBlade, deltaSeconds, context = {}) {
     const { previousBlade, selectedMode, selectedDirection } = context;
     if (!previousBlade || !snapshot.action || exchangeState.firstContact) return;
-    exchangeState.latestContact = probeSweptSwordBucklerContact({
+    const currentShieldSurface = buckler.getWorldParrySurface();
+    const geometricContact = probeSweptSwordBucklerContact({
       previousBlade,
       currentBlade,
-      bucklerSurface: buckler.getWorldParrySurface(),
+      bucklerSurface: currentShieldSurface,
       deltaSeconds,
-      active: snapshot.phase === LONGSWORD_ATTACK_PHASES.ACTIVE,
+      active: true,
+    });
+    // R18N.3 v6.4.2 observer-only moving-shield classification. Production contact
+    // authority remains geometricContact above. This second solve only removes the
+    // measured shield translation from the sword sweep so a hitch miss can be
+    // classified without injecting or accepting a synthetic contact.
+    const shieldTranslation = exchangeState.latestShieldLeadMotion?.translation || null;
+    const relativePreviousBlade = shieldTranslation
+      ? previousBlade.map((point) => ({
+          x: point.x + (Number(shieldTranslation.x) || 0),
+          y: point.y + (Number(shieldTranslation.y) || 0),
+          z: point.z + (Number(shieldTranslation.z) || 0),
+        }))
+      : null;
+    const relativeMovingShieldContact = relativePreviousBlade
+      ? probeSweptSwordBucklerContact({
+          previousBlade: relativePreviousBlade,
+          currentBlade,
+          bucklerSurface: currentShieldSurface,
+          deltaSeconds,
+          active: true,
+        })
+      : null;
+    const relativeMovingShieldDiagnostic = relativeMovingShieldContact
+      ? Object.freeze({
+          contact: relativeMovingShieldContact.contact === true,
+          geometricContact: relativeMovingShieldContact.geometricContact === true,
+          reason: relativeMovingShieldContact.reason || null,
+          sweepAlpha: relativeMovingShieldContact.sweepAlpha ?? null,
+          closestApproach: relativeMovingShieldContact.diagnostics?.closestApproach || null,
+          shieldTranslation: Object.freeze({
+            x: Number(shieldTranslation.x) || 0,
+            y: Number(shieldTranslation.y) || 0,
+            z: Number(shieldTranslation.z) || 0,
+          }),
+          shieldTranslationMeters: Math.hypot(
+            Number(shieldTranslation.x) || 0,
+            Number(shieldTranslation.y) || 0,
+            Number(shieldTranslation.z) || 0,
+          ),
+          shieldAngularRadians: exchangeState.latestShieldLeadMotion?.angularRadians ?? null,
+          authority: 'observer-only-relative-translation-sweep',
+        })
+      : null;
+    const geometricContactWithDiagnostic = Object.freeze({
+      ...geometricContact,
+      diagnostics: Object.freeze({
+        ...(geometricContact.diagnostics || {}),
+        relativeMovingShieldTranslation: relativeMovingShieldDiagnostic,
+      }),
+    });
+    exchangeState.latestContact = evaluateSweptContactTemporalEligibility({
+      contactReport: geometricContactWithDiagnostic,
+      attackSnapshot: snapshot,
+      deltaSeconds,
+      fallbackEligible: snapshot.phase === LONGSWORD_ATTACK_PHASES.ACTIVE,
     });
     preContactController.recordWhiffProbe(snapshot, exchangeState.latestContact);
     if (!exchangeState.latestContact.contact) return;

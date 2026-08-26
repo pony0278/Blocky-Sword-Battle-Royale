@@ -8,6 +8,7 @@ export function createShieldParryPreContactController({
   residualBodyReachRuntime,
   residualStanceReachRuntime,
   predictivePresentation,
+  activeInterceptIntent,
   parryGate,
   longswordAttackPhases,
   promptHoldMs,
@@ -100,6 +101,7 @@ export function createShieldParryPreContactController({
       exchangeState.latestPredictiveReport = predictivePresentation.update({
         deltaSeconds,
         timeToContactSeconds: exchangeState.latestPredictiveAnalysis?.timeToContactSeconds,
+        preserveShieldArm: Boolean(activeInterceptIntent?.active),
         camera,
       });
       const predictiveSurface = cloneSurface(buckler.getWorldParrySurface());
@@ -111,13 +113,17 @@ export function createShieldParryPreContactController({
         currentBlade,
         bucklerSurface: continuitySurface,
       });
+      const activeIntentPlan = activeInterceptIntent?.plan({
+        sequence: snapshot.sequence,
+        bucklerSurface: predictiveSurface,
+      }) || null;
       exchangeState.latestReachableInterceptTarget = selectReachableParryInterceptTarget({
         predictedThreat: exchangeState.latestPredictiveAnalysis?.threat,
         predictedTrackingPlan: exchangeState.latestPredictiveAnalysis?.trackingPlan,
         closestApproach: measuredClosestApproach,
         bucklerSurface: continuitySurface,
       });
-      exchangeState.latestFinePlan = exchangeState.latestReachableInterceptTarget?.fallbackApplied
+      exchangeState.latestFinePlan = activeIntentPlan || (exchangeState.latestReachableInterceptTarget?.fallbackApplied
         ? exchangeState.latestReachableInterceptTarget.trackingPlan
         : exchangeState.latestReachableInterceptTarget?.threat
           ? planGuardThreatCorrection({
@@ -125,8 +131,12 @@ export function createShieldParryPreContactController({
               threat: exchangeState.latestReachableInterceptTarget.threat,
               bucklerSurface: predictiveSurface,
             })
-          : null;
+          : null);
       const trackingSurfaceBefore = cloneSurface(buckler.getWorldParrySurface());
+      // R18N.3: Guard/Parry presentation is allowed to rebuild its authored pose every frame.
+      // Keep the tracking runtime's bounded carry across frames and apply it after presentation,
+      // so currentOffset acts as an absolute additive world-space correction and Active Intercept
+      // remains the last writer of the shield-arm pose before real swept contact is evaluated.
       exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);
       const residualCarryBeforeMeters = magnitude(exchangeState.latestFineTracking?.carriedResidualOffset);
       const primaryTrackingSurfaceAfter = cloneSurface(buckler.getWorldParrySurface());
@@ -161,10 +171,14 @@ export function createShieldParryPreContactController({
         currentBlade,
         bucklerSurface: cloneSurface(buckler.getWorldParrySurface()),
       });
-      const residualBodyReach = residualBodyReachRuntime.update({
-        mode: 'parry',
-        closestApproach: residualAfterArmRefinement,
-      }, deltaSeconds);
+      const residualBodyReach = activeIntentPlan
+        ? residualBodyReachRuntime.trackWorldTarget({
+            targetCenter: activeInterceptIntent?.report?.targetCenter,
+          }, deltaSeconds)
+        : residualBodyReachRuntime.update({
+            mode: 'parry',
+            closestApproach: residualAfterArmRefinement,
+          }, deltaSeconds);
       const residualAfterBodyReach = measureSweptSwordBucklerClosestApproach({
         previousBlade,
         currentBlade,
@@ -186,6 +200,12 @@ export function createShieldParryPreContactController({
           edgeGapAfterMeters: residualAfterArmRefinement.radialGapMeters,
         },
       }, deltaSeconds);
+      const activeInterceptArmClosure = activeIntentPlan
+        ? fineTrackingRuntime.refineWorldTarget(activeInterceptIntent?.report?.targetCenter, {
+            jointBudgetScale: 0.35,
+            iterations: 2,
+          })
+        : null;
       // Rebuild dynamic line geometry once after all pose solvers have finished.
       defender.update(0, camera);
       defenderSword?.update();
@@ -221,6 +241,21 @@ export function createShieldParryPreContactController({
         - residualAfterRefinement.radialGapMeters;
       const stancePlaneReductionMeters = residualAfterBodyReach.planeGapMeters
         - residualAfterRefinement.planeGapMeters;
+      const activeInterceptTargetCenter = activeIntentPlan ? activeInterceptIntent?.report?.targetCenter : null;
+      const activeInterceptTargetErrorBeforeMeters = activeInterceptTargetCenter
+        ? Math.hypot(
+            activeInterceptTargetCenter.x - trackingSurfaceBefore.center.x,
+            activeInterceptTargetCenter.y - trackingSurfaceBefore.center.y,
+            activeInterceptTargetCenter.z - trackingSurfaceBefore.center.z,
+          )
+        : null;
+      const activeInterceptTargetErrorAfterMeters = activeInterceptTargetCenter
+        ? Math.hypot(
+            activeInterceptTargetCenter.x - trackingSurfaceAfter.center.x,
+            activeInterceptTargetCenter.y - trackingSurfaceAfter.center.y,
+            activeInterceptTargetCenter.z - trackingSurfaceAfter.center.z,
+          )
+        : null;
       exchangeState.latestInterceptDriveReport = Object.freeze({
         attackPhase: snapshot.phase,
         elapsedSeconds: snapshot.elapsedSeconds,
@@ -228,9 +263,27 @@ export function createShieldParryPreContactController({
         presentationActive: true,
         selectorBaseline: 'previous-frame-post-tracking-world-shield-surface',
         selectionSource: exchangeState.latestReachableInterceptTarget?.source ?? 'none',
-        drivePlanSource: exchangeState.latestReachableInterceptTarget?.fallbackApplied
-          ? 'surface-relative-measured-contact-correction'
-          : 'current-presentation-linear-contact-correction',
+        drivePlanSource: activeIntentPlan
+          ? 'latched-f-active-intercept-intent'
+          : exchangeState.latestReachableInterceptTarget?.fallbackApplied
+            ? 'surface-relative-measured-contact-correction'
+            : 'current-presentation-linear-contact-correction',
+        activeInterceptIntent: activeInterceptIntent?.report ?? null,
+        activeInterceptPoseAuthority: activeIntentPlan
+          ? 'post-guard-post-predictive-absolute-world-offset-last-writer'
+          : null,
+        activeInterceptPrimaryCarryMeters: activeIntentPlan
+          ? magnitude(exchangeState.latestFineTracking?.requestedOffset)
+          : null,
+        activeInterceptResidualCarryMeters: activeIntentPlan
+          ? (residualRefinement?.carriedResidualDistance ?? 0)
+          : null,
+        activeInterceptSupportAuthority: activeIntentPlan
+          ? residualBodyReach?.authority ?? null
+          : null,
+        activeInterceptArmClosure,
+        activeInterceptTargetErrorBeforeMeters,
+        activeInterceptTargetErrorAfterMeters,
         fallbackApplied: exchangeState.latestReachableInterceptTarget?.fallbackApplied === true,
         predictedReachable: exchangeState.latestReachableInterceptTarget?.predictedReachable ?? null,
         measuredReachable: exchangeState.latestReachableInterceptTarget?.measuredReachable ?? null,
@@ -266,7 +319,9 @@ export function createShieldParryPreContactController({
         shieldStepVector,
         shieldStepTranslationMeters,
         correctionDirectionDot,
-        authority: 'persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic',
+        authority: activeIntentPlan
+          ? 'guard-and-predictive-presentation-then-active-intercept-arm-plus-fixed-target-support-last-writer-held-to-real-contact'
+          : 'persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic',
       });
       exchangeState.interceptDriveTrace.push(compactInterceptDriveTraceFrame(exchangeState.latestInterceptDriveReport));
       if (exchangeState.interceptDriveTrace.length > 96) exchangeState.interceptDriveTrace.shift();
@@ -287,6 +342,17 @@ export function createShieldParryPreContactController({
     });
     exchangeState.previousShieldLeadSurface = afterSurface;
   }
+  function armActiveIntercept(snapshot) {
+    return activeInterceptIntent?.arm({
+      sequence: snapshot?.sequence,
+      direction: snapshot?.direction,
+      bucklerSurface: cloneSurface(buckler.getWorldParrySurface()),
+      predictiveAnalysis: exchangeState.latestPredictiveAnalysis,
+    }) || Object.freeze({ accepted: false, reason: 'active-intercept-intent-unavailable' });
+  }
+
+  function resetActiveIntercept() { activeInterceptIntent?.reset(); }
+
   function updatePreContact(snapshot, currentBlade, deltaSeconds) {
     const context = readContext();
     if (!snapshot.action || exchangeState.firstContact) return;
@@ -312,6 +378,9 @@ export function createShieldParryPreContactController({
       elapsedSeconds: Number.isFinite(elapsedSeconds) ? elapsedSeconds : null,
       timeToContactSeconds,
       probeReason: probe.reason,
+      probeDeltaSeconds: Number.isFinite(Number(probe.diagnostics?.deltaSeconds))
+        ? Number(probe.diagnostics.deltaSeconds)
+        : null,
       geometricContact: probe.geometricContact === true,
       eligible: probe.eligible === true,
       shieldRadiusMeters: probe.surface?.radius ?? null,
@@ -343,5 +412,8 @@ export function createShieldParryPreContactController({
   return Object.freeze({
     update: updatePreContact,
     recordWhiffProbe,
+    armActiveIntercept,
+    resetActiveIntercept,
+    get activeInterceptIntentReport() { return activeInterceptIntent?.report ?? null; },
   });
 }

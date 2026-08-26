@@ -32,13 +32,15 @@ test('R18M.6 entry delegates contact/release ownership while preserving frame or
 
 test('R18M.6 real swept Sword × Shield contact remains the only Parry success authority', () => {
   indexOrder(controller, [
-    'exchangeState.latestContact = probeSweptSwordBucklerContact({',
+    'const geometricContact = probeSweptSwordBucklerContact({',
+    'exchangeState.latestContact = evaluateSweptContactTemporalEligibility({',
     'if (!exchangeState.latestContact.contact) return;',
     'parryGate.confirm({ attackSnapshot: snapshot, contact: exchangeState.latestContact })',
     'exchangeState.latestCombatResult = combat.resolveContact({',
     'exchangeState.latestGripConstraintReport = swordGripConstraint.start({',
   ]);
-  assert.match(controller, /active: snapshot\.phase === LONGSWORD_ATTACK_PHASES\.ACTIVE/);
+  assert.match(controller, /active: true/);
+  assert.match(controller, /fallbackEligible: snapshot\.phase === LONGSWORD_ATTACK_PHASES\.ACTIVE/);
   assert.match(controller, /realSweptContact: true/);
 });
 

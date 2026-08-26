@@ -14,6 +14,26 @@ const contactHandoffSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),
   'utf8',
 );
+const labUiSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url),
+  'utf8',
+);
+const diagnosticFormattersSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/diagnostic-formatters.js', import.meta.url),
+  'utf8',
+);
+const stanceDebugSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/stance-debug-controls.js', import.meta.url),
+  'utf8',
+);
+const inspectionOverlaySource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/inspection-overlay.js', import.meta.url),
+  'utf8',
+);
+const liveContactConstraintSource = readFileSync(
+  new URL('../src/combat/live-shield-sword-grip-contact-constraint.js', import.meta.url),
+  'utf8',
+);
 const postContactOwnershipSource = `${source}\n${contactHandoffSource}`;
 const html = readFileSync(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url),
@@ -33,6 +53,14 @@ const attackerPresentationSource = readFileSync(
 );
 const verificationReportSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/verification-report.js', import.meta.url),
+  'utf8',
+);
+const diagnosticTelemetrySource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/diagnostic-telemetry.js', import.meta.url),
+  'utf8',
+);
+const reportSerializationSource = readFileSync(
+  new URL('../tools/action-studio/shield-parry-r281/report-serialization.js', import.meta.url),
   'utf8',
 );
 const directOldB3DiagnosticSource = readFileSync(
@@ -62,13 +90,13 @@ test('Step 3A exposes an explicit live contact inspection state and markers', ()
   assert.match(html, /yellow = sword contact/);
   assert.match(html, /confirmed real Parry uses the same bridge as a fail-safe and cannot remain frozen/);
   assert.match(html, /TOP\/RIGHT 7\/7/);
-  assert.match(source, /STEP 3A HOLD · LIVE CONTACT VERIFIED/);
-  assert.match(source, /formatInspectionFailureSummary/);
-  assert.match(source, /failedGateCount/);
-  assert.match(source, /formatTerminalState/);
-  assert.match(source, /contactGeometryDiagnostic: describeContactGeometry/);
-  assert.match(source, /bladePercent/);
-  assert.match(source, /shieldRegion/);
+  assert.match(labUiSource, /STEP 3A HOLD · LIVE CONTACT VERIFIED/);
+  assert.match(labUiSource, /formatInspectionFailureSummary/);
+  assert.match(labUiSource, /failedGateCount/);
+  assert.match(labUiSource, /formatTerminalState/);
+  assert.match(verificationReportSource, /contactGeometryDiagnostic: describeContactGeometry/);
+  assert.match(diagnosticFormattersSource, /bladePercent/);
+  assert.match(diagnosticFormattersSource, /shieldRegion/);
 });
 
 test('Step 3A provides a free inspection camera without changing combat time', () => {
@@ -97,43 +125,54 @@ test('R18E exposes URL-gated low-stance tuning without changing real-contact aut
   assert.match(html, /id="debugArmAttemptCm" type="range"/);
   assert.match(html, /APPLY \+ RETRY/);
   assert.match(source, /DEBUG_QUERY\.get\('debug'\) === '1'/);
-  assert.match(source, /rawQueryValue == null \|\| rawQueryValue\.trim\(\) === ''/);
-  assert.match(source, /\? Number\.NaN/);
-  assert.match(source, /query: 'leadMs'/);
-  assert.match(source, /query: 'crouchCm'/);
-  assert.match(source, /query: 'crouchSpeed'/);
-  assert.match(source, /query: 'edgeCm'/);
-  assert.match(source, /query: 'planeCm'/);
-  assert.match(source, /query: 'lowGapCm'/);
-  assert.match(source, /query: 'downRatio'/);
-  assert.match(source, /query: 'kneeBandCm'/);
-  assert.match(source, /query: 'armAttemptCm'/);
-  assert.match(source, /profile: DEBUG_MODE \? debugStanceProfile : null/);
-  assert.match(source, /DEBUG pred \$\{predictedDecision\}/);
-  assert.match(source, /anticipatedEligibilityReason/);
-  assert.match(source, /pflags \$\{predictedFlags\}/);
-  assert.match(source, /latestThreatSelection/);
-  assert.match(source, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);
-  assert.match(source, /if \(!latestContact\.contact\) return/);
+  assert.match(stanceDebugSource, /rawQueryValue == null \|\| rawQueryValue\.trim\(\) === ''/);
+  assert.match(stanceDebugSource, /\? Number\.NaN/);
+  assert.match(stanceDebugSource, /query: 'leadMs'/);
+  assert.match(stanceDebugSource, /query: 'crouchCm'/);
+  assert.match(stanceDebugSource, /query: 'crouchSpeed'/);
+  assert.match(stanceDebugSource, /query: 'edgeCm'/);
+  assert.match(stanceDebugSource, /query: 'planeCm'/);
+  assert.match(stanceDebugSource, /query: 'lowGapCm'/);
+  assert.match(stanceDebugSource, /query: 'downRatio'/);
+  assert.match(stanceDebugSource, /query: 'kneeBandCm'/);
+  assert.match(stanceDebugSource, /query: 'armAttemptCm'/);
+  assert.match(preContactSource, /profile: debugMode \? debugStanceProfile : null/);
+  assert.match(diagnosticFormattersSource, /DEBUG pred \$\{predictedDecision\}/);
+  assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/);
+  assert.match(diagnosticFormattersSource, /pflags \$\{predictedFlags\}/);
+  assert.match(verificationReportSource, /latestThreatSelection/);
+  assert.match(verificationReportSource, /debug-profile-changes-posture-guidance-only-real-swept-contact-remains-success-authority/);
+  assert.match(contactHandoffSource, /if \(!exchangeState\.latestContact\.contact\) return/);
 });
 
 test('Step 3A renders and reports all three original-attack-line clearance gates', () => {
-  assert.match(source, /originalAttackAxisLine/);
-  assert.match(source, /currentSwordAxisLine/);
-  assert.match(source, /currentWristGripLine/);
-  assert.match(source, /LINE CLEAR \$\{lineGate\(lineClearance\.pass\)\}/);
+  assert.match(inspectionOverlaySource, /originalAttackAxisLine/);
+  assert.match(inspectionOverlaySource, /currentSwordAxisLine/);
+  assert.match(inspectionOverlaySource, /currentWristGripLine/);
+  assert.match(labUiSource, /LINE CLEAR \$\{lineGate\(lineClearance\.pass\)\}/);
   assert.match(html, /sword axis ≥ 7° · hilt offline ≥ 2\.5cm · wrist→grip ≥ 7°/);
   assert.match(html, /red = original attack axis/);
 });
 test('Step 3A starts only after the manual gate confirms eligible real contact', () => {
-  const resolve = functionBody('resolveContact', 'showParryCue');
-  const confirm = resolve.indexOf('parryGate.confirm');
-  const resolveCombat = resolve.indexOf('combat.resolveContact');
-  const liveConstraint = resolve.indexOf('swordGripConstraint.start');
+  const resolveStart = contactHandoffSource.indexOf('function resolveContact(');
+  const resolveEnd = contactHandoffSource.indexOf('function updateCombatBeforeGuard(', resolveStart);
+  assert.ok(resolveStart >= 0 && resolveEnd > resolveStart);
+  const resolve = contactHandoffSource.slice(resolveStart, resolveEnd);
+  const geometry = resolve.indexOf('const geometricContact = probeSweptSwordBucklerContact({');
+  const temporalEligibility = resolve.indexOf('exchangeState.latestContact = evaluateSweptContactTemporalEligibility({', geometry);
+  const reject = resolve.indexOf('if (!exchangeState.latestContact.contact) return;', temporalEligibility);
+  const confirm = resolve.indexOf('parryGate.confirm({ attackSnapshot: snapshot, contact: exchangeState.latestContact })', reject);
+  const resolveCombat = resolve.indexOf('exchangeState.latestCombatResult = combat.resolveContact({', confirm);
+  const liveConstraint = resolve.indexOf('exchangeState.latestGripConstraintReport = swordGripConstraint.start({', resolveCombat);
 
-  assert.match(resolve, /probeSweptSwordBucklerContact/);
-  assert.match(resolve, /if \(!latestContact\.contact\) return/);
-  assert.ok(confirm >= 0 && resolveCombat > confirm && liveConstraint > resolveCombat);
+  assert.ok(
+    geometry >= 0
+      && temporalEligibility > geometry
+      && reject > temporalEligibility
+      && confirm > reject
+      && resolveCombat > confirm
+      && liveConstraint > resolveCombat,
+  );
   assert.doesNotMatch(resolve, /publishPostCouplingRecoilStaggerHandoff/);
 });
 
@@ -188,21 +227,26 @@ test('R18I lets live contact own the final pose while OLD B3 waits at presentati
 });
 
 test('R18I preserves predictive defender time and latches the defender deflect marker', () => {
-  const resolve = functionBody('resolveContact', 'showParryCue');
-  const release = functionBody('releaseLiveContactToOldB3', 'forceOldTwoActorB3');
+  const resolveStart = contactHandoffSource.indexOf('function resolveContact(');
+  const resolveEnd = contactHandoffSource.indexOf('function updateCombatBeforeGuard(', resolveStart);
+  const releaseStart = contactHandoffSource.indexOf('function releaseLiveContactToOldB3(');
+  const releaseEnd = contactHandoffSource.indexOf('function recordVisibleOldB3Sample(', releaseStart);
+  assert.ok(resolveStart >= 0 && resolveEnd > resolveStart && releaseStart >= 0 && releaseEnd > releaseStart);
+  const resolve = contactHandoffSource.slice(resolveStart, resolveEnd);
+  const release = contactHandoffSource.slice(releaseStart, releaseEnd);
 
   assert.match(resolve, /latestPredictiveHandoff\.defenderPresentationOffsetSeconds/);
   assert.match(resolve, /defenderPresentationOffsetSeconds:/);
-  assert.match(source, /function defenderDeflectReleaseGate\(\)/);
-  assert.match(source, /function updateDefenderDeflectReleaseGate\(\)/);
-  assert.match(source, /latchedDefenderDeflectReleaseGate/);
-  assert.match(source, /latched-defender-deflect-marker-gates-attacker-release/);
-  assert.match(source, /PARRY_ATTACKER_RELEASE_SOURCE_SECONDS/);
+  assert.match(contactHandoffSource, /function defenderDeflectReleaseGate\(\)/);
+  assert.match(contactHandoffSource, /function updateDefenderDeflectReleaseGate\(\)/);
+  assert.match(contactHandoffSource, /latchedDefenderDeflectReleaseGate/);
+  assert.match(contactHandoffSource, /latched-defender-deflect-marker-gates-attacker-release/);
+  assert.match(contactHandoffSource, /PARRY_ATTACKER_RELEASE_SOURCE_SECONDS/);
   assert.match(release, /if \(!defenderReleaseGate\.passed\)/);
   assert.match(release, /defender-deflect-marker-not-reached/);
   assert.match(release, /allowConfirmedParryFallback: true/);
-  assert.match(source, /defenderParryPresentationNeverRewindsAtContact/);
-  assert.match(source, /oldB3WeaponArmReleasedOnlyAfterDefenderDeflectMarker/);
+  assert.match(verificationReportSource, /defenderParryPresentationNeverRewindsAtContact/);
+  assert.match(verificationReportSource, /oldB3WeaponArmReleasedOnlyAfterDefenderDeflectMarker/);
 });
 
 test('R18I releases contact through 28ms continuity and starts canonical OLD B3 from zero', () => {
@@ -246,18 +290,19 @@ test('R18I releases contact through 28ms continuity and starts canonical OLD B3 
 });
 
 test('Step 3A uses bounded lowerarm plus wrist hierarchy travel instead of a scheduled target angle', () => {
-  assert.match(source, /modifiedBone: 'wrist\.r'/);
-  assert.match(source, /propagatedBones: Object\.freeze\(\['hand\.r', 'handslot\.r'\]\)/);
-  assert.match(source, /assistBone:[^\n]*'lowerarm\.r'/);
+  assert.match(liveContactConstraintSource, /modifiedBone: 'wrist\.r'/);
+  assert.match(liveContactConstraintSource, /propagatedBones: active\.plan\.propagatedBones/);
+  assert.match(liveContactConstraintSource, /assistBone: forearmAssist\.accepted \? 'lowerarm\.r' : null/);
   assert.match(source, /blendRecoveryPose/);
-  assert.match(source, /noPresetMotionCurve: true/);
-  assert.match(source, /actualHandTravelMeters/);
-  assert.match(source, /actualGripTravelMeters/);
-  assert.match(source, /residualCorrectionPasses/);
-  assert.match(source, /appliedResidualForearmDegrees/);
-  assert.match(source, /oldB3WeaponArmReleasedAfterInspectionOrConfirmedFallback/);
-  assert.match(source, /contactQaCannotPermanentlySuppressConfirmedParryOldB3/);
-  assert.doesNotMatch(source, /targetHandDegrees|driveDurationMs|smoothstep/);
+  assert.match(contactHandoffSource, /noPresetMotionCurve: true/);
+  assert.match(liveContactConstraintSource, /actualHandTravelMeters/);
+  assert.match(liveContactConstraintSource, /actualGripTravelMeters/);
+  assert.match(liveContactConstraintSource, /residualCorrectionPasses/);
+  assert.match(liveContactConstraintSource, /appliedResidualForearmDegrees/);
+  assert.match(verificationReportSource, /oldB3WeaponArmReleasedAfterInspectionOrConfirmedFallback/);
+  assert.match(verificationReportSource, /contactQaCannotPermanentlySuppressConfirmedParryOldB3/);
+  const armOwnershipSource = [source, liveContactConstraintSource, contactHandoffSource].join('\n');
+  assert.doesNotMatch(armOwnershipSource, /targetHandDegrees|driveDurationMs|smoothstep/);
 });
 
 test('Step 3A does not add the live grip constraint to the original Block pre-contact path', () => {
@@ -279,52 +324,48 @@ test('Step 3A classifies a Parry whiff from measured sweep geometry without chan
   assert.match(html, /outside shield edge \/ missed shield plane \/ outside active window/);
   assert.match(html, /final plane\/edge gap · persistent arm tracking/);
   assert.match(source, /buildParryWhiffDiagnostic/);
-  assert.match(source, /function recordWhiffProbe/);
-  assert.match(source, /diagnostics\?\.closestApproach/);
-  assert.match(source, /CONTACT_OUTSIDE_ACTIVE_WINDOW: 'CONTACT OUTSIDE ACTIVE WINDOW'/);
-  assert.match(source, /OUTSIDE_SHIELD_EDGE: 'OUTSIDE SHIELD EDGE'/);
-  assert.match(source, /MISSED_SHIELD_PLANE: 'MISSED SHIELD PLANE'/);
-  assert.match(source, /authority: 'presentation-diagnostic-only-no-combat-authority'/);
-  assert.match(source, /if \(!latestContact\.contact\) return/);
+  assert.match(preContactSource, /function recordWhiffProbe/);
+  assert.match(preContactSource, /probe\.diagnostics\?\.closestApproach/);
+  assert.match(diagnosticFormattersSource, /CONTACT_OUTSIDE_ACTIVE_WINDOW: 'CONTACT OUTSIDE ACTIVE WINDOW'/);
+  assert.match(diagnosticFormattersSource, /OUTSIDE_SHIELD_EDGE: 'OUTSIDE SHIELD EDGE'/);
+  assert.match(diagnosticFormattersSource, /MISSED_SHIELD_PLANE: 'MISSED SHIELD PLANE'/);
+  assert.match(verificationReportSource, /authority: 'presentation-diagnostic-only-no-combat-authority'/);
+  assert.match(contactHandoffSource, /if \(!exchangeState\.latestContact\.contact\) return/);
+  assert.doesNotMatch(preContactSource, /parryGate\.confirm|combat\.resolveContact/);
 });
 test('Step 3A replaces only an unreachable linear target with reachable measured sweep guidance', () => {
-  const updateStart = source.indexOf('function updateParryPreContact(');
-  const updateEnd = source.indexOf('function updatePreContact(', updateStart);
-  const update = source.slice(updateStart, updateEnd);
-  assert.match(source, /selectReachableParryInterceptTarget/);
+  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
+  assert.match(preContactSource, /selectReachableParryInterceptTarget/);
   assert.match(update, /measureSweptSwordBucklerClosestApproach/);
-  assert.match(update, /predictedTrackingPlan: latestPredictiveAnalysis\?\.trackingPlan/);
-  assert.match(update, /threat: latestReachableInterceptTarget\.threat/);
-  assert.match(source, /measuredSweepFallbackIsGuidanceOnly/);
-  assert.match(source, /real contact still required/);
+  assert.match(update, /predictedTrackingPlan: exchangeState\.latestPredictiveAnalysis\?\.trackingPlan/);
+  assert.match(update, /threat: exchangeState\.latestReachableInterceptTarget\.threat/);
+  assert.match(verificationReportSource, /measuredSweepFallbackIsGuidanceOnly/);
+  assert.match(verificationReportSource, /realSweptContactRequired/);
   assert.match(html, /MEASURED SWEEP preserves world direction \+ 1\.2cm inset/);
   assert.match(html, /real contact still required/);
 });
 test('armed Parry samples a continuous post-tracking shield surface before selecting and driving the next frame', () => {
-  const updateStart = source.indexOf('function updateParryPreContact(');
-  const updateEnd = source.indexOf('function updatePreContact(', updateStart);
-  const update = source.slice(updateStart, updateEnd);
+  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
   const presentation = update.indexOf('predictivePresentation.update');
-  const continuity = update.indexOf('const continuitySurface = previousShieldLeadSurface');
+  const continuity = update.indexOf('const continuitySurface = exchangeState.previousShieldLeadSurface');
   const measure = update.indexOf('measureSweptSwordBucklerClosestApproach');
   const select = update.indexOf('selectReachableParryInterceptTarget');
   const plan = update.indexOf('planGuardThreatCorrection');
   const drive = update.indexOf('fineTrackingRuntime.update');
   assert.ok(presentation >= 0 && continuity > presentation && measure > continuity && select > measure && plan > select && drive > plan);
-  assert.match(source, /selectorBaseline: 'previous-frame-post-tracking-world-shield-surface'/);
-  assert.match(update, /latestReachableInterceptTarget\?\.fallbackApplied[\s\S]*latestReachableInterceptTarget\.trackingPlan/);
-  assert.match(source, /drivePlanSource: latestReachableInterceptTarget\?\.fallbackApplied/);
-  assert.match(source, /surface-relative-measured-contact-correction/);
-  assert.match(source, /correctionDirectionDot/);
-  assert.match(source, /measuredRadialContactCorrectionMeters/);
-  assert.match(source, /if \(selectedMode !== 'parry' \|\| !parryGate\.armed/);
-  assert.match(source, /selector NO ARMED DRIVE FRAME/);
+  assert.match(preContactSource, /selectorBaseline: 'previous-frame-post-tracking-world-shield-surface'/);
+  assert.match(update, /exchangeState\.latestReachableInterceptTarget\?\.fallbackApplied[\s\S]*exchangeState\.latestReachableInterceptTarget\.trackingPlan/);
+  assert.match(preContactSource, /drivePlanSource: activeIntentPlan[\s\S]*exchangeState\.latestReachableInterceptTarget\?\.fallbackApplied/);
+  assert.match(preContactSource, /surface-relative-measured-contact-correction/);
+  assert.match(preContactSource, /correctionDirectionDot/);
+  assert.match(preContactSource, /measuredRadialContactCorrectionMeters/);
+  assert.match(source, /if \(exchangeState\.latestParryInput\.accepted\) \{[\s\S]*predictivePresentation\.start/);
+  assert.match(update, /if \(predictivePresentation\.active\) \{/);
+  assert.match(diagnosticFormattersSource, /selector NO ARMED DRIVE FRAME/);
   assert.match(html, /BEST PARRY TIMING · R18I/);
 });
 test('armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority', () => {
-  const updateStart = source.indexOf('function updateParryPreContact(');
-  const updateEnd = source.indexOf('function updatePreContact(', updateStart);
-  const update = source.slice(updateStart, updateEnd);
+  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
   const primaryDrive = update.indexOf('fineTrackingRuntime.update');
   const primarySurface = update.indexOf('const primaryTrackingSurfaceAfter', primaryDrive);
   const residualBefore = update.indexOf('const residualBeforeRefinement', primarySurface);
@@ -349,33 +390,33 @@ test('armed Parry recruits predicted or measured low stance, holds it, and prese
   assert.match(update, /stancePlaneReductionMeters/);
   assert.match(source, /createGuardResidualBodyReachRuntime/);
   assert.match(source, /createGuardResidualStanceReachRuntime/);
-  assert.match(update, /anticipatedClosestApproach: latestPredictiveAnalysis\?\.threat\?\.worldPoint/);
-  assert.match(update, /point: latestPredictiveAnalysis\.threat\.worldPoint/);
-  assert.match(update, /anticipatedLeadSeconds: latestPredictiveAnalysis\?\.threat\?\.futureSeconds/);  assert.match(source, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);
-  assert.match(source, /residual edge \$\{edgeBefore\}→\$\{edgeAfter\}/);
-  assert.match(source, /carry \$\{carryBefore\}→\$\{carryAfter\}/);
-  assert.match(source, /refine \$\{refinementStep\} · rdir \$\{refinementDirection\}/);
-  assert.match(source, /arm \$\{armReach\} · aedge \$\{edgeBefore\}→\$\{armEdgeAfter\} · wrist \$\{wristDegrees\}/);
-  assert.match(source, /torso \$\{torsoDegrees\} · reach \$\{bodyReachBefore\}→\$\{bodyReachAfter\}/);
-  assert.match(source, /sampledThreat\?\.kneeLineThreat/);
-  assert.match(source, /y blade\/rim\/kneeL\/kneeR/);
-  assert.match(source, /earlyLowThreatRecruitment/);
-  assert.match(source, /stance src/);
-  assert.match(source, /lead ' \+ stanceLead/);
-  assert.match(source, /hold ' \+ stanceHold/);
-  assert.match(source, /target ' \+ crouchTarget/);  assert.match(source, /stance \$\{stanceState\} · down \$\{downwardRatio\} · crouch/);
-  assert.match(source, /feet \$\{footL\}\/\$\{footR\} \$\{planted\}/);
+  assert.match(update, /anticipatedClosestApproach: exchangeState\.latestPredictiveAnalysis\?\.threat\?\.worldPoint/);
+  assert.match(update, /point: exchangeState\.latestPredictiveAnalysis\.threat\.worldPoint/);
+  assert.match(update, /anticipatedLeadSeconds: exchangeState\.latestPredictiveAnalysis\?\.threat\?\.futureSeconds/);  assert.match(preContactSource, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);
+  assert.match(diagnosticFormattersSource, /residual edge \$\{edgeBefore\}→\$\{edgeAfter\}/);
+  assert.match(diagnosticFormattersSource, /carry \$\{carryBefore\}→\$\{carryAfter\}/);
+  assert.match(diagnosticFormattersSource, /refine \$\{refinementStep\} · rdir \$\{refinementDirection\}/);
+  assert.match(diagnosticFormattersSource, /arm \$\{armReach\} · aedge \$\{edgeBefore\}→\$\{armEdgeAfter\} · wrist \$\{wristDegrees\}/);
+  assert.match(diagnosticFormattersSource, /torso \$\{torsoDegrees\} · reach \$\{bodyReachBefore\}→\$\{bodyReachAfter\}/);
+  assert.match(diagnosticFormattersSource, /sampledThreat\?\.kneeLineThreat/);
+  assert.match(diagnosticFormattersSource, /y blade\/rim\/kneeL\/kneeR/);
+  assert.match(diagnosticFormattersSource, /earlyLowThreatRecruitment/);
+  assert.match(diagnosticFormattersSource, /stance src/);
+  assert.match(diagnosticFormattersSource, /lead ' \+ stanceLead/);
+  assert.match(diagnosticFormattersSource, /hold ' \+ stanceHold/);
+  assert.match(diagnosticFormattersSource, /target ' \+ crouchTarget/);  assert.match(diagnosticFormattersSource, /stance \$\{stanceState\} · down \$\{downwardRatio\} · crouch/);
+  assert.match(diagnosticFormattersSource, /feet \$\{footL\}\/\$\{footR\} \$\{planted\}/);
   assert.match(html, /compares the measured sword point with the predicted future sword point/);
   assert.match(html, /defender wrist\.l · chest · spine · hips · upper\/lower legs · foot orientation correction/);
   assert.match(html, /both foot world positions \(no step\)/);
-  const block = functionBody('updateBlockPreContact', 'updateParryPreContact');
+  const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');
   assert.doesNotMatch(block, /refineMeasuredContact/);
   assert.doesNotMatch(block, /residualBodyReachRuntime\.update/);
   assert.doesNotMatch(block, /residualStanceReachRuntime\.update/);
 });
 
 test('F review batches presentation rebuilds and avoids dynamic debug bounds work', () => {
-  const update = functionBody('updateParryPreContact', 'updatePreContact');
+  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
   const defenderUpdateCount = update.split('defender.update(0, camera)').length - 1;
   const swordUpdateCount = update.split('defenderSword?.update()').length - 1;
   const stanceSolve = update.indexOf('residualStanceReachRuntime.update');
@@ -385,34 +426,43 @@ test('F review batches presentation rebuilds and avoids dynamic debug bounds wor
   assert.equal(swordUpdateCount, 1);
   assert.ok(stanceSolve >= 0 && presentationUpdate > stanceSolve);
 
-  const markerSetter = functionBody('setInspectionLine', 'updateLiveContactMarkers');
-  const markerUpdate = functionBody('updateLiveContactMarkers', 'resize');
-  assert.ok(!markerSetter.includes('computeBoundingSphere'));
-  assert.ok(!markerUpdate.includes('computeBoundingSphere'));
-  assert.ok(source.includes('contactTravelLine.frustumCulled = false'));
-  assert.ok(source.includes('line.frustumCulled = false'));
+  assert.doesNotMatch(inspectionOverlaySource, /computeBoundingSphere/);
+  assert.match(inspectionOverlaySource, /contactTravelLine\.frustumCulled = false/);
+  assert.match(inspectionOverlaySource, /line\.frustumCulled = false/);
 
-  const cue = functionBody('showParryCue', 'updateParryCue');
+  const cueStart = labUiSource.indexOf('function showParryCue(');
+  const cueEnd = labUiSource.indexOf('function updateParryCue(', cueStart);
+  assert.ok(cueStart >= 0 && cueEnd > cueStart);
+  const cue = labUiSource.slice(cueStart, cueEnd);
   assert.ok(cue.includes('state === parryCueState'));
   assert.ok(cue.includes(') return;'));
 });
 
 test('R18I keeps Parry review telemetry compact and caps Verification DOM work', () => {
-  const compact = functionBody('compactInterceptDriveTelemetry', 'setInspectionLine');
-  const traceCompact = functionBody('compactInterceptDriveTraceFrame', 'compactPredictiveThreat');
+  const compactStart = diagnosticTelemetrySource.indexOf('export function compactInterceptDriveTelemetry(');
+  const compactEnd = diagnosticTelemetrySource.indexOf('export function compactInterceptDriveTraceFrame(', compactStart);
+  assert.ok(compactStart >= 0 && compactEnd > compactStart);
+  const compact = diagnosticTelemetrySource.slice(compactStart, compactEnd);
+  const traceStart = diagnosticTelemetrySource.indexOf('export function compactInterceptDriveTraceFrame(');
+  const traceEnd = diagnosticTelemetrySource.indexOf('function compactPredictiveThreat(', traceStart);
+  assert.ok(traceStart >= 0 && traceEnd > traceStart);
+  const traceCompact = diagnosticTelemetrySource.slice(traceStart, traceEnd);
+
   assert.match(source, /const MAX_REPORT_DOM_CHARACTERS = 60000/);
   assert.match(source, /const RECENT_COMPACT_TRACE_FRAMES = 8/);
-  assert.match(source, /interceptDriveTrace\.push\(compactInterceptDriveTraceFrame\(latestInterceptDriveReport\)\)/);
-  assert.match(source, /recentFrames: Object\.freeze\(interceptDriveTrace\.slice\(-RECENT_COMPACT_TRACE_FRAMES\)\)/);
+  assert.match(preContactSource, /exchangeState\.interceptDriveTrace\.push\(compactInterceptDriveTraceFrame\(exchangeState\.latestInterceptDriveReport\)\)/);
+  assert.match(verificationReportSource, /recentFrames: Object\.freeze\(exchangeState\.interceptDriveTrace\.slice\(-recentCompactTraceFrames\)\)/);
   assert.match(compact, /telemetryDetail: 'compact-scalar-frame'/);
   assert.match(compact, /compactGap\(value\.residualAfterRefinement\)/);
   assert.match(compact, /compactBodyReach\(value\.residualBodyReach\)/);
   assert.match(compact, /compactStanceReach\(value\.residualStanceReach\)/);
   assert.doesNotMatch(traceCompact, /anticipatedPlan|threatSelection|residualRefinement|residualBodyReach/);
-  assert.match(source, /liveShieldSwordGripContactConstraint: compactLiveContactConstraint\(latestGripConstraintReport\)/);
-  assert.match(source, /predictiveAnalysis: compactPredictiveAnalysis\(latestPredictiveAnalysis\)/);
-  assert.match(source, /interceptTarget: compactReachableInterceptTarget\(latestReachableInterceptTarget\)/);
-  assert.match(source, /reason: 'verification-report-exceeded-dom-budget'/);
+  assert.match(verificationReportSource, /compactTelemetryDoesNotRetainSolverGraphs/);
+  assert.match(verificationReportSource, /liveShieldSwordGripContactConstraint: compactLiveContactConstraint\(exchangeState\.latestGripConstraintReport\)/);
+  assert.match(verificationReportSource, /predictiveAnalysis: compactPredictiveAnalysis\(exchangeState\.latestPredictiveAnalysis\)/);
+  assert.match(verificationReportSource, /interceptTarget: compactReachableInterceptTarget\(exchangeState\.latestReachableInterceptTarget\)/);
+  assert.match(reportSerializationSource, /reportText\.length <= maxCharacters/);
+  assert.match(reportSerializationSource, /reason: 'verification-report-exceeded-dom-budget'/);
   assert.match(source, /window\.__G43B5R281_PERF__/);
   assert.match(html, /Verification report .* 60,000 characters.*compact scalar frames only/);
 });
