@@ -125,6 +125,14 @@ test('R18N.4.1-B reconstructs the cross-frame Guard writer delta and ordered pre
   rig.bones.chest.quaternion = yaw(6);
   taps.afterBody({ active: true, authority: 'fixed-world-target-support-chain-no-contact-authority' });
   taps.afterStance({ activeCandidate: false, authority: 'pre-contact-guidance-only-real-swept-contact-required' });
+  taps.afterShieldArmAdditive({
+    stage: 'R18N.4.3-B.1',
+    active: true,
+    applied: false,
+    appliedBones: [],
+    finalPoseOwner: 'active-intercept-final-arm-closure',
+    authority: 'bounded-authored-increment-before-active-intercept-final-solve-no-contact-authority',
+  });
   rig.bones['upperarm.l'].quaternion = yaw(8);
   taps.afterFinalClosure({ achievedDistance: 0.001 });
   const first = taps.finishFrame();
@@ -169,6 +177,9 @@ test('R18N.4.1-B wires taps after existing writers and exposes diagnostics witho
   assertBefore(parrySource, 'fineTrackingRuntime.refineMeasuredContact(', 'visualOwnership.afterResidualArm(residualRefinement)', 'residual active intercept arm');
   assertBefore(parrySource, 'const residualBodyReach = activeIntentPlan', 'visualOwnership.afterBody(residualBodyReach)', 'residual body reach');
   assertBefore(parrySource, 'const residualStanceReach = residualStanceReachRuntime.update({', 'visualOwnership.afterStance(residualStanceReach)', 'residual stance reach');
+  assertBefore(parrySource, 'visualOwnership.afterStance(residualStanceReach)', 'shieldArmAdditiveRuntime.update({', 'bounded authored arm additive after stance');
+  assertBefore(parrySource, 'shieldArmAdditiveRuntime.update({', 'visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive)', 'bounded authored arm additive tap');
+  assertBefore(parrySource, 'visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive)', 'fineTrackingRuntime.refineWorldTarget(', 'final closure remains after bounded additive');
   assertBefore(parrySource, 'fineTrackingRuntime.refineWorldTarget(', 'visualOwnership.afterFinalClosure(activeInterceptArmClosure)', 'final arm closure');
 
   const updateStart = preContact.indexOf('function updatePreContact');

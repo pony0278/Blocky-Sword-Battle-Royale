@@ -122,6 +122,20 @@ export function createVisualOwnershipRuntimeTaps({
     });
   }
 
+  function afterShieldArmAdditive(report) {
+    return record(R18N_VISUAL_OWNERSHIP_WRITERS.PREDICTIVE_SHIELD_ARM_ADDITIVE, {
+      stage: report?.stage ?? null,
+      active: report?.active ?? null,
+      applied: report?.applied ?? null,
+      appliedBones: report?.appliedBones ?? [],
+      upperarmAppliedDegrees: report?.bones?.['upperarm.l']?.incrementalAngleDegrees ?? null,
+      lowerarmAppliedDegrees: report?.bones?.['lowerarm.l']?.incrementalAngleDegrees ?? null,
+      wristSolverOnly: report?.bones?.['wrist.l']?.solverOnly ?? true,
+      finalPoseOwner: report?.finalPoseOwner ?? null,
+      authority: report?.authority ?? null,
+    });
+  }
+
   function afterFinalClosure(report) {
     return record(R18N_VISUAL_OWNERSHIP_WRITERS.ACTIVE_INTERCEPT_FINAL_CLOSURE, {
       applied: Boolean(report),
@@ -157,6 +171,7 @@ export function createVisualOwnershipRuntimeTaps({
     afterResidualArm,
     afterBody,
     afterStance,
+    afterShieldArmAdditive,
     afterFinalClosure,
     finishFrame,
     reset,

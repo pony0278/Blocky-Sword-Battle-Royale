@@ -1,4 +1,5 @@
 import { createVisualOwnershipRuntimeTaps } from './visual-ownership-runtime-taps.js';
+import { createBoundedShieldArmAdditiveRuntime } from '../../../src/combat/predictive-parry-arm-additive.js';
 
 export function createShieldParryPreContactController({
   exchangeState,
@@ -21,6 +22,7 @@ export function createShieldParryPreContactController({
   const LONGSWORD_ATTACK_PHASES = longswordAttackPhases;
   const PARRY_PROMPT_HOLD_MS = promptHoldMs;
   const visualOwnership = createVisualOwnershipRuntimeTaps({ rig: defender.rig, exchangeState });
+  const shieldArmAdditiveRuntime = createBoundedShieldArmAdditiveRuntime();
   const {
     cloneSurface,
     magnitude,
@@ -208,6 +210,13 @@ export function createShieldParryPreContactController({
         },
       }, deltaSeconds);
       visualOwnership.afterStance(residualStanceReach);
+      const shieldArmBoundedAdditive = shieldArmAdditiveRuntime.update({
+        rig: defender.rig,
+        authoredDelta: exchangeState.latestPredictiveReport?.shieldArmAuthoredDelta,
+        sequence: snapshot.sequence,
+        enabled: Boolean(activeIntentPlan),
+      });
+      visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive);
       const activeInterceptArmClosure = activeIntentPlan
         ? fineTrackingRuntime.refineWorldTarget(activeInterceptIntent?.report?.targetCenter, {
             jointBudgetScale: 0.35,
@@ -291,6 +300,7 @@ export function createShieldParryPreContactController({
           ? residualBodyReach?.authority ?? null
           : null,
         activeInterceptArmClosure,
+        shieldArmBoundedAdditive,
         activeInterceptTargetErrorBeforeMeters,
         activeInterceptTargetErrorAfterMeters,
         fallbackApplied: exchangeState.latestReachableInterceptTarget?.fallbackApplied === true,
@@ -335,6 +345,7 @@ export function createShieldParryPreContactController({
       exchangeState.interceptDriveTrace.push(compactInterceptDriveTraceFrame(exchangeState.latestInterceptDriveReport));
       if (exchangeState.interceptDriveTrace.length > 96) exchangeState.interceptDriveTrace.shift();
     } else {
+      shieldArmAdditiveRuntime.reset();
       residualBodyReachRuntime.reset();
       residualStanceReachRuntime.reset();
       exchangeState.latestReachableInterceptTarget = null;
@@ -360,7 +371,11 @@ export function createShieldParryPreContactController({
     }) || Object.freeze({ accepted: false, reason: 'active-intercept-intent-unavailable' });
   }
 
-  function resetActiveIntercept() { activeInterceptIntent?.reset(); visualOwnership.reset(); }
+  function resetActiveIntercept() {
+    activeInterceptIntent?.reset();
+    shieldArmAdditiveRuntime.reset();
+    visualOwnership.reset();
+  }
 
   function updatePreContact(snapshot, currentBlade, deltaSeconds) {
     const context = readContext();
