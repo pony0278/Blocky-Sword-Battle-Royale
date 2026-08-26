@@ -133,6 +133,15 @@ test('R18N.4.1-B reconstructs the cross-frame Guard writer delta and ordered pre
     finalPoseOwner: 'active-intercept-final-arm-closure',
     authority: 'bounded-authored-increment-before-active-intercept-final-solve-no-contact-authority',
   });
+  taps.afterTopPrepReadabilityHold({
+    stage: 'R18N.4.3-B.1.3',
+    active: true,
+    applied: false,
+    envelopeWeight: 1,
+    appliedBones: [],
+    finalPoseOwner: 'active-intercept-final-arm-closure',
+    authority: 'presentation-readability-local-pose-before-final-closure-no-contact-authority',
+  });
   rig.bones['upperarm.l'].quaternion = yaw(8);
   taps.afterFinalClosure({ achievedDistance: 0.001 });
   const first = taps.finishFrame();
@@ -179,8 +188,11 @@ test('R18N.4.1-B wires taps after existing writers and exposes diagnostics witho
   assertBefore(parrySource, 'const residualStanceReach = residualStanceReachRuntime.update({', 'visualOwnership.afterStance(residualStanceReach)', 'residual stance reach');
   assertBefore(parrySource, 'visualOwnership.afterStance(residualStanceReach)', 'shieldArmAdditiveRuntime.update({', 'bounded authored arm additive after stance');
   assertBefore(parrySource, 'shieldArmAdditiveRuntime.update({', 'visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive)', 'bounded authored arm additive tap');
-  assertBefore(parrySource, 'visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive)', 'fineTrackingRuntime.refineWorldTarget(', 'final closure remains after bounded additive');
-  assertBefore(parrySource, 'fineTrackingRuntime.refineWorldTarget(', 'visualOwnership.afterFinalClosure(activeInterceptArmClosure)', 'final arm closure');
+  assertBefore(parrySource, 'visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive)', 'topPrepReadabilityHoldRuntime.update({', 'TOP readability hold after bounded additive');
+  assertBefore(parrySource, 'topPrepReadabilityHoldRuntime.update({', 'visualOwnership.afterTopPrepReadabilityHold(topPrepReadabilityHold)', 'TOP readability hold telemetry');
+  assertBefore(parrySource, 'visualOwnership.afterTopPrepReadabilityHold(topPrepReadabilityHold)', 'fineTrackingRuntime.refineWorldTarget(', 'actual-target final closure remains after readability hold');
+  assertBefore(parrySource, 'fineTrackingRuntime.refineWorldTarget(', 'topPrepReadabilityHoldRuntime.arm({', 'first final-closure TOP prep anchor capture');
+  assertBefore(parrySource, 'topPrepReadabilityHoldRuntime.arm({', 'visualOwnership.afterFinalClosure(activeInterceptArmClosure)', 'final closure telemetry follows read-only anchor capture');
 
   const updateStart = preContact.indexOf('function updatePreContact');
   const updateEnd = preContact.indexOf('function recordWhiffProbe', updateStart);

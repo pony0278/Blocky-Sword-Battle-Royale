@@ -136,6 +136,21 @@ export function createVisualOwnershipRuntimeTaps({
     });
   }
 
+  function afterTopPrepReadabilityHold(report) {
+    return record(R18N_VISUAL_OWNERSHIP_WRITERS.TOP_PREP_READABILITY_HOLD, {
+      stage: report?.stage ?? null,
+      active: report?.active ?? null,
+      applied: report?.applied ?? null,
+      envelopeWeight: report?.envelopeWeight ?? null,
+      appliedBones: report?.appliedBones ?? [],
+      upperarmRetainDegrees: report?.bones?.['upperarm.l']?.targetAngleDegrees ?? null,
+      lowerarmRetainDegrees: report?.bones?.['lowerarm.l']?.targetAngleDegrees ?? null,
+      wristSolverOnly: report?.bones?.['wrist.l']?.solverOnly ?? true,
+      finalPoseOwner: report?.finalPoseOwner ?? null,
+      authority: report?.authority ?? null,
+    });
+  }
+
   function afterFinalClosure(report) {
     return record(R18N_VISUAL_OWNERSHIP_WRITERS.ACTIVE_INTERCEPT_FINAL_CLOSURE, {
       applied: Boolean(report),
@@ -172,6 +187,7 @@ export function createVisualOwnershipRuntimeTaps({
     afterBody,
     afterStance,
     afterShieldArmAdditive,
+    afterTopPrepReadabilityHold,
     afterFinalClosure,
     finishFrame,
     reset,

@@ -5,6 +5,7 @@ import {
   normalizeTopDirectionCompatibilityVariant,
   shouldRetainTopDirectionAdditive,
 } from '../../../src/combat/parry-top-direction-compatibility-probe.js';
+import { createTopPrepReadabilityHoldRuntime } from '../../../src/combat/parry-top-prep-readability-hold.js';
 
 const TOP_DIRECTION_PROBE_ARM_BONES = Object.freeze(['upperarm.l', 'lowerarm.l']);
 
@@ -48,6 +49,7 @@ export function createShieldParryPreContactController({
   const PARRY_PROMPT_HOLD_MS = promptHoldMs;
   const visualOwnership = createVisualOwnershipRuntimeTaps({ rig: defender.rig, exchangeState });
   const shieldArmAdditiveRuntime = createBoundedShieldArmAdditiveRuntime();
+  const topPrepReadabilityHoldRuntime = createTopPrepReadabilityHoldRuntime();
   const topDirectionProbeQuery = typeof globalThis.location?.search === 'string'
     ? new URLSearchParams(globalThis.location.search).get('topProbe')
     : null;
@@ -287,12 +289,31 @@ export function createShieldParryPreContactController({
         });
       }
       visualOwnership.afterShieldArmAdditive(shieldArmBoundedAdditive);
+      const topPrepReadabilityHold = topPrepReadabilityHoldRuntime.update({
+        rig: defender.rig,
+        sequence: snapshot.sequence,
+        direction: snapshot.direction,
+        enabled: Boolean(activeIntentPlan) && !topDirectionProbeActive,
+        presentationElapsedMs: exchangeState.latestPredictiveReport?.presentationElapsedMs,
+        timeToContactSeconds: exchangeState.latestPredictiveAnalysis?.timeToContactSeconds,
+      });
+      visualOwnership.afterTopPrepReadabilityHold(topPrepReadabilityHold);
       const activeInterceptArmClosure = activeIntentPlan
         ? fineTrackingRuntime.refineWorldTarget(activeInterceptIntent?.report?.targetCenter, {
             jointBudgetScale: 0.35,
             iterations: 2,
           })
         : null;
+      if (activeIntentPlan
+        && snapshot.direction === 'top'
+        && !topDirectionProbeActive
+        && !topPrepReadabilityHoldRuntime.armed) {
+        topPrepReadabilityHoldRuntime.arm({
+          rig: defender.rig,
+          sequence: snapshot.sequence,
+          direction: snapshot.direction,
+        });
+      }
       visualOwnership.afterFinalClosure(activeInterceptArmClosure);
       // Rebuild dynamic line geometry once after all pose solvers have finished.
       defender.update(0, camera);
@@ -372,6 +393,7 @@ export function createShieldParryPreContactController({
         activeInterceptArmClosure,
         shieldArmBoundedAdditive,
         topDirectionCompatibilityProbe,
+        topPrepReadabilityHold,
         activeInterceptTargetErrorBeforeMeters,
         activeInterceptTargetErrorAfterMeters,
         fallbackApplied: exchangeState.latestReachableInterceptTarget?.fallbackApplied === true,
@@ -417,6 +439,7 @@ export function createShieldParryPreContactController({
       if (exchangeState.interceptDriveTrace.length > 96) exchangeState.interceptDriveTrace.shift();
     } else {
       shieldArmAdditiveRuntime.reset();
+      topPrepReadabilityHoldRuntime.reset();
       residualBodyReachRuntime.reset();
       residualStanceReachRuntime.reset();
       exchangeState.latestReachableInterceptTarget = null;
@@ -434,6 +457,7 @@ export function createShieldParryPreContactController({
     exchangeState.previousShieldLeadSurface = afterSurface;
   }
   function armActiveIntercept(snapshot) {
+    topPrepReadabilityHoldRuntime.reset();
     return activeInterceptIntent?.arm({
       sequence: snapshot?.sequence,
       direction: snapshot?.direction,
@@ -445,6 +469,7 @@ export function createShieldParryPreContactController({
   function resetActiveIntercept() {
     activeInterceptIntent?.reset();
     shieldArmAdditiveRuntime.reset();
+    topPrepReadabilityHoldRuntime.reset();
     visualOwnership.reset();
   }
 
