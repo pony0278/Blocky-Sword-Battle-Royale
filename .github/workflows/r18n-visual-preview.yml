@@ -1,0 +1,90 @@
+name: R18N Visual Preview Materializer
+
+on:
+  push:
+    branches:
+      - ci/r18n3-v6-4-temporal-eligibility
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: r18n-visual-preview
+  cancel-in-progress: true
+
+env:
+  CANDIDATE_BRANCH: feature/r18n3-v6-4-swept-contact-temporal-eligibility
+  PREVIEW_BRANCH: r18n-preview
+
+jobs:
+  materialize-preview:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR #112 candidate branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/r18n3-v6-4-swept-contact-temporal-eligibility
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply the same R18N candidate migration chain as formal CI
+        run: |
+          node tools/action-studio/r18n1-stable-active-intercept-migration.mjs
+          node tools/action-studio/r18n3-active-intercept-last-writer-migration.mjs
+          node tools/action-studio/r18n3-fixed-target-arm-closure-migration.mjs
+          node tools/action-studio/r18n3-active-window-boundary-migration.mjs
+          node tools/action-studio/r18n3-swept-contact-temporal-eligibility-migration.mjs
+          node tools/action-studio/r18n3-swept-contact-temporal-eligibility-test-migration.mjs
+          node tools/action-studio/r18n3-r18m-legacy-ownership-test-migration.mjs
+          node tools/action-studio/r18n3-r18m-precontact-ownership-test-migration.mjs
+          node tools/action-studio/r18n3-r18m-telemetry-ownership-test-migration.mjs
+
+      - name: Build Action Studio preview
+        run: npm run build:action-studio
+
+      - name: Verify Guard Runtime browser surface
+        run: bash tools/action-studio/verify-guard-runtime-surface.sh
+
+      - name: Stamp preview source metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          cat > tools/action-studio/r18n-preview-meta.json <<EOF
+          {
+            "preview": "R18N Visual Preview",
+            "pullRequest": 112,
+            "candidateBranch": "${CANDIDATE_BRANCH}",
+            "candidateSha": "${CANDIDATE_SHA}",
+            "validationTriggerSha": "${GITHUB_SHA}",
+            "generatedAt": "${GENERATED_AT}",
+            "materialization": "formal-r18n-candidate-migration-chain-plus-action-studio-build"
+          }
+          EOF
+
+      - name: Publish materialized runtime to fixed preview branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git diff --name-only -z | xargs -0 -r git add --
+          git ls-files --others --exclude-standard -z | xargs -0 -r git add --
+
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          git commit -m "R18N visual preview: ${CANDIDATE_SHA:0:12}"
+          git push --force origin HEAD:refs/heads/${PREVIEW_BRANCH}
+
+      - name: Print stable preview URL
+        run: |
+          echo "R18N_VISUAL_PREVIEW=https://raw.githack.com/pony0278/Blocky-Sword-Battle-Royale/r18n-preview/tools/action-studio/shield-driven-contact-coupling-lab.html"
