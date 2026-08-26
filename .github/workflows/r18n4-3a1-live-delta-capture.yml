@@ -122,8 +122,8 @@ jobs:
                 } : null,
                 writerOrderValid: ownership?.orderValid ?? null,
                 writerOrderViolations: ownership?.orderViolations ?? [],
-                realContact: Boolean(api?.latestContact),
-                parryConfirmed: Boolean(api?.latestParryConfirmation),
+                realContact: api?.latestContact?.contact === true,
+                parryConfirmed: api?.latestParryConfirmation?.accepted === true,
                 whiff: Boolean(api?.latestParryWhiff),
               };
             };
@@ -157,7 +157,7 @@ jobs:
             const input = await evaluate(`window.__G43B5R281_LAB__.dispatchParryInput('r18n4-3a1-live-capture')`);
             if (!input?.accepted) throw new Error(`${direction}: input rejected ${input?.reason || 'unknown'}`);
 
-            await waitFor(`${direction} terminal real contact or whiff`, () => evaluate(`Boolean(window.__G43B5R281_LAB__.latestContact || window.__G43B5R281_LAB__.latestParryWhiff || !window.__G43B5R281_LAB__.attackRuntime.snapshot.action)`), 30000, 30);
+            await waitFor(`${direction} terminal real contact or whiff`, () => evaluate(`Boolean(window.__G43B5R281_LAB__.latestContact?.contact === true || window.__G43B5R281_LAB__.latestParryWhiff || !window.__G43B5R281_LAB__.attackRuntime.snapshot.action)`), 30000, 30);
             await evaluate(`window.__R18N43A1_CAPTURE_STOP__ = true`);
             const evidence = await evaluate(`({ samples: window.__R18N43A1_CAPTURE__ || [], terminal: window.__R18N43A1_COMPACT__?.() || null })`);
             const samples = evidence?.samples || [];
