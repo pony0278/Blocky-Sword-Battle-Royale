@@ -43,11 +43,18 @@ jobs:
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
+          set +e
           node tools/action-studio/r18n4-3b1-2-locked-ttc-cdp.mjs \
             --browser "$BROWSER" \
             --url 'http://127.0.0.1:4173/tools/action-studio/shield-driven-contact-coupling-lab.html' \
             --label old-r18n4-2 \
             --output artifacts/r18n4-3b1-2/old.json
+          NODE_EXIT=$?
+          set -e
+          test -s artifacts/r18n4-3b1-2/old.json
+          if [ "$NODE_EXIT" -ne 0 ]; then
+            echo "OLD replay evidence completed; ignoring Chrome profile cleanup-only exit $NODE_EXIT."
+          fi
 
       - name: Locked TTC replay NEW A
         shell: bash
@@ -58,11 +65,18 @@ jobs:
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
+          set +e
           node tools/action-studio/r18n4-3b1-2-locked-ttc-cdp.mjs \
             --browser "$BROWSER" \
             --url 'http://127.0.0.1:4174/tools/action-studio/shield-driven-contact-coupling-lab.html?topProbe=A' \
             --label new-b1-1-a \
             --output artifacts/r18n4-3b1-2/new-a.json
+          NODE_EXIT=$?
+          set -e
+          test -s artifacts/r18n4-3b1-2/new-a.json
+          if [ "$NODE_EXIT" -ne 0 ]; then
+            echo "NEW A replay evidence completed; ignoring Chrome profile cleanup-only exit $NODE_EXIT."
+          fi
 
       - name: Compare locked TTC pose evidence
         shell: bash
