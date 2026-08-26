@@ -95,8 +95,11 @@ jobs:
           await send('Runtime.enable');
           await waitFor('R281 lab boot', () => evaluate(`Boolean(window.__G43B5R281_LAB__?.attackRuntime?.snapshot?.action && window.__G43B5R281_RESULT__ && document.documentElement.dataset.g43b5r281 !== 'fail')`), 90000);
 
-          async function frame() {
-            return evaluate(`(() => {
+          const installFrameRecorder = `(() => {
+            window.__R18N43A1_CAPTURE__ = [];
+            window.__R18N43A1_CAPTURE_STOP__ = false;
+            let lastPresentationElapsedMs = null;
+            const compact = () => {
               const api = window.__G43B5R281_LAB__;
               const report = api?.latestPredictiveReport;
               const delta = report?.shieldArmAuthoredDelta;
@@ -104,6 +107,7 @@ jobs:
               const angle = (bone) => Number.isFinite(delta?.deltas?.[bone]?.angleDegrees) ? delta.deltas[bone].angleDegrees : null;
               return {
                 sequence: report?.sequence ?? api?.attackRuntime?.snapshot?.sequence ?? null,
+                attackElapsedMs: Number.isFinite(api?.attackRuntime?.snapshot?.elapsedSeconds) ? api.attackRuntime.snapshot.elapsedSeconds * 1000 : null,
                 ttcMs: Number.isFinite(report?.timeToContactSeconds) ? report.timeToContactSeconds * 1000 : null,
                 presentationElapsedMs: Number.isFinite(report?.presentationElapsedMs) ? report.presentationElapsedMs : null,
                 sourceMs: Number.isFinite(report?.sourceTimeSeconds) ? report.sourceTimeSeconds * 1000 : null,
@@ -122,8 +126,19 @@ jobs:
                 parryConfirmed: Boolean(api?.latestParryConfirmation),
                 whiff: Boolean(api?.latestParryWhiff),
               };
-            })()`);
-          }
+            };
+            window.__R18N43A1_COMPACT__ = compact;
+            const tick = () => {
+              const sample = compact();
+              if (sample.anglesDegrees && Number.isFinite(sample.ttcMs) && sample.presentationElapsedMs !== lastPresentationElapsedMs) {
+                lastPresentationElapsedMs = sample.presentationElapsedMs;
+                window.__R18N43A1_CAPTURE__.push(sample);
+              }
+              if (!window.__R18N43A1_CAPTURE_STOP__ && !sample.realContact && !sample.whiff) requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+            return true;
+          })()`;
 
           function checkpoints(samples) {
             return [150, 120, 90, 60, 30, 10].map((targetTtcMs) => ({
@@ -137,31 +152,17 @@ jobs:
             if (!restarted) throw new Error(`${direction}: restartAttack rejected`);
             const sequence = await evaluate(`window.__G43B5R281_LAB__.attackRuntime.snapshot.sequence`);
             await waitFor(`${direction} legal Parry prompt`, () => evaluate(`window.__G43B5R281_LAB__.attackRuntime.snapshot.sequence === ${Number(sequence)} && window.__G43B5R281_LAB__.latestParryOpportunity?.accepted === true`), 45000, 25);
+
+            await evaluate(installFrameRecorder);
             const input = await evaluate(`window.__G43B5R281_LAB__.dispatchParryInput('r18n4-3a1-live-capture')`);
             if (!input?.accepted) throw new Error(`${direction}: input rejected ${input?.reason || 'unknown'}`);
-            await waitFor(`${direction} first extracted delta`, async () => Boolean((await frame()).anglesDegrees), 15000, 20);
 
-            const samples = [];
-            const seen = new Set();
-            const startedAt = Date.now();
-            while (Date.now() - startedAt < 12000) {
-              const sample = await frame();
-              if (sample.anglesDegrees && Number.isFinite(sample.ttcMs)) {
-                const key = `${sample.presentationElapsedMs}`;
-                if (!seen.has(key)) { seen.add(key); samples.push(sample); }
-              }
-              if (sample.realContact || sample.whiff) break;
-              await sleep(20);
-            }
-            const terminal = await frame();
-            if (samples.length < 5) throw new Error(`${direction}: only ${samples.length} samples`);
-            if (!terminal.realContact || !terminal.parryConfirmed || terminal.whiff) throw new Error(`${direction}: terminal real-contact confirmation failed`);
-            if (!samples.some((s) => (s.anglesDegrees?.max ?? 0) > 1)) throw new Error(`${direction}: authored delta <= 1deg`);
-            if (samples.some((s) => s.extractionAuthority !== 'observer-only-authored-arm-delta-no-rig-write-no-contact-authority')) throw new Error(`${direction}: extraction authority changed`);
-            if (samples.some((s) => s.shieldArmOwnership !== 'external-active-intercept-tracking')) throw new Error(`${direction}: solver arm ownership changed`);
-            if (samples.some((s) => s.writerOrderValid === false) || !samples.some((s) => s.writerOrderValid === true)) throw new Error(`${direction}: writer order evidence failed`);
-
-            return {
+            await waitFor(`${direction} terminal real contact or whiff`, () => evaluate(`Boolean(window.__G43B5R281_LAB__.latestContact || window.__G43B5R281_LAB__.latestParryWhiff || !window.__G43B5R281_LAB__.attackRuntime.snapshot.action)`), 30000, 30);
+            await evaluate(`window.__R18N43A1_CAPTURE_STOP__ = true`);
+            const evidence = await evaluate(`({ samples: window.__R18N43A1_CAPTURE__ || [], terminal: window.__R18N43A1_COMPACT__?.() || null })`);
+            const samples = evidence?.samples || [];
+            const terminal = evidence?.terminal || null;
+            const result = {
               direction,
               sequence,
               inputTtcMs: Number.isFinite(input.timeToContactSeconds) ? input.timeToContactSeconds * 1000 : null,
@@ -170,28 +171,49 @@ jobs:
               peak: samples.reduce((best, s) => !best || (s.anglesDegrees?.max ?? 0) > (best.anglesDegrees?.max ?? 0) ? s : best, null),
               terminal,
             };
+            console.log(`R18N43A1_DIRECTION_EVIDENCE=${JSON.stringify(result)}`);
+
+            if (samples.length < 5) throw new Error(`${direction}: only ${samples.length} in-page animation-frame samples`);
+            if (!terminal?.realContact || !terminal?.parryConfirmed || terminal?.whiff) throw new Error(`${direction}: terminal real-contact confirmation failed`);
+            if (!samples.some((s) => (s.anglesDegrees?.max ?? 0) > 1)) throw new Error(`${direction}: authored delta <= 1deg`);
+            if (samples.some((s) => s.extractionAuthority !== 'observer-only-authored-arm-delta-no-rig-write-no-contact-authority')) throw new Error(`${direction}: extraction authority changed`);
+            if (samples.some((s) => s.shieldArmOwnership !== 'external-active-intercept-tracking')) throw new Error(`${direction}: solver arm ownership changed`);
+            if (samples.some((s) => s.writerOrderValid === false) || !samples.some((s) => s.writerOrderValid === true)) throw new Error(`${direction}: writer order evidence failed`);
+            return result;
           }
 
-          const summary = {
+          const output = {
             stage: 'R18N.4.3-A.1',
             authority: 'live-browser-observation-only-no-pose-injection-no-contact-authority-change',
-            right: await runDirection('right'),
-            top: await runDirection('top'),
+            right: null,
+            top: null,
           };
-          fs.writeFileSync(resultPath, `${JSON.stringify(summary, null, 2)}\n`);
-          console.log(`R18N43A1_RESULT=${JSON.stringify(summary)}`);
-          ws.close();
+          try {
+            output.right = await runDirection('right');
+            output.top = await runDirection('top');
+            fs.writeFileSync(resultPath, `${JSON.stringify(output, null, 2)}\n`);
+            console.log(`R18N43A1_RESULT=${JSON.stringify(output)}`);
+          } catch (error) {
+            output.error = error?.stack || String(error);
+            fs.writeFileSync(resultPath, `${JSON.stringify(output, null, 2)}\n`);
+            console.error(`R18N43A1_PARTIAL=${JSON.stringify(output)}`);
+            throw error;
+          } finally {
+            ws.close();
+          }
           NODE
           cat "$RESULT_JSON"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: r18n4-3a1-live-delta-capture
           path: /tmp/r18n4-3a1-live-delta.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Verify no production changes and remove one-shot workflow
+        if: success()
         shell: bash
         run: |
           set -euo pipefail
