@@ -1,0 +1,235 @@
+name: R18N.4.3-B.1 Bounded Shield Arm Additive
+
+on:
+  push:
+    branches:
+      - feature/r18n4-3b1-bounded-shield-arm-additive
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/r18n4-3b1-bounded-shield-arm-additive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+
+      - name: Materialize R18N.4.3-B.1 integration
+        run: node tools/action-studio/r18n4-3b1-bounded-additive-migration.mjs
+
+      - name: Focused bounded-additive regressions
+        run: >-
+          node --test
+          tests/predictive-parry-arm-delta.test.js
+          tests/predictive-parry-arm-additive.test.js
+          tests/predictive-intercept-parry.test.js
+          tests/shield-parry-r281-active-intercept-runtime.test.js
+          tests/shield-parry-r281-visual-ownership-baseline.test.js
+
+      - name: Full regression suite
+        run: npm test
+
+      - name: Action Studio build
+        run: npm run build:action-studio
+
+      - name: Live RIGHT and TOP bounded-additive acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          [[ -n "$BROWSER" ]]
+          PORT=4184
+          DEBUG_PORT=9224
+          python3 -m http.server "$PORT" >/tmp/r18n4-3b1-http.log 2>&1 & SERVER_PID=$!
+          "$BROWSER" --headless=new --no-sandbox --disable-gpu --enable-unsafe-swiftshader \
+            --remote-debugging-address=127.0.0.1 --remote-debugging-port="$DEBUG_PORT" \
+            --user-data-dir=/tmp/r18n4-3b1-chrome-profile about:blank >/tmp/r18n4-3b1-chrome.log 2>&1 & CHROME_PID=$!
+          trap 'kill "$CHROME_PID" >/dev/null 2>&1 || true; kill "$SERVER_PID" >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 120); do
+            curl -fsS "http://127.0.0.1:${DEBUG_PORT}/json/version" >/dev/null && break || true
+            sleep 0.25
+          done
+          curl -fsS "http://127.0.0.1:${DEBUG_PORT}/json/version" >/dev/null
+
+          ACTION_STUDIO_PORT="$PORT" CHROME_DEBUG_PORT="$DEBUG_PORT" node --input-type=module <<'NODE'
+          const port = Number(process.env.ACTION_STUDIO_PORT);
+          const debugPort = Number(process.env.CHROME_DEBUG_PORT);
+          const pageUrl = `http://127.0.0.1:${port}/tools/action-studio/shield-driven-contact-coupling-lab.html?debug=1&r18n43b1=1`;
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function waitFor(label, predicate, timeoutMs = 60000, intervalMs = 30) {
+            const start = Date.now();
+            let lastError = null;
+            while (Date.now() - start < timeoutMs) {
+              try { if (await predicate()) return; } catch (error) { lastError = error; }
+              await sleep(intervalMs);
+            }
+            throw new Error(`Timed out waiting for ${label}${lastError ? `: ${lastError.message}` : ''}`);
+          }
+
+          const response = await fetch(`http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(pageUrl)}`, { method: 'PUT' });
+          if (!response.ok) throw new Error(`CDP target creation failed: ${response.status}`);
+          const target = await response.json();
+          const ws = new WebSocket(target.webSocketDebuggerUrl);
+          await new Promise((resolve, reject) => {
+            ws.addEventListener('open', resolve, { once: true });
+            ws.addEventListener('error', reject, { once: true });
+          });
+          let id = 0;
+          const pending = new Map();
+          ws.addEventListener('message', (event) => {
+            const message = JSON.parse(event.data);
+            const waiter = pending.get(message.id);
+            if (!waiter) return;
+            pending.delete(message.id);
+            message.error ? waiter.reject(new Error(message.error.message)) : waiter.resolve(message.result);
+          });
+          const send = (method, params = {}) => new Promise((resolve, reject) => {
+            const requestId = ++id;
+            pending.set(requestId, { resolve, reject });
+            ws.send(JSON.stringify({ id: requestId, method, params }));
+          });
+          async function evaluate(expression) {
+            const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+            if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Runtime.evaluate failed');
+            return result.result?.value;
+          }
+
+          await send('Runtime.enable');
+          await waitFor('R281 lab boot', () => evaluate(`Boolean(window.__G43B5R281_LAB__?.attackRuntime?.snapshot?.action && window.__G43B5R281_RESULT__ && document.documentElement.dataset.g43b5r281 !== 'fail')`), 90000);
+
+          const installRecorder = `(() => {
+            window.__R18N43B1_CAPTURE__ = [];
+            window.__R18N43B1_STOP__ = false;
+            let lastAttackElapsedMs = null;
+            const compact = () => {
+              const api = window.__G43B5R281_LAB__;
+              const drive = api?.latestInterceptDriveReport;
+              const additive = drive?.shieldArmBoundedAdditive;
+              const ownership = api?.latestVisualOwnershipBaseline;
+              return {
+                attackElapsedMs: Number.isFinite(api?.attackRuntime?.snapshot?.elapsedSeconds) ? api.attackRuntime.snapshot.elapsedSeconds * 1000 : null,
+                ttcMs: Number.isFinite(drive?.timeToContactSeconds) ? drive.timeToContactSeconds * 1000 : null,
+                additive: additive ? {
+                  stage: additive.stage,
+                  active: additive.active,
+                  applied: additive.applied,
+                  appliedBones: additive.appliedBones || [],
+                  upperTargetDegrees: additive.bones?.['upperarm.l']?.targetAngleDegrees ?? null,
+                  upperIncrementDegrees: additive.bones?.['upperarm.l']?.incrementalAngleDegrees ?? null,
+                  lowerTargetDegrees: additive.bones?.['lowerarm.l']?.targetAngleDegrees ?? null,
+                  lowerIncrementDegrees: additive.bones?.['lowerarm.l']?.incrementalAngleDegrees ?? null,
+                  wristTargetDegrees: additive.bones?.['wrist.l']?.targetAngleDegrees ?? null,
+                  wristSolverOnly: additive.bones?.['wrist.l']?.solverOnly ?? null,
+                  finalPoseOwner: additive.finalPoseOwner ?? null,
+                  authority: additive.authority ?? null,
+                } : null,
+                targetErrorBeforeMeters: drive?.activeInterceptTargetErrorBeforeMeters ?? null,
+                targetErrorAfterMeters: drive?.activeInterceptTargetErrorAfterMeters ?? null,
+                writerOrderValid: ownership?.orderValid ?? null,
+                writerOrderViolations: ownership?.orderViolations ?? [],
+                realContact: api?.latestContact?.contact === true,
+                parryConfirmed: api?.latestParryConfirmation?.accepted === true,
+                whiff: Boolean(api?.latestParryWhiff),
+              };
+            };
+            window.__R18N43B1_COMPACT__ = compact;
+            const tick = () => {
+              const sample = compact();
+              if (sample.additive?.active && sample.attackElapsedMs !== lastAttackElapsedMs) {
+                lastAttackElapsedMs = sample.attackElapsedMs;
+                window.__R18N43B1_CAPTURE__.push(sample);
+              }
+              if (!window.__R18N43B1_STOP__ && !sample.realContact && !sample.whiff) requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+            return true;
+          })()`;
+
+          async function runDirection(direction) {
+            const restarted = await evaluate(`window.__G43B5R281_LAB__.restartAttack(${JSON.stringify(direction)})`);
+            if (!restarted) throw new Error(`${direction}: restartAttack rejected`);
+            const sequence = await evaluate(`window.__G43B5R281_LAB__.attackRuntime.snapshot.sequence`);
+            await waitFor(`${direction} legal Parry prompt`, () => evaluate(`window.__G43B5R281_LAB__.attackRuntime.snapshot.sequence === ${Number(sequence)} && window.__G43B5R281_LAB__.latestParryOpportunity?.accepted === true`), 45000, 25);
+            await evaluate(installRecorder);
+            const input = await evaluate(`window.__G43B5R281_LAB__.dispatchParryInput('r18n4-3b1-live-acceptance')`);
+            if (!input?.accepted) throw new Error(`${direction}: Parry input rejected ${input?.reason || 'unknown'}`);
+            await waitFor(`${direction} real contact or whiff`, () => evaluate(`Boolean(window.__G43B5R281_LAB__.latestContact?.contact === true || window.__G43B5R281_LAB__.latestParryWhiff || !window.__G43B5R281_LAB__.attackRuntime.snapshot.action)`), 30000, 30);
+            await evaluate(`window.__R18N43B1_STOP__ = true`);
+            const evidence = await evaluate(`({ samples: window.__R18N43B1_CAPTURE__ || [], terminal: window.__R18N43B1_COMPACT__?.() || null })`);
+            const samples = evidence.samples || [];
+            const terminal = evidence.terminal || null;
+            if (samples.length < 5) throw new Error(`${direction}: only ${samples.length} bounded-additive samples`);
+            if (!samples.some((sample) => sample.additive?.applied === true)) throw new Error(`${direction}: bounded additive never applied`);
+            for (const sample of samples) {
+              const additive = sample.additive;
+              if (additive.stage !== 'R18N.4.3-B.1') throw new Error(`${direction}: wrong additive stage`);
+              if ((additive.upperTargetDegrees ?? 0) > 8.000001) throw new Error(`${direction}: upperarm cap exceeded ${additive.upperTargetDegrees}`);
+              if ((additive.lowerTargetDegrees ?? 0) > 10.000001) throw new Error(`${direction}: lowerarm cap exceeded ${additive.lowerTargetDegrees}`);
+              if ((additive.wristTargetDegrees ?? 0) > 0.000001 || additive.wristSolverOnly !== true) throw new Error(`${direction}: wrist escaped solver-only policy`);
+              if ((additive.appliedBones || []).includes('wrist.l')) throw new Error(`${direction}: wrist additive applied`);
+              if (additive.finalPoseOwner !== 'active-intercept-final-arm-closure') throw new Error(`${direction}: final pose owner changed`);
+              if (additive.authority !== 'bounded-authored-increment-before-active-intercept-final-solve-no-contact-authority') throw new Error(`${direction}: additive authority changed`);
+              if (sample.writerOrderValid === false) throw new Error(`${direction}: writer order violation`);
+            }
+            if (!samples.some((sample) => sample.writerOrderValid === true)) throw new Error(`${direction}: missing valid writer-order evidence`);
+            if (!terminal?.realContact || !terminal?.parryConfirmed || terminal?.whiff) throw new Error(`${direction}: real-contact Parry terminal failed`);
+            const summary = {
+              direction,
+              sequence,
+              inputTtcMs: Number.isFinite(input.timeToContactSeconds) ? input.timeToContactSeconds * 1000 : null,
+              sampleCount: samples.length,
+              maxUpperTargetDegrees: Math.max(...samples.map((sample) => sample.additive?.upperTargetDegrees || 0)),
+              maxLowerTargetDegrees: Math.max(...samples.map((sample) => sample.additive?.lowerTargetDegrees || 0)),
+              maxUpperIncrementDegrees: Math.max(...samples.map((sample) => sample.additive?.upperIncrementDegrees || 0)),
+              maxLowerIncrementDegrees: Math.max(...samples.map((sample) => sample.additive?.lowerIncrementDegrees || 0)),
+              terminal,
+            };
+            console.log(`R18N43B1_DIRECTION=${JSON.stringify(summary)}`);
+            return summary;
+          }
+
+          const result = {
+            stage: 'R18N.4.3-B.1',
+            right: await runDirection('right'),
+            top: await runDirection('top'),
+          };
+          console.log(`R18N43B1_RESULT=${JSON.stringify(result)}`);
+          ws.close();
+          NODE
+
+      - name: Commit validated B.1 and remove one-shot files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=73285144f372c6f2a7db435456ef9a8fc31401e0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/r18n4-3b1-bounded-shield-arm-additive.yml
+          git rm tools/action-studio/r18n4-3b1-bounded-additive-migration.mjs
+          git add package.json \
+            tools/action-studio/shield-parry-r281/pre-contact-controller.js \
+            tools/action-studio/shield-parry-r281/visual-ownership-baseline.js \
+            tools/action-studio/shield-parry-r281/visual-ownership-runtime-taps.js \
+            tests/shield-parry-r281-visual-ownership-baseline.test.js
+          git commit -m "R18N.4.3-B.1 integrate bounded shield-arm additive"
+          EXPECTED="$(printf '%s\n' \
+            package.json \
+            src/combat/predictive-parry-arm-additive.js \
+            tests/predictive-parry-arm-additive.test.js \
+            tests/shield-parry-r281-visual-ownership-baseline.test.js \
+            tools/action-studio/shield-parry-r281/pre-contact-controller.js \
+            tools/action-studio/shield-parry-r281/visual-ownership-baseline.js \
+            tools/action-studio/shield-parry-r281/visual-ownership-runtime-taps.js | sort)"
+          CHANGED="$(git diff --name-only "$BASE"...HEAD | sort)"
+          echo "$CHANGED"
+          [[ "$CHANGED" == "$EXPECTED" ]]
+          git push origin HEAD:feature/r18n4-3b1-bounded-shield-arm-additive
