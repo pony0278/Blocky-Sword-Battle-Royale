@@ -1,9 +1,18 @@
 {
-  "preview": "R18N Visual Preview",
-  "pullRequest": 112,
-  "candidateBranch": "feature/r18n3-v6-4-swept-contact-temporal-eligibility",
-  "candidateSha": "b761a8bc9b64aeefc49b91e50756a421b6fb8d05",
-  "validationTriggerSha": "d26ce9e8530140dff5297ff2936a9868c216418c",
-  "generatedAt": "2026-08-26T01:12:03Z",
-  "materialization": "formal-r18n-candidate-migration-chain-plus-action-studio-build"
+  "preview": "R18N.4.2-A Visual Preview / Motion Acceptance",
+  "stage": "R18N.4.2-A",
+  "sourceBranch": "feature/r18n4-2-upper-body-anticipation-split",
+  "runtimeSourceSha": "74221454d6403356594f8964133a3cd6e87b9a2c",
+  "generatedAt": "2026-08-26T02:00:00Z",
+  "ownershipSplit": {
+    "predictiveAnticipation": ["spine", "chest"],
+    "activeInterceptPreserved": ["root", "hips", "upperarm.l", "lowerarm.l", "wrist.l", "hand.l", "handslot.l"]
+  },
+  "validation": {
+    "focusedOwnershipRegression": "27/27 PASS",
+    "fullRegression": "503/503 PASS",
+    "actionStudioBuild": "PASS",
+    "guardRuntimeBrowserGate": "PASS"
+  },
+  "materialization": "direct-validated-r18n4-2-runtime-preview"
 }
