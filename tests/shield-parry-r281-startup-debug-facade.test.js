@@ -74,7 +74,8 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
     latestLeadHandoff: 'handoff', latestCombatResult: 'combat-result', latestParryInput: 'input',
     latestParryOpportunity: 'opportunity', latestContact: 'contact', latestParryConfirmation: 'confirmation',
     step3AContactTransfer: 'transfer', latestGripConstraintReport: 'grip', latestParryWhiff: 'whiff',
-    latestInterceptDriveReport: 'drive', latestInputSignal: 'signal',
+    latestInterceptDriveReport: 'drive', latestVisualOwnershipBaseline: 'visual-baseline',
+    visualOwnershipTrace: ['visual-trace'], latestInputSignal: 'signal',
   };
   const runtimes = {
     combat: {}, attackRuntime: {}, guardMachine: {}, predictivePresentation: {}, parryGate: {}, freeCamera: {},
@@ -98,7 +99,8 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
     'forceOldTwoActorB3', 'directOldB3Diagnostic', 'latestPredictiveReport', 'latestShieldLeadMotion',
     'latestLeadHandoff', 'latestCombatResult', 'latestParryInput', 'latestParryOpportunity', 'latestContact',
     'latestParryConfirmation', 'step3AContactTransfer', 'latestGripConstraintReport', 'latestParryWhiff',
-    'latestInterceptDriveReport', 'latestInputSignal', 'activeParryInterceptDiagnosis',
+    'latestInterceptDriveReport', 'latestVisualOwnershipBaseline', 'visualOwnershipTrace',
+    'latestInputSignal', 'activeParryInterceptDiagnosis',
   ]);
   assert.equal(api.startAttack, noop);
   assert.equal(api.combat, runtimes.combat);
@@ -107,10 +109,21 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
   assert.ok(Object.isFrozen(api.debugStanceProfile));
   assert.equal(api.directOldB3Diagnostic, 'direct');
   assert.equal(api.latestContact, 'contact');
+  assert.equal(api.latestVisualOwnershipBaseline, 'visual-baseline');
+  assert.deepEqual(api.visualOwnershipTrace, ['visual-trace']);
+  for (const key of ['latestVisualOwnershipBaseline', 'visualOwnershipTrace']) {
+    const descriptor = Object.getOwnPropertyDescriptor(api, key);
+    assert.equal(typeof descriptor?.get, 'function', `${key} must remain a getter`);
+    assert.equal(descriptor?.set, undefined, `${key} must remain read-only`);
+  }
   exchangeState.latestParryInput = 'input-2';
   exchangeState.latestContact = 'contact-2';
+  exchangeState.latestVisualOwnershipBaseline = 'visual-baseline-2';
+  exchangeState.visualOwnershipTrace = ['visual-trace-2'];
   assert.equal(api.latestParryInput, 'input-2');
   assert.equal(api.latestContact, 'contact-2');
+  assert.equal(api.latestVisualOwnershipBaseline, 'visual-baseline-2');
+  assert.deepEqual(api.visualOwnershipTrace, ['visual-trace-2']);
 });
 
 test('R18M.C5 debug-api module only exposes injected actions, runtimes, and read-only getters', () => {
@@ -119,6 +132,8 @@ test('R18M.C5 debug-api module only exposes injected actions, runtimes, and read
     'swordGripConstraint.start', 'requestAnimationFrame', 'attackRuntime.update', 'guardRuntime.update',
   ]) assert.ok(!debugApiSource.includes(forbidden), forbidden);
   assert.match(debugApiSource, /get latestContact\(\) \{ return getExchangeState\(\)\.latestContact; \}/);
+  assert.match(debugApiSource, /get latestVisualOwnershipBaseline\(\) \{ return getExchangeState\(\)\.latestVisualOwnershipBaseline; \}/);
+  assert.match(debugApiSource, /get visualOwnershipTrace\(\) \{ return getExchangeState\(\)\.visualOwnershipTrace; \}/);
   assert.match(source, /window\.__G43B5R281_LAB__ = createShieldParryDebugApi\(\{/);
   assert.match(source, /function frame\(timestamp\)/);
   assert.match(source, /function triggerParryNow\(source = 'button'\)/);
