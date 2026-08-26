@@ -32,6 +32,9 @@ jobs:
       - name: Apply deterministic R18N.4.1-B migration
         run: node tools/action-studio/r18n4-1-visual-ownership-runtime-taps-migration.mjs
 
+      - name: Correct focused telemetry test contracts
+        run: node tools/action-studio/r18n4-1-visual-ownership-test-contract-fix.mjs
+
       - name: Run focused ownership regressions
         run: node --test tests/shield-parry-r281-visual-ownership-baseline.test.js tests/shield-parry-r281-exchange-state.test.js tests/shield-parry-r281-pre-contact-controller.test.js tests/shield-parry-r281-active-intercept-runtime.test.js
 
