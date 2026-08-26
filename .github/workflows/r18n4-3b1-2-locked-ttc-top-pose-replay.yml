@@ -1,0 +1,80 @@
+name: R18N.4.3-B.1.2 Locked TTC TOP Pose Replay
+
+on:
+  push:
+    branches:
+      - diagnostic/r18n4-3b1-2-locked-ttc-top-pose-replay
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Locate browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Prepare old/new worktrees
+        shell: bash
+        run: |
+          git worktree add /tmp/r18n-old 74221454d6403356594f8964133a3cd6e87b9a2c
+          git worktree add /tmp/r18n-new 7c9d508a76948b6b93220cfd1abbeecd15679e8d
+          node tools/action-studio/r18n4-3b1-2-inject-readonly-pose-debug.mjs /tmp/r18n-old
+          node tools/action-studio/r18n4-3b1-2-inject-readonly-pose-debug.mjs /tmp/r18n-new
+
+      - name: Locked TTC replay OLD
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/r18n4-3b1-2
+          python3 -m http.server 4173 --directory /tmp/r18n-old >/tmp/r18n-old-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          node tools/action-studio/r18n4-3b1-2-locked-ttc-cdp.mjs \
+            --browser "$BROWSER" \
+            --url 'http://127.0.0.1:4173/tools/action-studio/shield-driven-contact-coupling-lab.html' \
+            --label old-r18n4-2 \
+            --output artifacts/r18n4-3b1-2/old.json
+
+      - name: Locked TTC replay NEW A
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          python3 -m http.server 4174 --directory /tmp/r18n-new >/tmp/r18n-new-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          node tools/action-studio/r18n4-3b1-2-locked-ttc-cdp.mjs \
+            --browser "$BROWSER" \
+            --url 'http://127.0.0.1:4174/tools/action-studio/shield-driven-contact-coupling-lab.html?topProbe=A' \
+            --label new-b1-1-a \
+            --output artifacts/r18n4-3b1-2/new-a.json
+
+      - name: Compare locked TTC pose evidence
+        shell: bash
+        run: |
+          node tools/action-studio/r18n4-3b1-2-compare-locked-ttc.mjs \
+            artifacts/r18n4-3b1-2/old.json \
+            artifacts/r18n4-3b1-2/new-a.json \
+            | tee artifacts/r18n4-3b1-2/comparison.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r18n4-3b1-2-locked-ttc-top-pose-replay
+          path: artifacts/r18n4-3b1-2
