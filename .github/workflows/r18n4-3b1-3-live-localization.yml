@@ -1,0 +1,103 @@
+name: R18N.4.3-B.1.3 Live Failure Localization
+
+on:
+  push:
+    branches:
+      - feature/r18n4-3b1-3-top-prep-readability-hold
+
+permissions:
+  contents: read
+
+jobs:
+  top-early:
+    name: Live TOP early 158ms
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/r18n4-3b1-3-top-prep-readability-hold
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: node tools/action-studio/r18n4-3b1-3-top-prep-readability-hold-migration.mjs
+      - run: npm run build:action-studio
+      - name: Validate TOP early
+        env:
+          R18N_DIRECTION: top
+          R18N_TARGET_TTC: '0.158'
+          R18N_LABEL: top-early
+          R18N_EXPECT_HOLD: 'true'
+          R18N_HTTP_PORT: '4193'
+          R18N_DEBUG_PORT: '9233'
+        run: node tools/action-studio/r18n4-3b1-3-live-localizer.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r18n4-3b1-3-top-early-evidence
+          path: r18n4-3b1-3-evidence/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  top-late:
+    name: Live TOP late 110ms
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/r18n4-3b1-3-top-prep-readability-hold
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: node tools/action-studio/r18n4-3b1-3-top-prep-readability-hold-migration.mjs
+      - run: npm run build:action-studio
+      - name: Validate TOP late
+        env:
+          R18N_DIRECTION: top
+          R18N_TARGET_TTC: '0.110'
+          R18N_LABEL: top-late
+          R18N_EXPECT_HOLD: 'true'
+          R18N_HTTP_PORT: '4194'
+          R18N_DEBUG_PORT: '9234'
+        run: node tools/action-studio/r18n4-3b1-3-live-localizer.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r18n4-3b1-3-top-late-evidence
+          path: r18n4-3b1-3-evidence/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  right:
+    name: Live RIGHT regression 110ms
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/r18n4-3b1-3-top-prep-readability-hold
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: node tools/action-studio/r18n4-3b1-3-top-prep-readability-hold-migration.mjs
+      - run: npm run build:action-studio
+      - name: Validate RIGHT
+        env:
+          R18N_DIRECTION: right
+          R18N_TARGET_TTC: '0.110'
+          R18N_LABEL: right-regression
+          R18N_EXPECT_HOLD: 'false'
+          R18N_HTTP_PORT: '4195'
+          R18N_DEBUG_PORT: '9235'
+        run: node tools/action-studio/r18n4-3b1-3-live-localizer.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r18n4-3b1-3-right-evidence
+          path: r18n4-3b1-3-evidence/*.json
+          if-no-files-found: ignore
+          retention-days: 7
