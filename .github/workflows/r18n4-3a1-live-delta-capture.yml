@@ -1,0 +1,330 @@
+name: R18N.4.3-A.1 Live Delta Capture
+
+on:
+  push:
+    branches:
+      - diagnostic/r18n4-3a1-live-delta-capture
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+        with:
+          ref: diagnostic/r18n4-3a1-live-delta-capture
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify R18N.4.3-A baseline
+        run: node --test tests/predictive-parry-arm-delta.test.js tests/predictive-intercept-parry.test.js tests/shield-parry-r281-active-intercept-runtime.test.js
+
+      - name: Capture live RIGHT and TOP authored shield-arm delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [[ -z "$BROWSER" ]]; then
+            echo 'R18N.4.3-A.1 requires Chrome/Chromium.' >&2
+            exit 1
+          fi
+
+          PORT=4183
+          DEBUG_PORT=9223
+          HTTP_LOG=/tmp/r18n4-3a1-http.log
+          CHROME_LOG=/tmp/r18n4-3a1-chrome.log
+          RESULT_JSON=/tmp/r18n4-3a1-live-delta.json
+
+          python3 -m http.server "$PORT" >"$HTTP_LOG" 2>&1 &
+          SERVER_PID=$!
+          "$BROWSER" --headless=new --no-sandbox --disable-gpu --enable-unsafe-swiftshader \
+            --remote-debugging-address=127.0.0.1 --remote-debugging-port="$DEBUG_PORT" \
+            --user-data-dir=/tmp/r18n4-3a1-chrome-profile about:blank >"$CHROME_LOG" 2>&1 &
+          CHROME_PID=$!
+          cleanup() {
+            kill "$CHROME_PID" >/dev/null 2>&1 || true
+            kill "$SERVER_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 80); do
+            if curl -fsS "http://127.0.0.1:${DEBUG_PORT}/json/version" >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl -fsS "http://127.0.0.1:${DEBUG_PORT}/json/version" >/dev/null
+
+          ACTION_STUDIO_PORT="$PORT" CHROME_DEBUG_PORT="$DEBUG_PORT" RESULT_JSON="$RESULT_JSON" node <<'NODE'
+          const fs = require('node:fs');
+
+          const port = Number(process.env.ACTION_STUDIO_PORT);
+          const debugPort = Number(process.env.CHROME_DEBUG_PORT);
+          const resultPath = process.env.RESULT_JSON;
+          const pageUrl = `http://127.0.0.1:${port}/tools/action-studio/shield-driven-contact-coupling-lab.html?debug=1&r18n43a1=1`;
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function waitFor(label, predicate, timeoutMs = 60000, intervalMs = 50) {
+            const start = Date.now();
+            let lastError = null;
+            while (Date.now() - start < timeoutMs) {
+              try {
+                if (await predicate()) return;
+              } catch (error) {
+                lastError = error;
+              }
+              await sleep(intervalMs);
+            }
+            throw new Error(`Timed out waiting for ${label}${lastError ? `: ${lastError.message}` : ''}`);
+          }
+
+          const targetResponse = await fetch(
+            `http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(pageUrl)}`,
+            { method: 'PUT' },
+          );
+          if (!targetResponse.ok) throw new Error(`CDP target creation failed: ${targetResponse.status}`);
+          const target = await targetResponse.json();
+          if (!target.webSocketDebuggerUrl) throw new Error('CDP target has no webSocketDebuggerUrl');
+
+          const ws = new WebSocket(target.webSocketDebuggerUrl);
+          await new Promise((resolve, reject) => {
+            ws.addEventListener('open', resolve, { once: true });
+            ws.addEventListener('error', reject, { once: true });
+          });
+
+          let nextId = 1;
+          const pending = new Map();
+          ws.addEventListener('message', (event) => {
+            const message = JSON.parse(event.data);
+            if (!message.id) return;
+            const entry = pending.get(message.id);
+            if (!entry) return;
+            pending.delete(message.id);
+            if (message.error) entry.reject(new Error(`${message.error.code}: ${message.error.message}`));
+            else entry.resolve(message.result);
+          });
+
+          function send(method, params = {}) {
+            const id = nextId++;
+            return new Promise((resolve, reject) => {
+              pending.set(id, { resolve, reject });
+              ws.send(JSON.stringify({ id, method, params }));
+            });
+          }
+
+          async function evaluate(expression) {
+            const result = await send('Runtime.evaluate', {
+              expression,
+              returnByValue: true,
+              awaitPromise: true,
+            });
+            if (result.exceptionDetails) {
+              const description = result.exceptionDetails.exception?.description
+                || result.exceptionDetails.text
+                || 'Runtime.evaluate failed';
+              throw new Error(description);
+            }
+            return result.result?.value;
+          }
+
+          await send('Runtime.enable');
+          await send('Page.enable');
+
+          await waitFor('R281 lab boot and initial attack', async () => evaluate(`
+            Boolean(
+              window.__G43B5R281_LAB__
+              && window.__G43B5R281_LAB__.attackRuntime?.snapshot?.action
+              && window.__G43B5R281_RESULT__
+              && document.documentElement.dataset.g43b5r281 !== 'fail'
+            )
+          `), 90000);
+
+          async function compactLiveFrame() {
+            return evaluate(`(() => {
+              const api = window.__G43B5R281_LAB__;
+              const report = api?.latestPredictiveReport;
+              const delta = report?.shieldArmAuthoredDelta;
+              const ownership = api?.latestVisualOwnershipBaseline;
+              const angle = (bone) => {
+                const value = delta?.deltas?.[bone]?.angleDegrees;
+                return Number.isFinite(value) ? value : null;
+              };
+              return {
+                sequence: report?.sequence ?? api?.attackRuntime?.snapshot?.sequence ?? null,
+                attackElapsedMs: Number.isFinite(api?.attackRuntime?.snapshot?.elapsedSeconds)
+                  ? api.attackRuntime.snapshot.elapsedSeconds * 1000
+                  : null,
+                ttcMs: Number.isFinite(report?.timeToContactSeconds) ? report.timeToContactSeconds * 1000 : null,
+                presentationElapsedMs: Number.isFinite(report?.presentationElapsedMs) ? report.presentationElapsedMs : null,
+                sourceMs: Number.isFinite(report?.sourceTimeSeconds) ? report.sourceTimeSeconds * 1000 : null,
+                entryBlendProgress: Number.isFinite(report?.entryBlendProgress) ? report.entryBlendProgress : null,
+                shieldArmOwnership: report?.shieldArmOwnership ?? null,
+                upperBodyAnticipationOwnership: report?.upperBodyAnticipationOwnership ?? null,
+                extractionAuthority: delta?.authority ?? null,
+                anglesDegrees: delta ? {
+                  upperarmL: angle('upperarm.l'),
+                  lowerarmL: angle('lowerarm.l'),
+                  wristL: angle('wrist.l'),
+                  max: Number.isFinite(delta.maxAngleDegrees) ? delta.maxAngleDegrees : null,
+                } : null,
+                writerOrderValid: ownership?.orderValid ?? null,
+                writerOrderViolations: ownership?.orderViolations ?? [],
+                realContact: Boolean(api?.latestContact),
+                parryConfirmed: Boolean(api?.latestParryConfirmation),
+                whiff: api?.latestParryWhiff ? {
+                  reason: api.latestParryWhiff.reason ?? null,
+                  classification: api.latestParryWhiff.classification ?? null,
+                } : null,
+              };
+            })()`);
+          }
+
+          function selectCheckpoints(samples) {
+            const targets = [150, 120, 90, 60, 30, 10];
+            const usable = samples.filter((sample) => Number.isFinite(sample.ttcMs) && sample.anglesDegrees);
+            return targets.map((targetTtcMs) => {
+              if (!usable.length) return { targetTtcMs, sample: null };
+              const sample = usable.reduce((best, candidate) => (
+                Math.abs(candidate.ttcMs - targetTtcMs) < Math.abs(best.ttcMs - targetTtcMs)
+                  ? candidate
+                  : best
+              ));
+              return { targetTtcMs, sample };
+            });
+          }
+
+          async function runDirection(direction) {
+            const restarted = await evaluate(`window.__G43B5R281_LAB__.restartAttack(${JSON.stringify(direction)})`);
+            if (!restarted) throw new Error(`${direction}: restartAttack rejected`);
+
+            const sequence = await evaluate(`window.__G43B5R281_LAB__.attackRuntime.snapshot.sequence`);
+            await waitFor(`${direction} accepted manual Parry opportunity`, async () => evaluate(`
+              window.__G43B5R281_LAB__.attackRuntime.snapshot.sequence === ${Number(sequence)}
+              && window.__G43B5R281_LAB__.latestParryOpportunity?.accepted === true
+            `), 45000, 25);
+
+            const input = await evaluate(`window.__G43B5R281_LAB__.dispatchParryInput('r18n4-3a1-live-capture')`);
+            if (!input?.accepted) throw new Error(`${direction}: Parry input rejected: ${input?.reason || 'unknown'}`);
+
+            await waitFor(`${direction} predictive delta`, async () => {
+              const frame = await compactLiveFrame();
+              return Boolean(frame.anglesDegrees && frame.extractionAuthority);
+            }, 15000, 20);
+
+            const samples = [];
+            const seenPresentationMs = new Set();
+            const captureStarted = Date.now();
+            while (Date.now() - captureStarted < 12000) {
+              const frame = await compactLiveFrame();
+              if (frame.anglesDegrees) {
+                const key = Number.isFinite(frame.presentationElapsedMs)
+                  ? frame.presentationElapsedMs.toFixed(3)
+                  : `${frame.ttcMs}:${samples.length}`;
+                if (!seenPresentationMs.has(key)) {
+                  seenPresentationMs.add(key);
+                  samples.push(frame);
+                }
+              }
+              if (frame.realContact || frame.whiff) break;
+              await sleep(20);
+            }
+
+            const terminal = await compactLiveFrame();
+            const result = {
+              direction,
+              sequence,
+              input: {
+                accepted: input.accepted,
+                timeToContactMs: Number.isFinite(input.timeToContactSeconds)
+                  ? input.timeToContactSeconds * 1000
+                  : null,
+                requiredShieldTravelMeters: input.requiredShieldTravelMeters ?? null,
+              },
+              sampleCount: samples.length,
+              checkpoints: selectCheckpoints(samples),
+              peak: samples.reduce((best, sample) => {
+                if (!best) return sample;
+                return (sample.anglesDegrees?.max ?? -Infinity) > (best.anglesDegrees?.max ?? -Infinity)
+                  ? sample
+                  : best;
+              }, null),
+              terminal,
+            };
+
+            if (samples.length < 5) throw new Error(`${direction}: insufficient live delta samples (${samples.length})`);
+            if (!terminal.realContact || !terminal.parryConfirmed) {
+              throw new Error(`${direction}: real contact/parry confirmation missing`);
+            }
+            if (terminal.whiff) throw new Error(`${direction}: ended in Parry whiff`);
+            if (!samples.some((sample) => (sample.anglesDegrees?.max ?? 0) > 1)) {
+              throw new Error(`${direction}: authored shield-arm delta never exceeded 1 degree`);
+            }
+            if (samples.some((sample) => sample.extractionAuthority !== 'observer-only-authored-arm-delta-no-rig-write-no-contact-authority')) {
+              throw new Error(`${direction}: extraction authority changed`);
+            }
+            if (samples.some((sample) => sample.shieldArmOwnership !== 'external-active-intercept-tracking')) {
+              throw new Error(`${direction}: solver shield-arm ownership was not preserved`);
+            }
+            if (samples.some((sample) => sample.writerOrderValid === false)) {
+              throw new Error(`${direction}: visual ownership writer order violation observed`);
+            }
+            if (!samples.some((sample) => sample.writerOrderValid === true)) {
+              throw new Error(`${direction}: no qualified visual ownership frame observed`);
+            }
+            return result;
+          }
+
+          const right = await runDirection('right');
+          const top = await runDirection('top');
+          const summary = {
+            stage: 'R18N.4.3-A.1',
+            authority: 'live-browser-observation-only-no-pose-injection-no-contact-authority-change',
+            pageUrl,
+            right,
+            top,
+          };
+
+          fs.writeFileSync(resultPath, `${JSON.stringify(summary, null, 2)}\n`);
+          console.log(`R18N43A1_RESULT=${JSON.stringify(summary)}`);
+          ws.close();
+          NODE
+
+          echo '--- R18N.4.3-A.1 live delta summary ---'
+          cat "$RESULT_JSON"
+
+      - name: Upload live capture evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: r18n4-3a1-live-delta-capture
+          path: /tmp/r18n4-3a1-live-delta.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify diagnostic branch has no production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=73285144f372c6f2a7db435456ef9a8fc31401e0
+          git diff --name-only "$BASE"...HEAD | sort > /tmp/r18n4-3a1-changed.txt
+          cat /tmp/r18n4-3a1-changed.txt
+          EXPECTED='.github/workflows/r18n4-3a1-live-delta-capture.yml'
+          [[ "$(cat /tmp/r18n4-3a1-changed.txt)" == "$EXPECTED" ]]
+
+      - name: Remove one-shot live capture workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/r18n4-3a1-live-delta-capture.yml
+          git commit -m "R18N.4.3-A.1 remove one-shot live capture"
+          git push origin HEAD:diagnostic/r18n4-3a1-live-delta-capture
