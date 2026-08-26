@@ -2,10 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const source = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
-const html = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
+// R18M split the R281 lab entry into shield-parry-r281/ controllers. The
+// behaviours below are unchanged, but each now lives in the module that owns
+// it, so every assertion reads the module that actually holds it rather than
+// the entry alone. `shield-parry-r281-thin-entry-audit.test.js` is what keeps
+// these out of the entry, so scanning the entry for them would contradict it.
+const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-function functionBody(name, nextName) {
+const entry = await read('tools/action-studio/shield-driven-contact-coupling-lab-r281.js');
+const preContactController = await read('tools/action-studio/shield-parry-r281/pre-contact-controller.js');
+const contactHandoffController = await read('tools/action-studio/shield-parry-r281/contact-handoff-controller.js');
+const directOldB3Diagnostic = await read('tools/action-studio/shield-parry-r281/direct-old-b3-diagnostic.js');
+const html = await read('tools/action-studio/shield-driven-contact-coupling-lab.html');
+
+const labSurface = [
+  entry,
+  preContactController,
+  contactHandoffController,
+  directOldB3Diagnostic,
+].join('\n');
+
+function functionBody(source, name, nextName) {
   const start = source.indexOf(`function ${name}(`);
   const end = source.indexOf(`function ${nextName}(`, start + 1);
   assert.notEqual(start, -1, `${name} must exist`);
@@ -21,8 +38,8 @@ test('current R281 HTML runs the Step 3A shield to sword to hand entry', () => {
 });
 
 test('current R281 starts shield presentation only from manual Parry input', () => {
-  const manual = functionBody('triggerParryNow', 'forceOldTwoActorB3');
-  const preContact = functionBody('updateParryPreContact', 'updatePreContact');
+  const manual = functionBody(entry, 'triggerParryNow', 'forceOldTwoActorB3');
+  const preContact = functionBody(preContactController, 'updateParryPreContact', 'armActiveIntercept');
   assert.match(manual, /parryGate\.arm/);
   assert.match(manual, /predictivePresentation\.start/);
   assert.doesNotMatch(preContact, /predictivePresentation\.start/);
@@ -31,9 +48,9 @@ test('current R281 starts shield presentation only from manual Parry input', () 
 });
 
 test('current R281 confirms Parry through real swept contact before live wrist-grip transfer', () => {
-  const contact = functionBody('resolveContact', 'updateHud');
+  const contact = functionBody(contactHandoffController, 'resolveContact', 'updateCombatBeforeGuard');
   assert.match(contact, /probeSweptSwordBucklerContact/);
-  assert.match(contact, /if \(!latestContact\.contact\) return/);
+  assert.match(contact, /if \(!exchangeState\.latestContact\.contact\) return/);
   assert.match(contact, /parryGate\.confirm/);
   assert.match(contact, /swordGripConstraint\.start/);
   assert.ok(contact.indexOf('parryGate.confirm') < contact.indexOf('swordGripConstraint.start'));
@@ -41,32 +58,32 @@ test('current R281 confirms Parry through real swept contact before live wrist-g
 });
 
 test('current R281 releases a verified TOP or RIGHT live-contact pose into OLD B3', () => {
-  assert.match(source, /buildLiveParryOldB3Handoff/);
-  assert.match(source, /function releaseLiveContactToOldB3/);
-  assert.match(source, /publishPostCouplingRecoilStaggerHandoff/);
-  assert.match(source, /sampleLiveParryOldB3ReleaseBlend/);
-  assert.match(source, /releasedToOldB3/);
+  assert.match(contactHandoffController, /buildLiveParryOldB3Handoff/);
+  assert.match(contactHandoffController, /function releaseLiveContactToOldB3/);
+  assert.match(contactHandoffController, /publishPostCouplingRecoilStaggerHandoff/);
+  assert.match(contactHandoffController, /sampleLiveParryOldB3ReleaseBlend/);
+  assert.match(contactHandoffController, /releasedToOldB3/);
 });
 
 test('current R281 keeps the verified legacy Two-Actor B3 plan unchanged behind the direct diagnostic', () => {
-  assert.match(source, /LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE/);
-  assert.match(source, /LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE/);
-  assert.match(source, /direct-existing-old-two-actor-b3-diagnostic/);
-  assert.match(source, /combat\.update\(0\.021/);
+  assert.match(directOldB3Diagnostic, /LEGACY_TWO_ACTOR_RECOIL_HANDOFF_MODE/);
+  assert.match(entry, /LEGACY_TWO_ACTOR_RECOIL_PASSTHROUGH_STAGE/);
+  assert.match(directOldB3Diagnostic, /direct-existing-old-two-actor-b3-diagnostic/);
+  assert.match(directOldB3Diagnostic, /combat\.update\(0\.021/);
 });
 
 test('current R281 contains no legacy authored-offset coupling, release bridge, Perfect, or balance-break authority', () => {
-  assert.doesNotMatch(source, /createShieldDrivenContactCouplingRuntime/);
-  assert.doesNotMatch(source, /couplingRuntime\.start/);
-  assert.match(source, /createLiveShieldSwordGripContactRuntime/);
-  assert.doesNotMatch(source, /prepareLegacyReleaseBridge/);
-  assert.doesNotMatch(source, /perfect-parry/);
-  assert.doesNotMatch(source, /createParryBackwardBalanceBreakRuntime/);
-  assert.doesNotMatch(source, /TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
+  assert.doesNotMatch(labSurface, /createShieldDrivenContactCouplingRuntime/);
+  assert.doesNotMatch(labSurface, /couplingRuntime\.start/);
+  assert.match(entry, /createLiveShieldSwordGripContactRuntime/);
+  assert.doesNotMatch(labSurface, /prepareLegacyReleaseBridge/);
+  assert.doesNotMatch(labSurface, /perfect-parry/);
+  assert.doesNotMatch(labSurface, /createParryBackwardBalanceBreakRuntime/);
+  assert.doesNotMatch(labSurface, /TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE/);
 });
 
 test('current R281 retains the independently verified Step 1 B3 diagnostic', () => {
   assert.match(html, /id="forceOldB3"/);
-  assert.match(source, /function forceOldTwoActorB3/);
-  assert.match(source, /direct-existing-old-two-actor-b3-diagnostic/);
+  assert.match(entry, /function forceOldTwoActorB3/);
+  assert.match(directOldB3Diagnostic, /direct-existing-old-two-actor-b3-diagnostic/);
 });

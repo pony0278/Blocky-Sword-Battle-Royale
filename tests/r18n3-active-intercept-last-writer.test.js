@@ -64,8 +64,8 @@ test('R18N.3 publishes world-target before/after evidence without contact author
 
 test('R18N.3 preserves production tracking limits and real-contact reset boundary', () => {
   assert.match(tracking, /maxTrackingSpeedMps: 1\.6/);
-  assert.match(tracking, /upperArmMaxDegrees: 14/);
-  assert.match(tracking, /lowerArmMaxDegrees: 18/);
+  assert.match(tracking, /upperArmMaxDegrees: 20/);
+  assert.match(tracking, /lowerArmMaxDegrees: 26/);
   assert.match(bodyReach, /maxBodyReachMeters: 0\.035/);
   assert.match(bodyReach, /chestMaxDegrees: 2\.4/);
   assert.match(bodyReach, /spineMaxDegrees: 1\.6/);
