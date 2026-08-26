@@ -124,8 +124,9 @@ test('TOP and RIGHT recruit a bounded lowerarm assist before the wrist contact s
   assert.ok(top.estimatedOfflineTravelMeters >= 0.025);
   assert.ok(top.appliedDegrees <= 10);
   assert.ok(top.targetGripPoint.x > 0.024);
-  assert.equal(left.accepted, false);
-  assert.equal(left.reason, 'attack-direction-deferred');
+  // R18P.4: LEFT recruits the same assist as TOP/RIGHT.
+  assert.equal(left.accepted, true);
+  assert.ok(left.targetHiltOfflineTravelMeters > 0.03);
 });
 
 test('TOP final-world hilt clearance receives a bounded closed-loop residual correction', () => {
@@ -270,9 +271,9 @@ test('TOP and RIGHT publish measured 7/7 contact release into OLD B3 while LEFT 
     assert.equal(handoff.releaseBlendMs, 28);
   }
 
-  const deferred = buildLiveParryOldB3Handoff({ attackDirection: 'left', contactReport });
-  assert.equal(deferred.accepted, false);
-  assert.equal(deferred.reason, 'attack-direction-deferred');
+  // R18P.4: LEFT releases through the same 7/7 path as TOP/RIGHT.
+  const leftHandoff = buildLiveParryOldB3Handoff({ attackDirection: 'left', contactReport });
+  assert.equal(leftHandoff.accepted, true);
 
   assert.equal(LIVE_PARRY_OLD_B3_RELEASE_BLEND_MS, 28);
   assert.equal(sampleLiveParryOldB3ReleaseBlend(0).contactPoseWeight, 1);
@@ -328,7 +329,7 @@ test('R18I contact hold corrects upperarm.r through wrist.r before visible OLD B
   assert.match(source, /propagatedBones: Object\.freeze\(\['hand\.r', 'handslot\.r'\]\)/);
   assert.match(source, /bones\?\.\['lowerarm\.r'\]/);
   assert.match(source, /bones\?\.\['upperarm\.r'\]/);
-  assert.match(source, /maximumUpperarmCorrectionDegrees: 28/);
+  assert.match(source, /maximumUpperarmCorrectionDegrees: 34/);
   assert.match(source, /proximalArmCorrectionActive/);
   assert.match(source, /contact-hold-upperarm-lowerarm-wrist-correction-before-visible-old-b3/);
   assert.doesNotMatch(source, /smoothstep|driveDurationMs|minimumHandDegrees|targetHandDegrees/);
