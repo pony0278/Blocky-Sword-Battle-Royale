@@ -1,21 +1,33 @@
 name: Deploy GitHub Pages
 
+# GitHub Pages serves one site per repository, so per-branch preview URLs come
+# from subdirectories of a single gh-pages branch rather than separate sites:
+#
+#   main               -> https://<owner>.github.io/<repo>/
+#   any other branch   -> https://<owner>.github.io/<repo>/preview/<slug>/
+#
+# Requires the repository Pages source to be "Deploy from a branch" -> gh-pages / root.
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - '**-preview'
+  delete:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
+# Every job writes the same branch, so they must queue instead of racing.
+# Cancelling mid-run would abandon a half-written tree.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: gh-pages
+  cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
+    if: github.event_name != 'delete'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,25 +44,45 @@ jobs:
       - name: Build Action Studio
         run: npm run build:action-studio
 
+      # main is the published site and stays gated. A preview exists precisely
+      # so work in progress can be looked at, so a failing gate is reported
+      # without blocking the deploy.
       - name: Verify Action Studio Guard Runtime browser surface
-        shell: bash
+        continue-on-error: ${{ github.ref_name != 'main' }}
         run: bash tools/action-studio/verify-guard-runtime-surface.sh
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      # The script clones gh-pages into its own directory, which does not
+      # inherit the credentials actions/checkout scoped to this workspace.
+      - name: Publish to gh-pages
+        env:
+          GH_PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: bash build/publish-gh-pages.sh publish "${GITHUB_REF_NAME}"
 
-      - name: Upload site
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
+      - name: Summarize
+        run: |
+          base="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}"
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            url="$base/"
+          else
+            slug="$(printf '%s' "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed 's#[^a-z0-9._-]#-#g')"
+            url="$base/preview/$slug/"
+          fi
+          {
+            echo "### Published \`${GITHUB_REF_NAME}\`"
+            echo
+            echo "- Site: $url"
+            echo "- Shield parry lab: ${url}tools/action-studio/shield-driven-contact-coupling-lab.html"
+            echo "- All previews: $base/preview/"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  cleanup:
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch' && github.event.ref != 'main'
     runs-on: ubuntu-latest
-    needs: build
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Drop the preview for the deleted branch
+        env:
+          GH_PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: bash build/publish-gh-pages.sh remove "${{ github.event.ref }}"
