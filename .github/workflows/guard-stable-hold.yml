@@ -1,0 +1,69 @@
+name: G3.6.5 Living Guard Hold
+
+on:
+  pull_request:
+    paths:
+      - 'src/combat/guard-presentation-runtime.js'
+      - 'src/combat/living-guard-idle-runtime.js'
+      - 'src/combat/longsword-guard-metadata.js'
+      - 'src/combat/longsword-guard-correction.js'
+      - 'src/animation/skyrim-converted-animation-library.js'
+      - 'tools/action-studio/guard-stable-hold-lab.*'
+      - 'tests/guard-correction-idempotence.test.js'
+      - 'tests/guard-stable-hold.test.js'
+      - 'tests/living-guard-idle-runtime.test.js'
+      - '.github/workflows/guard-stable-hold.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Guard correction + G3.6.5 Living Guard unit tests
+        run: node --test tests/guard-correction-idempotence.test.js tests/guard-stable-hold.test.js tests/living-guard-idle-runtime.test.js tests/guard-presentation-runtime.test.js
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Verify full-source Living Hold, root lock, seam and Recover handoff
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-6-5
+          python3 -m http.server 4173 > /tmp/g365-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          URL='http://127.0.0.1:4173/tools/action-studio/guard-stable-hold-lab.html'
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1280,900 --virtual-time-budget=30000 --dump-dom \
+            "$URL" > artifacts/g3-6-5/living-hold-dom.html
+
+          if ! grep -q 'data-g365="pass"' artifacts/g3-6-5/living-hold-dom.html; then
+            echo 'G3.6.5 Living Guard Hold report:' >&2
+            sed -n '/<pre id="report"/,/<\/pre>/p' artifacts/g3-6-5/living-hold-dom.html >&2 || true
+            exit 1
+          fi
+          grep -q 'data-g365-living="pass"' artifacts/g3-6-5/living-hold-dom.html
+          grep -q 'data-g365-root="pass"' artifacts/g3-6-5/living-hold-dom.html
+          grep -q 'data-g365-seam="pass"' artifacts/g3-6-5/living-hold-dom.html
+          grep -q 'data-g365-recover="pass"' artifacts/g3-6-5/living-hold-dom.html
+
+      - name: Upload G3.6.5 Living Guard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-6-5-living-guard-hold
+          path: artifacts/g3-6-5

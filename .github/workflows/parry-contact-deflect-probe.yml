@@ -1,0 +1,115 @@
+name: G3.5.1P Parry Contact Deflect Probe
+
+on:
+  pull_request:
+    paths:
+      - 'assets/skyrim/guard/converted/**'
+      - 'src/animation/skyrim-converted-animation-library.js'
+      - 'src/combat/parry-contact-deflect-probe.js'
+      - 'tools/action-studio/parry-contact-deflect-probe.*'
+      - 'tests/parry-contact-deflect-probe.test.js'
+      - '.github/workflows/parry-contact-deflect-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify frozen source assets
+        shell: bash
+        run: |
+          test "$(sha256sum assets/skyrim/guard/converted/shd_blockhit.source.glb | cut -d' ' -f1)" = "270d68b5c62a7de68c39112ab9a813f27a758ac737a078fe55b21896cfce1f28"
+          test "$(sha256sum assets/skyrim/guard/converted/shd_blockbash.source.glb | cut -d' ' -f1)" = "bae74b1cdf8724eb17073a7347192946fef8cc9cedcdb8c9728e6ea9004ea637"
+          test "$(sha256sum assets/skyrim/guard/converted/shd_blockbashpower.source.glb | cut -d' ' -f1)" = "603cf8326501ca2dd3628e8f47c37c6cbad6bec491b224123af418e70c36fd47"
+
+      - name: Run G3.5.1P unit test
+        run: node --test tests/parry-contact-deflect-probe.test.js
+
+      - name: Locate headless browser
+        id: browser
+        shell: bash
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          echo "browser=$BROWSER" >> "$GITHUB_OUTPUT"
+          "$BROWSER" --version
+
+      - name: Verify P0 versus T1 contact then deflect visual runtime
+        shell: bash
+        env:
+          BROWSER: ${{ steps.browser.outputs.browser }}
+        run: |
+          mkdir -p artifacts/g3-5-1p
+          python3 -m http.server 4173 > /tmp/g351p-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          BASE='http://127.0.0.1:4173/tools/action-studio/parry-contact-deflect-probe.html'
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=30000 --dump-dom \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=280&view=three" > artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p-normal="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p-perfect="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
+          grep -q 'data-g351p-tuning="pass"' artifacts/g3-5-1p/g351p-t1-dom.html
+
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-normal-contact-150ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=150&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-normal-hold-210ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=210&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-normal-blend-280ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=280&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-normal-deflect-360ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=360&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-normal-end-400ms.png" \
+            "${BASE}?variant=parry&preset=compact-t1&elapsed=400&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/p0-normal-deflect-390ms.png" \
+            "${BASE}?variant=parry&preset=baseline-p0&elapsed=390&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/p0-normal-late-500ms.png" \
+            "${BASE}?variant=parry&preset=baseline-p0&elapsed=500&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-perfect-deflect-400ms.png" \
+            "${BASE}?variant=perfect&preset=compact-t1&elapsed=400&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-perfect-deflect-side-430ms.png" \
+            "${BASE}?variant=perfect&preset=compact-t1&elapsed=430&view=side"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/t1-perfect-end-440ms.png" \
+            "${BASE}?variant=perfect&preset=compact-t1&elapsed=440&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/p0-perfect-deflect-470ms.png" \
+            "${BASE}?variant=perfect&preset=baseline-p0&elapsed=470&view=three"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --enable-unsafe-swiftshader --hide-scrollbars \
+            --window-size=1500,1000 --virtual-time-budget=22000 \
+            --screenshot="artifacts/g3-5-1p/p0-perfect-late-600ms.png" \
+            "${BASE}?variant=perfect&preset=baseline-p0&elapsed=600&view=three"
+
+      - name: Upload G3.5.1P visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: g3-5-1p-parry-contact-deflect-probe
+          path: artifacts/g3-5-1p

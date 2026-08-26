@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Action Studio
+        run: npm run build:action-studio
+
+      - name: Verify standalone Action Studio files are current
+        shell: bash
+        run: |
+          if ! git diff --exit-code -- tools/action-studio/action-studio.bundle.js tools/action-studio/index.html; then
+            echo 'Generated standalone Action Studio files are stale.' >&2
+            echo 'Run npm run build:action-studio and commit tools/action-studio/action-studio.bundle.js + index.html.' >&2
+            exit 1
+          fi
+
+      - name: Verify Action Studio Guard Runtime browser surface
+        shell: bash
+        run: bash tools/action-studio/verify-guard-runtime-surface.sh
+
+      - name: Run tests
+        run: npm test
