@@ -1,0 +1,66 @@
+name: R18N.4.1-B Full Regression
+
+on:
+  push:
+    branches: [feature/r18n4-1-visual-ownership-baseline]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: r18n4-1-b-full-regression
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/r18n4-1-visual-ownership-baseline
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run full regression suite
+        run: npm test
+
+      - name: Build Action Studio
+        run: npm run build:action-studio
+
+      - name: Verify generated Action Studio files remain current
+        shell: bash
+        run: |
+          git diff --exit-code -- \
+            tools/action-studio/action-studio.bundle.js \
+            tools/action-studio/index.html
+
+      - name: Verify Guard Runtime browser surface
+        run: bash tools/action-studio/verify-guard-runtime-surface.sh
+
+      - name: Verify validation did not mutate tracked runtime files
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Unexpected working-tree changes after R18N.4.1-B validation:" >&2
+            git status --short >&2
+            exit 1
+          fi
+
+      - name: Remove one-shot validation workflow
+        run: git rm .github/workflows/r18n4-1-b-full-regression.yml
+
+      - name: Publish validation cleanup only
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ci: complete R18N.4.1-B full regression"
+          git push origin HEAD:feature/r18n4-1-visual-ownership-baseline
