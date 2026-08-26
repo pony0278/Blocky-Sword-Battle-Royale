@@ -13,6 +13,10 @@ import { getProductionParryDeflectProfile } from '../animation/parry-contact-def
 import {
   R18N_ACTIVE_INTERCEPT_PRESERVED_BONES,
 } from './predictive-parry-ownership-policy.js';
+import {
+  R18N_SHIELD_ARM_DELTA_BONES,
+  extractShieldArmAuthoredDelta,
+} from './predictive-parry-arm-delta.js';
 
 export const PREDICTIVE_INTERCEPT_PARRY_STAGE = 'G4.3B.5R';
 export const RHYTHM_TRIGGER_ACTIVE_PARRY_STAGE = 'G4.3B.5R.1';
@@ -306,6 +310,7 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       elapsedMs: 0,
       entryBlendElapsedMs: 0,
       entryPose: capturePresentationEntryPose(character),
+      shieldArmDeltaReferencePose: captureBoneQuaternionPose(character, R18N_SHIELD_ARM_DELTA_BONES),
       sourceTimeSeconds: PREDICTIVE_INTERCEPT_PARRY_PROFILE.presentationStartSourceSeconds,
     };
     lastReport = freeze({
@@ -323,6 +328,7 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       entryBlendProgress: 0,
       shieldArmOwnership: 'predictive-presentation',
       upperBodyAnticipationOwnership: 'predictive-presentation',
+      shieldArmAuthoredDelta: null,
       triggerTtcSeconds,
       guardIntentAgeMs: lockedGuardIntentAgeMs,
       lockedGuardIntentAgeMs,
@@ -370,6 +376,11 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
     });
     applyGuardQuaternionOffsetsWeighted(THREE, character.rig, guardOffsets, active.profile.correctionWeight);
     blendPresentationEntryPose(character, active.entryPose, entryBlendProgress);
+    const authoredShieldArmPose = captureBoneQuaternionPose(character, R18N_SHIELD_ARM_DELTA_BONES);
+    const shieldArmAuthoredDelta = extractShieldArmAuthoredDelta({
+      referencePose: active.shieldArmDeltaReferencePose,
+      authoredPose: authoredShieldArmPose,
+    });
     if (shieldArmPose) restoreBoneQuaternionPose(character, shieldArmPose);
     character.update?.(0, input.camera);
 
@@ -392,6 +403,7 @@ export function createPredictiveInterceptParryPresentationRuntime(THREE, options
       upperBodyAnticipationOwnership: preserveShieldArm
         ? 'predictive-presentation-spine-chest'
         : 'predictive-presentation',
+      shieldArmAuthoredDelta,
       readyForAuthoritativeHandoff: ttc <= 0.02 || progress >= 0.9,
       defenderPresentationOffsetSeconds: sourceTimeSeconds,
       guardIntentAgeMs: active.lockedGuardIntentAgeMs,
