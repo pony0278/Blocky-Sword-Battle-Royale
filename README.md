@@ -28,6 +28,53 @@ Action Studio does not load the legacy Punch Studio modules. The preserved old e
 
 See [ACTION_STUDIO_EXTRACTION_PLAN.md](handoff/ACTION_STUDIO_EXTRACTION_PLAN.md) for the dependency map, extraction boundary, compatibility strategy and recorded source/spec differences.
 
+## Branch previews
+
+GitHub Pages serves one site per repository, so per-branch preview URLs come from
+subdirectories of a single `gh-pages` branch rather than from separate sites:
+
+| Branch | URL |
+| --- | --- |
+| `main` | `https://<owner>.github.io/<repo>/` |
+| anything else | `https://<owner>.github.io/<repo>/preview/<slug>/` |
+
+`<slug>` is the branch name lowercased with every character outside `a-z0-9._-`
+replaced by `-`, so `agent/external-impact-preview` publishes to
+`preview/agent-external-impact-preview/`. `/preview/` lists everything currently
+published.
+
+Publishing is automatic for `main` and for any `**-preview` branch. Any other
+branch can be published on demand by running the **Deploy GitHub Pages** workflow
+against it (`workflow_dispatch`). Deleting a branch removes its preview.
+
+Root and preview directories never overwrite each other, so several branches stay
+live at once. Git stores blobs by content, so previews that share the ~35&nbsp;MB of
+animation assets cost almost nothing extra.
+
+`main` is still blocked by the Guard Runtime browser gate. Previews report a gate
+failure without blocking, because a preview exists in order to look at work in
+progress.
+
+To publish by hand, or to check the result before pushing:
+
+```bash
+GH_PAGES_DRY_RUN=1 build/publish-gh-pages.sh publish <branch>
+```
+
+### Local preview
+
+Tuning iterations are faster locally, and no deploy is involved:
+
+```bash
+python -m http.server 4173 --bind 127.0.0.1
+```
+
+- `http://127.0.0.1:4173/tools/action-studio/shield-driven-contact-coupling-lab.html`
+- Add `?debug=1` for the low-stance tuning sliders.
+
+A static HTTP server is required either way; the labs are ES modules and fetch GLB
+animation packs, so `file://` does not work.
+
 ## Tests
 
 ```powershell
