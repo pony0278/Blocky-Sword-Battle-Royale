@@ -54,6 +54,7 @@ export function createShieldParryDebugApi({
     get latestVisualOwnershipBaseline() { return getExchangeState().latestVisualOwnershipBaseline; },
     get visualOwnershipTrace() { return getExchangeState().visualOwnershipTrace; },
     get latestInputSignal() { return getExchangeState().latestInputSignal; },
+    get latestEngagementGround() { return getExchangeState().latestEngagementGround; },
     get latestRootDisplacement() { return getExchangeState().latestRootDisplacement; },
     get latestAttackerRootDisplacement() { return getExchangeState().latestAttackerRootDisplacement; },
     get latestDefenderRootDisplacement() { return getExchangeState().latestDefenderRootDisplacement; },

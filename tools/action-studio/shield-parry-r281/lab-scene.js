@@ -61,10 +61,11 @@ export function createShieldParryLabScene({
   // R18T.1: the stance geometry is the combat module's, so that how far apart the fighters stand
   // is a stated fact rather than two coordinates buried in a scene file.
   let engagementStance = planEngagementStance(separationMeters);
-  // R18Y.1: how far the attacker's own swing has carried him off that stance. Kept here because
-  // this is the only place actor transforms are written, and it is re-applied absolutely rather
-  // than accumulated, so a repeated frame cannot make him creep down the lane.
+  // R18Y.1 / R18Z.1: how far the fight has carried each fighter off that stance. Kept here because
+  // this is the only place actor transforms are written, and both are re-applied absolutely rather
+  // than accumulated, so a repeated frame cannot make anyone creep down the lane.
   let attackerAdvanceMeters = 0;
+  let defenderAdvanceMeters = 0;
   function applyEngagementStance(stance) {
     engagementStance = stance;
     attacker.object3d.position.set(
@@ -74,7 +75,12 @@ export function createShieldParryLabScene({
       stance.attacker.position.z + attackerAdvanceMeters,
     );
     attacker.object3d.rotation.y = stance.attacker.facingRadians;
-    defender.object3d.position.set(stance.defender.position.x, stance.defender.position.y, stance.defender.position.z);
+    defender.object3d.position.set(
+      stance.defender.position.x,
+      stance.defender.position.y,
+      // The defender is on the far side of the lane, so ground given up is also +z.
+      stance.defender.position.z + defenderAdvanceMeters,
+    );
     defender.object3d.rotation.y = stance.defender.facingRadians;
     attacker.object3d.updateMatrixWorld(true);
     defender.object3d.updateMatrixWorld(true);
@@ -86,9 +92,11 @@ export function createShieldParryLabScene({
   function setEngagementSeparation(meters) {
     return applyEngagementStance(planEngagementStance(meters));
   }
-  function setAttackerAdvance(meters) {
-    const advance = Number(meters);
-    attackerAdvanceMeters = Number.isFinite(advance) ? advance : 0;
+  function setLanePositions({ attackerMeters, defenderMeters } = {}) {
+    const attacker = Number(attackerMeters);
+    const defender = Number(defenderMeters);
+    attackerAdvanceMeters = Number.isFinite(attacker) ? attacker : 0;
+    defenderAdvanceMeters = Number.isFinite(defender) ? defender : 0;
     return applyEngagementStance(engagementStance);
   }
   scene.add(attacker.object3d, defender.object3d);
@@ -134,7 +142,7 @@ export function createShieldParryLabScene({
     resize,
     setView,
     setEngagementSeparation,
-    setAttackerAdvance,
+    setLanePositions,
     get engagementStance() { return engagementStance; },
   });
 }

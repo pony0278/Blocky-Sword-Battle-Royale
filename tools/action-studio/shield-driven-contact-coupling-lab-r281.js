@@ -15,7 +15,6 @@ import {
   createGuardResidualStanceReachRuntime,
 } from '../../src/combat/guard-residual-stance-reach.js?v=g43b5r281-debug-low-stance-controls-r18e';
 import { planFineGuardTracking } from '../../src/combat/directional-guard-bracing.js';
-import { createAttackAdvanceRuntime } from '../../src/combat/attack-advance.js';
 import { createArticulatedImpactBracingRuntime, planArticulatedImpactBracing } from '../../src/combat/articulated-impact-bracing.js';
 import {
   analyzePredictiveInterceptParry,
@@ -78,6 +77,7 @@ import { createShieldParryContactHandoffController } from './shield-parry-r281/c
 import { createShieldParryLabScene } from './shield-parry-r281/lab-scene.js';
 import { cloneSurface, magnitude, createBladePolylineSampler } from './shield-parry-r281/lab-geometry.js';
 import { createShieldParryFrameReporting } from './shield-parry-r281/frame-reporting.js';
+import { createShieldParryLaneController } from './shield-parry-r281/lane-controller.js';
 import { createShieldParryInspectionOverlay } from './shield-parry-r281/inspection-overlay.js';
 import { createAttackerPresentationAdapter } from './shield-parry-r281/attacker-presentation.js';
 import { createDirectOldB3DiagnosticController } from './shield-parry-r281/direct-old-b3-diagnostic.js';
@@ -119,10 +119,8 @@ const residualStanceReachRuntime = createGuardResidualStanceReachRuntime(THREE, 
 const predictivePresentation = createPredictiveInterceptParryPresentationRuntime(THREE, { character: defender });
 const activeParryInterceptIntent = createActiveParryInterceptIntent();
 const parryGate = createCommittedParryContactGate();
-// R18Y.1: the attacker's own step into the swing. It reports a distance; this file owns where the
-// fighter stands and is the only thing that writes it, so the advance rides on the stance the
-// scene set rather than replacing it.
-const attackAdvanceRuntime = createAttackAdvanceRuntime();
+// R18Z.1: the attacker's step and the ledger of ground both fighters have won or given up.
+const laneController = createShieldParryLaneController({ labScene });
 const exchangeState = createShieldParryExchangeState();
 
 const attackerPresentation = createAttackerPresentationAdapter({
@@ -340,8 +338,7 @@ function sampleAttackerBase(snapshot, deltaMs) {
   attackerIdleClockSeconds = presentationState.idleClockSeconds;
 }
 function resetExchange() {
-  attackAdvanceRuntime.reset();
-  labScene.setAttackerAdvance(0);
+  laneController.release();
   parryGate.reset();
   swordGripConstraint.reset();
   bracingRuntime.resetImpact(); fineTrackingRuntime.reset();
@@ -430,11 +427,7 @@ function startAttack(direction = selectedDirection) {
   repeatCooldownMs = 0;
   const started = combat.startAttack(direction);
   if (!started.accepted) return false;
-  attackAdvanceRuntime.start({
-    direction,
-    contactSeconds: attackRuntime.snapshot?.action?.runtime?.contactSeconds,
-    startSeconds: 0,
-  });
+  laneController.startAttack(direction, attackRuntime.snapshot?.action?.runtime?.contactSeconds);
   status.textContent = `ATTACK ${direction.toUpperCase()} · wait for committed YES, then press PARRY NOW or F`;
   status.className = 'warn';
   document.querySelectorAll('[data-attack]').forEach((button) => button.classList.toggle('active', button.dataset.attack === direction));
@@ -477,11 +470,14 @@ function isParryPreContactReviewActive(snapshot = attackRuntime.snapshot) {
 
 
 function resolveContact(snapshot, currentBlade, deltaSeconds) {
-  return contactHandoffController.resolveContact(snapshot, currentBlade, deltaSeconds, {
+  const resolved = contactHandoffController.resolveContact(snapshot, currentBlade, deltaSeconds, {
     previousBlade,
     selectedMode,
     selectedDirection,
   });
+  const settled = laneController.settle(exchangeState.latestCombatResult?.resolution?.outcome);
+  if (settled) exchangeState.latestEngagementGround = settled;
+  return resolved;
 }
 
 async function main() {
@@ -559,9 +555,7 @@ function frame(timestamp) {
       status.className = 'bad';
     }
 
-    // Before anything reads a world position this frame: the guard tracks the attacker, and the
-    // swept probe measures the blade, so both must see where the step has actually carried him.
-    labScene.setAttackerAdvance(attackAdvanceRuntime.update(snapshot.elapsedSeconds)?.advanceMeters ?? 0);
+    laneController.update(snapshot.elapsedSeconds);
 
     const contactFrame = contactHandoffController.updateCombatBeforeGuard({
       deltaSeconds,

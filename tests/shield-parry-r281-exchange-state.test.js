@@ -50,6 +50,7 @@ const EXPECTED_EXCHANGE_KEYS = [
   'step3AReleaseBlend',
   'visibleOldB3Peak',
   'latchedDefenderDeflectReleaseGate',
+  'latestEngagementGround',
   'latestRootDisplacement',
   'latestAttackerRootDisplacement',
   'latestDefenderRootDisplacement',
