@@ -1,6 +1,7 @@
 import { createAttackAdvanceRuntime } from '../../../src/combat/attack-advance.js';
 import { createEngagementGround } from '../../../src/combat/engagement-ground.js';
 import { createLaneLocomotionRuntime } from '../../../src/combat/lane-locomotion.js';
+import { createLaneWalkCycle, walkClipTimeSeconds } from '../../../src/combat/lane-walk-cycle.js';
 
 // R18Z.1 — where the two fighters are standing, and nothing else.
 //
@@ -11,10 +12,15 @@ import { createLaneLocomotionRuntime } from '../../../src/combat/lane-locomotion
 // the entry should not be carrying.
 //
 // It owns no authority over whether anything was hit. It is told an outcome and moves people.
-export function createShieldParryLaneController({ labScene }) {
+export function createShieldParryLaneController({ labScene, walkClips }) {
+  // Durations arrive after the assets load, so the clips are described here and measured later.
+  let walkDurations = { forward: 1, backward: 1 };
   const advance = createAttackAdvanceRuntime();
   const defenderFeet = createLaneLocomotionRuntime();
   const attackerFeet = createLaneLocomotionRuntime();
+  // R19C.2: the attacker's gait, driven by the distance the ledger actually moved them rather than
+  // by elapsed time, so the feet cannot disagree with the ground about how far anybody went.
+  const attackerGait = createLaneWalkCycle();
   const ground = createEngagementGround({
     startSeparationMeters: labScene.engagementStance.separationMeters,
   });
@@ -80,12 +86,29 @@ export function createShieldParryLaneController({ labScene }) {
         ? null
         : attackerFeet.update({ deltaSeconds, separationMeters: ground.separationMeters });
       if (attackerStep && attackerStep.meters !== 0) ground.moveAttacker(attackerStep.meters);
+      // Closing the gap is walking forward, so the sign flips: the ledger speaks in separation.
+      if (attackerStep) attackerGait.advance({ travelledMeters: -attackerStep.meters, deltaSeconds });
+      else attackerGait.settle();
       if (defenderStep.meters !== 0 || attackerStep?.meters) apply();
       return Object.freeze({ defenderStep, attackerStep });
     },
     get defenderIntent() { return defenderFeet.intent; },
     get attackerIntent() { return attackerFeet.intent; },
     get attackerFeetLocked() { return attackerFeetLocked(); },
+    get attackerGait() { return attackerGait.report; },
+    setWalkDurations(durations) {
+      walkDurations = { forward: durations?.forward || 1, backward: durations?.backward || 1 };
+      return walkDurations;
+    },
+    // Null when the attacker is standing, which is the caller's signal to keep the idle.
+    get attackerWalkSample() {
+      const gait = attackerGait.report;
+      if (!gait?.moving || !walkClips) return null;
+      const forward = gait.direction > 0;
+      const clipId = forward ? walkClips.forward : walkClips.backward;
+      const duration = forward ? walkDurations.forward : walkDurations.backward;
+      return Object.freeze({ clipId, timeSeconds: walkClipTimeSeconds(gait.phase, duration) });
+    },
     // A landed blow is the only thing that banks ground. The outcome decides which way it moves:
     // blocking costs the defender more than the attacker, a parry costs the attacker far more.
     settle(outcome) {

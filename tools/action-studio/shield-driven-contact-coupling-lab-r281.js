@@ -81,7 +81,7 @@ import { createShieldParryLaneController } from './shield-parry-r281/lane-contro
 import { createShieldParryInspectionOverlay } from './shield-parry-r281/inspection-overlay.js';
 import { createAttackerPresentationAdapter } from './shield-parry-r281/attacker-presentation.js';
 import { createDirectOldB3DiagnosticController } from './shield-parry-r281/direct-old-b3-diagnostic.js';
-import { bootstrapShieldParryLabAssets } from './shield-parry-r281/lab-bootstrap.js';
+import { ATTACKER_WALK_CLIPS, bootstrapShieldParryLabAssets } from './shield-parry-r281/lab-bootstrap.js';
 import { createShieldParryDebugApi } from './shield-parry-r281/debug-api.js';
 
 
@@ -120,7 +120,7 @@ const predictivePresentation = createPredictiveInterceptParryPresentationRuntime
 const activeParryInterceptIntent = createActiveParryInterceptIntent();
 const parryGate = createCommittedParryContactGate();
 // R18Z.1: the attacker's step and the ledger of ground both fighters have won or given up.
-const laneController = createShieldParryLaneController({ labScene });
+const laneController = createShieldParryLaneController({ labScene, walkClips: ATTACKER_WALK_CLIPS });
 const exchangeState = createShieldParryExchangeState();
 
 const attackerPresentation = createAttackerPresentationAdapter({
@@ -333,6 +333,7 @@ function sampleAttackerBase(snapshot, deltaMs) {
     recovery: attackerRecovery,
     idleClockSeconds: attackerIdleClockSeconds,
     idleDuration: attackerIdleDuration,
+    walkSample: laneController.attackerWalkSample,
   });
   attackerRecovery = presentationState.recovery;
   attackerIdleClockSeconds = presentationState.idleClockSeconds;
@@ -489,6 +490,7 @@ async function main() {
     labStage: LAB_STAGE,
   });
   attackerIdleDuration = bootstrap.attackerIdleDuration;
+  laneController.setWalkDurations({ forward: bootstrap.walkForwardDuration, backward: bootstrap.walkBackwardDuration });
   defenderSword = bootstrap.defenderSword;
   enterGuard();
   exchangeState.previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());

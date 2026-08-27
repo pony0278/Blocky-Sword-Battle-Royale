@@ -81,7 +81,8 @@ test('R18M.C6 preserves immutable visual-preview bootstrap path safety from the 
   const bootstrapUrl = new URL('../tools/action-studio/shield-parry-r281/lab-bootstrap.js', import.meta.url);
   const bootstrapSource = await readFile(bootstrapUrl, 'utf8');
   const imports = [...bootstrapSource.matchAll(/from ['"](\.\.\/[^'"]+)['"]/g)].map((match) => match[1]);
-  assert.equal(imports.length, 6);
+  // R19C.2 added the KayKit locomotion pack, which is the seventh.
+  assert.equal(imports.length, 7);
   for (const specifier of imports) {
     const resolved = new URL(specifier, bootstrapUrl);
     await assert.doesNotReject(readFile(resolved, 'utf8'), `bootstrap import must resolve: ${specifier}`);

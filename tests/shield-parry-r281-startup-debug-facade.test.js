@@ -60,7 +60,7 @@ test('R18M.C5 bootstrap owns only async asset registration and defender weapon b
 
 test('R18M.C5 bootstrap relative imports resolve to real repository files', () => {
   const imports = [...bootstrapSource.matchAll(/from\s+['"](\.\.\/[^'"]+)['"]/g)].map((match) => match[1]);
-  assert.equal(imports.length, 6);
+  assert.equal(imports.length, 7);
   for (const specifier of imports) {
     const resolved = new URL(specifier, bootstrapUrl);
     assert.ok(existsSync(resolved), `${specifier} must resolve from lab-bootstrap.js`);
@@ -106,7 +106,8 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
     'predictivePresentation', 'parryGate', 'freeCamera', 'residualBodyReachRuntime',
     'residualStanceReachRuntime', 'debugMode', 'debugStanceProfile', 'refreshDebugStanceProfile',
     'resetDebugStanceDefaults', 'swordGripConstraint', 'setEngagementSeparation',
-    'laneGround', 'laneDefenderIntent', 'laneAttackerIntent', 'engagementStance',
+    'laneGround', 'laneDefenderIntent', 'laneAttackerIntent', 'laneAttackerGait',
+    'laneAttackerWalkSample', 'engagementStance',
     'triggerParryNow', 'dispatchParryInput',
     'forceOldTwoActorB3', 'directOldB3Diagnostic', 'latestPredictiveReport', 'latestShieldLeadMotion',
     'latestLeadHandoff', 'latestCombatResult', 'latestParryInput', 'latestParryOpportunity', 'latestContact', 'latestBodyHit',

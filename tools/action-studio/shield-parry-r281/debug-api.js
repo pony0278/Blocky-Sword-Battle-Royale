@@ -31,6 +31,8 @@ export function createShieldParryDebugApi({
     get laneGround() { return runtimes.laneController?.report ?? null; },
     get laneDefenderIntent() { return runtimes.laneController?.defenderIntent ?? 0; },
     get laneAttackerIntent() { return runtimes.laneController?.attackerIntent ?? 0; },
+    get laneAttackerGait() { return runtimes.laneController?.attackerGait ?? null; },
+    get laneAttackerWalkSample() { return runtimes.laneController?.attackerWalkSample ?? null; },
     get engagementStance() { return runtimes.labScene?.engagementStance ?? null; },
     triggerParryNow: actions.triggerParryNow,
     dispatchParryInput: actions.dispatchParryInput,
