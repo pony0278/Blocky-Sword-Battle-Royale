@@ -78,6 +78,7 @@
       <span>Predictive geometry</span><b>geometry-guided shield motion clamped to 18cm · unreachable linear target may fall back to measured current sweep · guidance · cannot veto input</b><span>Target continuity</span><b>previous post-tracking shield → primary relative drive → recapture rotated shield → bounded residual drive → real contact</b>
       <span>Success authority</span><b>real swept Sword × Shield contact</b>
       <span>Invalid / no input</span><b>falls back to BLOCK</b>
+      <span>Body hurtbox</span><b>the defender can now be struck · four bands taken from the rig's own bones (head / chest / waist / knees), so a crouched or displaced fighter is hit where they actually are · the shield is asked first, always: a blade the guard caught never reaches the body · a hit is the fact the blade arrived, not damage</b>
       <span>Guard coverage (BLOCK)</span><b>omnidirectional · the guard reads the committed direction, waits out a 70ms reaction delay, then covers it: directional anchor → predicted threat once it is credible → measured swept approach once the blade is close · the shield arm is bounded to 34cm of travel at 1.55m/s and a low threat also recruits the planted crouch, so a short-warning attack still gets through · TOP and RIGHT block every attempt across 1.6-2.7m of separation. LEFT blocks every attempt too, but only with a steady frame budget and only within about 2cm of the 2.3m calibration distance - it sits exactly on its limit in both space and time, so a dropped frame or a step backwards costs the block</b>
       <span>Motion authority</span><b>current world shield surface · every frame</b><span>Early low stance</span><b>predicted future sword point ≤ 180ms starts posture only; once engaged, hold until real contact or attack reset</b>
       <span>Preset motion curve</span><b>none</b>
@@ -124,6 +125,6 @@
       this.classList.toggle('expanded');
     });
   </script>
-  <script type="module" src="./shield-driven-contact-coupling-lab-r281.js?v=g43b5r281-engagement-spacing-r18t1"></script>
+  <script type="module" src="./shield-driven-contact-coupling-lab-r281.js?v=g43b5r281-body-hurtbox-r18u1"></script>
 </body>
 </html>

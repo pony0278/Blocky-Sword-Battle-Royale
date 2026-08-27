@@ -18,6 +18,7 @@ const EXPECTED_EXCHANGE_KEYS = [
   'previousShieldLeadSurface',
   'firstContact',
   'latestContact',
+  'latestBodyHit',
   'latestCombatResult',
   'latestCombatUpdate',
   'latestFinePlan',

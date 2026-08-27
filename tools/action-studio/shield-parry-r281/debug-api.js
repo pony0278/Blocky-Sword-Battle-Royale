@@ -40,6 +40,7 @@ export function createShieldParryDebugApi({
     get latestParryInput() { return getExchangeState().latestParryInput; },
     get latestParryOpportunity() { return getExchangeState().latestParryOpportunity; },
     get latestContact() { return getExchangeState().latestContact; },
+    get latestBodyHit() { return getExchangeState().latestBodyHit; },
     get latestParryConfirmation() { return getExchangeState().latestParryConfirmation; },
     get step3AContactTransfer() { return getExchangeState().step3AContactTransfer; },
     get latestGripConstraintReport() { return getExchangeState().latestGripConstraintReport; },

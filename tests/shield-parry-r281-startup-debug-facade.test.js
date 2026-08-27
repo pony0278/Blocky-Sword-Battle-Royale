@@ -72,7 +72,7 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
   const exchangeState = {
     directOldB3Diagnostic: 'direct', latestPredictiveReport: 'predictive', latestShieldLeadMotion: 'lead',
     latestLeadHandoff: 'handoff', latestCombatResult: 'combat-result', latestParryInput: 'input',
-    latestParryOpportunity: 'opportunity', latestContact: 'contact', latestParryConfirmation: 'confirmation',
+    latestParryOpportunity: 'opportunity', latestContact: 'contact', latestBodyHit: 'body-hit', latestParryConfirmation: 'confirmation',
     step3AContactTransfer: 'transfer', latestGripConstraintReport: 'grip',
     latestFinePlan: 'fine-plan', latestFineTracking: 'fine-tracking',
     latestGuardCoverage: 'guard-coverage', latestGuardResidual: 'guard-residual', latestGuardStanceReach: 'guard-stance', latestParryWhiff: 'whiff',
@@ -107,7 +107,7 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
     'resetDebugStanceDefaults', 'swordGripConstraint', 'setEngagementSeparation', 'engagementStance',
     'triggerParryNow', 'dispatchParryInput',
     'forceOldTwoActorB3', 'directOldB3Diagnostic', 'latestPredictiveReport', 'latestShieldLeadMotion',
-    'latestLeadHandoff', 'latestCombatResult', 'latestParryInput', 'latestParryOpportunity', 'latestContact',
+    'latestLeadHandoff', 'latestCombatResult', 'latestParryInput', 'latestParryOpportunity', 'latestContact', 'latestBodyHit',
     'latestParryConfirmation', 'step3AContactTransfer', 'latestGripConstraintReport',
     'latestFinePlan', 'latestFineTracking', 'latestGuardCoverage', 'latestGuardResidual', 'latestGuardStanceReach', 'latestParryWhiff',
     'latestInterceptDriveReport', 'latestVisualOwnershipBaseline', 'visualOwnershipTrace',

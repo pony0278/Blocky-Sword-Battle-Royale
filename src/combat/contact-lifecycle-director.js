@@ -16,6 +16,7 @@ import { publishPostCouplingRecoilStaggerHandoff } from './post-coupling-recoil-
 import { captureRigPose } from './guard-recovery-bridge.js';
 import { getProductionParryDeflectProfile } from '../animation/parry-contact-deflect-runtime-clip.js';
 import { sanitizeIncomingVelocity } from './contact-reaction-director.js';
+import { probeBodyHurtboxContact } from './body-hurtbox.js';
 
 export const CONTACT_LIFECYCLE_DIRECTOR_STAGE = 'R18S.4';
 
@@ -24,6 +25,8 @@ export const CONTACT_LIFECYCLE_DIRECTOR_STAGE = 'R18S.4';
 //
 //   detect  - the swept probe fires, temporal eligibility filters it, and the first real contact
 //             is latched. The probe is the success authority; everything after it is staging.
+//             A sweep that misses the shield is then offered to the body: shield first, always,
+//             because a blade the guard caught never reaches what is behind it.
 //   resolve - the parry gate confirms (or does not), the combat integration resolves the outcome,
 //             and the attacker's rig is frozen at the instant of impact - that snapshot is the
 //             base every later pose blends from.
@@ -57,6 +60,20 @@ export const PARRY_ATTACKER_RELEASE_SOURCE_SECONDS =
 
 const WEAPON_ARM_RELEASE_BONES = Object.freeze(['upperarm.r', 'lowerarm.r', 'wrist.r', 'hand.r', 'handslot.r']);
 
+// The closest the blade came to the body across the whole exchange, not the last frame's reading:
+// the last frame is the follow-through, and the question worth answering is how near it got when
+// it mattered. A strike always wins over any near miss, however near.
+function nearerBodyReading(standing, candidate) {
+  if (!standing) return candidate;
+  if (standing.contact === true) return standing;
+  if (candidate.contact === true) return candidate;
+  const standingGap = Number(standing.gapMeters);
+  const candidateGap = Number(candidate.gapMeters);
+  if (!Number.isFinite(candidateGap)) return standing;
+  if (!Number.isFinite(standingGap)) return candidate;
+  return candidateGap < standingGap ? candidate : standing;
+}
+
 function finiteOrNull(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -74,11 +91,13 @@ export function createContactLifecycleDirector({
   readGuardReport,
   takePredictiveHandoff,
   readCanonicalContactPose,
+  readDefenderHurtbox,
   fallbackIncomingVelocity,
   releaseReachOwnership,
   observe = {},
 } = {}) {
   let firstContact = null;
+  let bodyHit = null;
   let confirmation = null;
   let combatResult = null;
   let transfer = null;
@@ -322,7 +341,34 @@ export function createContactLifecycleDirector({
     // gate's armed state and the confirmation below is what consumes it.
     observe.contactEvaluated?.(contactEvaluation, attackSnapshot);
     if (!contactEvaluation.contact) {
-      return Object.freeze({ contactEvaluation, contacted: false, event: null });
+      // The shield was not there. Whatever is behind it now gets its turn - and only now, because
+      // a blade the guard caught never reaches the body at all.
+      const hurtbox = readDefenderHurtbox?.() || null;
+      const bodyContact = hurtbox
+        ? probeBodyHurtboxContact({
+            previousBlade,
+            currentBlade,
+            hurtbox,
+            deltaSeconds,
+            active: contactEvaluation.eligible !== false,
+          })
+        : null;
+      if (bodyContact) bodyHit = nearerBodyReading(bodyHit, bodyContact);
+      if (bodyContact?.contact !== true) {
+        return Object.freeze({ contactEvaluation, contacted: false, bodyContact, event: null });
+      }
+      firstContact = contactEvaluation;
+      observe.bodyStruck?.(bodyContact);
+      return Object.freeze({
+        contactEvaluation,
+        contacted: false,
+        bodyContact,
+        event: Object.freeze({
+          type: 'body-struck',
+          band: bodyContact.band,
+          point: bodyContact.point,
+        }),
+      });
     }
 
     firstContact = contactEvaluation;
@@ -571,6 +617,7 @@ export function createContactLifecycleDirector({
   function reset() {
     reactionDirector.reset();
     firstContact = null;
+    bodyHit = null;
     confirmation = null;
     combatResult = null;
     transfer = null;
@@ -604,6 +651,7 @@ export function createContactLifecycleDirector({
     get blockReaction() { return blockReaction; },
     get latchedDefenderGate() { return latchedDefenderGate; },
     get firstContact() { return firstContact; },
+    get bodyHit() { return bodyHit; },
     get confirmation() { return confirmation; },
     get combatResult() { return combatResult; },
     get frozenContactPose() { return frozenContactPose; },
