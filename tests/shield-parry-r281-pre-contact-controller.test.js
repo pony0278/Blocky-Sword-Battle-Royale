@@ -18,12 +18,17 @@ test('R18M.5 entry delegates pre-contact orchestration to one controller', () =>
   assert.doesNotMatch(entry, /function recordWhiffProbe\(/);
 });
 
-test('R18M.5 controller owns the existing Block bracing and fine-tracking path', () => {
+test('R18M.5 controller owns the Block bracing and hands coverage to its director', () => {
+  // R18S.2: the brace is still the controller's - it is authored against the lab's own surface
+  // read. Which coverage pass runs when is the director's, and the controller only publishes
+  // what came back.
   assert.match(controller, /function updateBlockPreContact\(/);
   assert.match(controller, /planArticulatedImpactBracing\(\{/);
   assert.match(controller, /bracingRuntime\.update\(bracePlan, deltaSeconds\)/);
-  assert.match(controller, /planFineGuardTracking\(\{/);
-  assert.match(controller, /fineTrackingRuntime\.update\(exchangeState\.latestFinePlan, deltaSeconds\)/);
+  assert.match(controller, /createGuardCoverageDirector\(\{/);
+  assert.match(controller, /readShieldSurface: \(\) => buckler\.getWorldParrySurface\(\)/);
+  assert.match(controller, /guardCoverageDirector\.update\(\{/);
+  assert.match(controller, /exchangeState\.latestFineTracking = coverage\.tracking/);
   assert.match(controller, /exchangeState\.previousShieldLeadSurface = cloneSurface\(buckler\.getWorldParrySurface\(\)\)/);
 });
 

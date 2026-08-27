@@ -10,7 +10,7 @@ import {
 } from '../../src/combat/swept-sword-buckler-contact.js?v=g43b5r281-residual-body-reach-r18';
 import { buildParryWhiffDiagnostic } from '../../src/combat/parry-whiff-diagnostic.js?v=g43b5r281-residual-body-reach-r18';
 import { selectReachableParryInterceptTarget } from '../../src/combat/reachable-parry-intercept-target.js?v=g43b5r281-residual-body-reach-r18';
-import { createGuardThreatTrackingRuntime, getGuardThreatTrackingProfile, planGuardThreatCorrection, predictGuardThreat } from '../../src/combat/guard-threat-tracking.js?v=g43b5r281-residual-body-reach-r18';
+import { createGuardThreatTrackingRuntime, planGuardThreatCorrection } from '../../src/combat/guard-threat-tracking.js?v=g43b5r281-residual-body-reach-r18';
 import { createGuardResidualBodyReachRuntime } from '../../src/combat/guard-residual-body-reach.js?v=g43b5r281-residual-body-reach-r18';
 import {
   GUARD_RESIDUAL_STANCE_REACH_PROFILE,
@@ -215,7 +215,6 @@ const preContactController = createShieldParryPreContactController({
     measureSweptSwordBucklerClosestApproach,
     selectReachableParryInterceptTarget,
     planGuardThreatCorrection,
-    predictGuardThreat, getGuardThreatTrackingProfile,
     sampleActiveShieldLeadMotion,
     compactInterceptDriveTraceFrame,
     compactInterceptDriveTelemetry,

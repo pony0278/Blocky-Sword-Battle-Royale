@@ -10,6 +10,10 @@ const preContactSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url),
   'utf8',
 );
+const guardCoverageDirectorSource = readFileSync(
+  new URL('../src/combat/guard-coverage-director.js', import.meta.url),
+  'utf8',
+);
 const contactHandoffSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url),
   'utf8',
@@ -308,7 +312,7 @@ test('Step 3A uses bounded lowerarm plus wrist hierarchy travel instead of a sch
 test('Step 3A does not add the live grip constraint to the original Block pre-contact path', () => {
   const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');
   assert.match(block, /planArticulatedImpactBracing/);
-  assert.match(block, /planFineGuardTracking/);
+  assert.match(block, /guardCoverageDirector\.update/);
   assert.doesNotMatch(block, /swordGripConstraint/);
 });
 
@@ -411,16 +415,17 @@ test('armed Parry recruits predicted or measured low stance, holds it, and prese
   // The pre-contact no-step guarantee is now stated as the zero-displacement
   // window: nothing may move while the swept probe owns parry success.
   assert.match(html, /zero displacement while the swept probe owns success/);
-  const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');
+  // R18S.2: Guard's own reaches moved into its director, so that is where these hold now.
   // R18R.6: Guard may close its own measured residual, but only at Guard's budget - the plan it
-  // refines with has to be a guard-mode plan, never Parry's. The body and stance reaches stay
-  // Parry-only: Guard covers a direction, it does not lean and plant to meet a blade.
-  assert.match(block, /fineTrackingRuntime\.refineMeasuredContact\(guardResidualPlan/);
-  assert.match(block, /planGuardThreatCorrection\(\{\s*mode: 'guard',\s*threat: guardResidualTarget\.threat/);
-  // R18R.10: Guard recruits the planted crouch too, in its own mode and on its own profile. The
-  // body reach stays Parry-only - Guard drops, it does not lean.
-  assert.match(block, /residualStanceReachRuntime\.update\(\{\s*\n\s*mode: guardTracking \? 'guard' : 'off',\s*\n\s*profile: GUARD_MODE_STANCE_REACH_PROFILE,/);
-  assert.doesNotMatch(block, /residualBodyReachRuntime\.update/);
+  // refines with has to be a guard-mode plan, never Parry's.
+  assert.match(guardCoverageDirectorSource, /trackingRuntime\.refineMeasuredContact\(plan, deltaSeconds, RESIDUAL_REFINEMENT\)/);
+  assert.match(guardCoverageDirectorSource, /planGuardThreatCorrection\(\{ mode: 'guard', threat: target\.threat/);
+  // R18R.10: Guard recruits the planted crouch too, in its own mode and on its own profile.
+  assert.match(guardCoverageDirectorSource, /stanceRuntime\.update\(\{\s*\n\s*mode: tracking \? 'guard' : 'off',\s*\n\s*profile: GUARD_MODE_STANCE_REACH_PROFILE,/);
+  // The body reach stays Parry-only, in both places: Guard drops, it does not lean.
+  const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');
+  assert.doesNotMatch(block, /residualBodyReachRuntime/);
+  assert.doesNotMatch(guardCoverageDirectorSource, /residualBodyReach|BodyReachRuntime/);
 });
 
 test('F review batches presentation rebuilds and avoids dynamic debug bounds work', () => {
