@@ -167,3 +167,23 @@ test('R19B.2 a lunge in progress cannot carry the attacker inside the defender e
   assert.ok(Math.abs(lane.separationMeters - min) < 1e-9);
   assert.ok(lane.report.attackerSwingMeters > START - min, 'backing away gives the lunge more room');
 });
+
+test('R19D.1 rebase adopts a new stance and forgets the fight that happened on the old one', () => {
+  const lane = ground();
+  lane.setAttackerSwing(0.5);
+  lane.settleImpact('block');
+  lane.moveDefender(0.3);
+  assert.notEqual(lane.separationMeters, START);
+
+  const rebased = lane.rebase(3.1);
+  assert.equal(rebased.separationMeters, 3.1);
+  assert.equal(rebased.startSeparationMeters, 3.1);
+  assert.equal(lane.attackerMeters, 0);
+  assert.equal(lane.defenderMeters, 0);
+
+  // A junk stance keeps the current base rather than inventing one.
+  lane.setAttackerSwing(0.2);
+  lane.rebase('nonsense');
+  assert.equal(lane.report.startSeparationMeters, 3.1);
+  assert.equal(lane.separationMeters, 3.1, 'rebase still clears the fight even when the base stands');
+});

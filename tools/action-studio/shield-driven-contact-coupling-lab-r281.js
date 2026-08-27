@@ -181,6 +181,7 @@ let attackerIdleDuration = 1;
 let attackerIdleClockSeconds = 0;
 let attackerRecovery = null;
 let repeatCooldownMs = 0;
+let bootExchangePending = false; // R19D.1: the boot demo attack must not spend the player's opening ground
 let previousBlade = null;
 let hudClockMs = HUD_INTERVAL_MS;
 let reportClockMs = REPORT_INTERVAL_MS;
@@ -499,6 +500,7 @@ async function main() {
   status.className = 'good';
   buildReport();
   startAttack('right');
+  bootExchangePending = true;
 }
 
 bindShieldParryLabUiEvents({
@@ -595,6 +597,11 @@ function frame(timestamp) {
     if (hudClockMs >= HUD_INTERVAL_MS) { hudClockMs %= HUD_INTERVAL_MS; updateHud(snapshot, combatSnapshot); }
     if (reportClockMs >= REPORT_INTERVAL_MS) { reportClockMs %= REPORT_INTERVAL_MS; buildReport(combatSnapshot); }
 
+    // The startup attack is a demo; once it finishes, hand the player the calibrated stance.
+    if (bootExchangePending && !combat.active && !attackRuntime.active && !attackerRecovery) {
+      bootExchangePending = false;
+      laneController.resetLane();
+    }
     if (!combat.active && !attackRuntime.active && !attackerRecovery && guardMachine.state === GUARD_STATES.HOLD && autoRepeat.checked) {
       repeatCooldownMs += deltaMs;
       if (repeatCooldownMs >= 700) startAttack(selectedDirection);
@@ -622,12 +629,14 @@ window.__G43B5R281_LAB__ = createShieldParryDebugApi({
     triggerParryNow,
     dispatchParryInput,
     forceOldTwoActorB3,
+    resetLane: () => (combat.active || attackRuntime.active ? null : laneController.resetLane()),
     setEngagementSeparation: (meters) => {
       // Between exchanges only: moving either actor mid-exchange would move the geometry the
       // swept contact probe is measuring.
       if (combat.active || attackRuntime.active) return null;
       const stance = labScene.setEngagementSeparation(meters);
       resetExchange();
+      laneController.resetLane(); // the ledger's base must follow the stance
       return stance;
     },
   },

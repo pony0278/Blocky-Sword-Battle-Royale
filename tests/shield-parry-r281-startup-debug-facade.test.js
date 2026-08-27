@@ -105,7 +105,7 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
     'startAttack', 'restartAttack', 'setMode', 'combat', 'attackRuntime', 'guardMachine',
     'predictivePresentation', 'parryGate', 'freeCamera', 'residualBodyReachRuntime',
     'residualStanceReachRuntime', 'debugMode', 'debugStanceProfile', 'refreshDebugStanceProfile',
-    'resetDebugStanceDefaults', 'swordGripConstraint', 'setEngagementSeparation',
+    'resetDebugStanceDefaults', 'swordGripConstraint', 'setEngagementSeparation', 'resetLane',
     'laneGround', 'laneDefenderIntent', 'laneAttackerIntent', 'laneAttackerGait',
     'laneAttackerWalkSample', 'engagementStance',
     'triggerParryNow', 'dispatchParryInput',

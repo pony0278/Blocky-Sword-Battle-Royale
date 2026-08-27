@@ -28,6 +28,7 @@ export function createShieldParryDebugApi({
     resetDebugStanceDefaults: actions.resetDebugStanceDefaults,
     swordGripConstraint: runtimes.swordGripConstraint,
     setEngagementSeparation: actions.setEngagementSeparation,
+    resetLane: actions.resetLane,
     get laneGround() { return runtimes.laneController?.report ?? null; },
     get laneDefenderIntent() { return runtimes.laneController?.defenderIntent ?? 0; },
     get laneAttackerIntent() { return runtimes.laneController?.attackerIntent ?? 0; },

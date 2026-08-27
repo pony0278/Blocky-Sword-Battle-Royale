@@ -72,6 +72,23 @@ test('R18T.1 the lab places its fighters from the module and can only move them 
   assert.match(entry, /labScene\.setEngagementSeparation\(meters\)/);
 });
 
+test('R19D.1 the lab returns to the calibrated stance after boot and after a stance change', async () => {
+  const entry = await readFile(
+    new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url),
+    'utf8',
+  );
+  // The ground ledger persists between exchanges by design, which broke two things silently: the
+  // boot demo attack banked ~0.5m before the player touched anything, and a runtime stance change
+  // moved the scene while the ledger kept its old base. Both now reset the lane, and this lock is
+  // the invariant nothing else guards -- the unit suite cannot see composed browser state.
+  assert.match(entry, /bootExchangePending = true;/);
+  assert.match(entry, /if \(bootExchangePending && !combat\.active && !attackRuntime\.active && !attackerRecovery\)/);
+  const stanceChange = entry.indexOf('labScene.setEngagementSeparation(meters)');
+  const laneReset = entry.indexOf('laneController.resetLane()', stanceChange);
+  assert.notEqual(stanceChange, -1);
+  assert.ok(laneReset > stanceChange, 'a stance change must rebase the ledger or the two describe different worlds');
+});
+
 test('R18V.1 replaces the provisional band with the measured one', () => {
   const band = MEASURED_FULL_COVERAGE_BAND_METERS;
   assert.ok(band.minimum < band.maximum, 'a placeholder band collapses to a point; a measured one does not');

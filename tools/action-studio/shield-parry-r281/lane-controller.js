@@ -127,6 +127,18 @@ export function createShieldParryLaneController({ labScene, walkClips }) {
       exchangeSettled = false;
       return apply();
     },
+    // R19D.1: back to the scene's calibrated stance, forgetting the ground the fight moved. Two
+    // callers need this and nothing else does: the boot sequence, whose demo attack must not spend
+    // the player's opening position, and a runtime stance change, after which offsets earned at
+    // the old distance describe a fight that no longer exists. Held keys and the gait's phase
+    // survive - only the ground is forgotten.
+    resetLane() {
+      swingLive = false;
+      exchangeSettled = false;
+      advance.reset();
+      ground.rebase(labScene.engagementStance.separationMeters);
+      return apply();
+    },
     get report() { return ground.report; },
     get separationMeters() { return ground.separationMeters; },
   });

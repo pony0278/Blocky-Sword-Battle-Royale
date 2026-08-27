@@ -53,7 +53,7 @@ export function resolveGroundTransfer(outcome) {
 // scene put the fighters at, so the stance stays the base and this only ever says how far the
 // fight has carried them off it.
 export function createEngagementGround(options = {}) {
-  const startSeparationMeters = Math.max(0, finite(options.startSeparationMeters, 0));
+  let startSeparationMeters = Math.max(0, finite(options.startSeparationMeters, 0));
   // R19B.2: walking already refuses to carry anyone through their opponent, but a swing's step is
   // not a walk and was never checked against anything. Now that a whiffed lunge banks its step
   // rather than giving it back, repeated whiffs are a path straight through the defender, so the
@@ -154,6 +154,17 @@ export function createEngagementGround(options = {}) {
     return report();
   }
 
+  // R19D.1: return to a stance, forgetting the fight that happened on the old one. This exists
+  // because the ledger's base was captured once at construction while the scene's stance could be
+  // changed at runtime, after which the two described different worlds: the scene placed fighters
+  // from the new stance plus old offsets while the ledger kept computing separation from the old
+  // base. Rebasing is the only honest response to the stance changing - carrying offsets earned at
+  // one distance onto another would mean ground won in a different fight.
+  function rebase(newStartSeparationMeters) {
+    startSeparationMeters = Math.max(0, finite(newStartSeparationMeters, startSeparationMeters));
+    return reset();
+  }
+
   return Object.freeze({
     moveAttacker,
     moveDefender,
@@ -161,6 +172,7 @@ export function createEngagementGround(options = {}) {
     settleImpact,
     settleWhiff,
     reset,
+    rebase,
     get report() { return report(); },
     get attackerMeters() { return attackerGroundMeters + attackerSwingMeters; },
     get defenderMeters() { return defenderGroundMeters; },
