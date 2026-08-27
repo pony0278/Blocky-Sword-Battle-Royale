@@ -417,8 +417,10 @@ test('armed Parry recruits predicted or measured low stance, holds it, and prese
   // Parry-only: Guard covers a direction, it does not lean and plant to meet a blade.
   assert.match(block, /fineTrackingRuntime\.refineMeasuredContact\(guardResidualPlan/);
   assert.match(block, /planGuardThreatCorrection\(\{\s*mode: 'guard',\s*threat: guardResidualTarget\.threat/);
+  // R18R.10: Guard recruits the planted crouch too, in its own mode and on its own profile. The
+  // body reach stays Parry-only - Guard drops, it does not lean.
+  assert.match(block, /residualStanceReachRuntime\.update\(\{\s*\n\s*mode: guardTracking \? 'guard' : 'off',\s*\n\s*profile: GUARD_MODE_STANCE_REACH_PROFILE,/);
   assert.doesNotMatch(block, /residualBodyReachRuntime\.update/);
-  assert.doesNotMatch(block, /residualStanceReachRuntime\.update/);
 });
 
 test('F review batches presentation rebuilds and avoids dynamic debug bounds work', () => {

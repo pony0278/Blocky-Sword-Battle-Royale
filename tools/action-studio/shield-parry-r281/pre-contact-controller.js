@@ -8,6 +8,7 @@ import {
 import { createTopPrepReadabilityHoldRuntime } from '../../../src/combat/parry-top-prep-readability-hold.js';
 import { createGuardCoverageLatch } from '../../../src/combat/guard-coverage-latch.js';
 import { createGuardCoverageTargetTracker, selectGuardCoverageTarget } from '../../../src/combat/guard-coverage-target.js';
+import { GUARD_MODE_STANCE_REACH_PROFILE } from '../../../src/combat/guard-residual-stance-reach.js';
 
 const TOP_DIRECTION_PROBE_ARM_BONES = Object.freeze(['upperarm.l', 'lowerarm.l']);
 
@@ -169,6 +170,37 @@ export function createShieldParryPreContactController({
           iterations: 2,
         })
       : null;
+    // R18R.10: Guard's shield arm runs out of envelope with the blade still a few centimetres off
+    // the disc, so it recruits the same planted crouch Parry uses, at Parry's crouch budget, with
+    // the plane cues relaxed to what Guard's arm can actually deliver. The stance decides for
+    // itself whether the threat is low enough to be worth dropping for.
+    const guardStanceApproach = guardTracking
+      ? measureSweptSwordBucklerClosestApproach({
+          previousBlade, currentBlade, bucklerSurface: cloneSurface(buckler.getWorldParrySurface()),
+        })
+      : null;
+    exchangeState.latestGuardStanceReach = residualStanceReachRuntime.update({
+      mode: guardTracking ? 'guard' : 'off',
+      profile: GUARD_MODE_STANCE_REACH_PROFILE,
+      closestApproach: guardStanceApproach,
+      // Crouching at 1.05m/s cannot be started in the two frames where the blade is measurable, so
+      // the stance is offered the same coverage target the shield arm is already aiming at. Early
+      // in the swing that is the directional anchor, which is exactly the read a defender makes
+      // when they drop into a low guard before the sword is anywhere near them.
+      anticipatedClosestApproach: guardTarget?.threat?.worldPoint
+        ? { point: guardTarget.threat.worldPoint }
+        : null,
+      anticipatedLeadSeconds: guardTarget?.threat?.futureSeconds ?? null,
+      // What the shield arm is attempting and achieving this frame, so the stance can tell the
+      // difference between "the arm is still closing this" and "the arm has done all it can".
+      armEvidence: {
+        extensionRatio: 0,
+        correctionAttemptedMeters: exchangeState.latestFinePlan?.appliedDistance ?? 0,
+        correctionAchievedMeters: exchangeState.latestFineTracking?.achievedDistance ?? 0,
+        edgeGapBeforeMeters: guardApproach?.radialGapMeters ?? 0,
+        edgeGapAfterMeters: guardStanceApproach?.radialGapMeters ?? 0,
+      },
+    }, deltaSeconds);
     const guardTracked = guardTracking
       ? measureSweptSwordBucklerClosestApproach({
           previousBlade, currentBlade, bucklerSurface: cloneSurface(buckler.getWorldParrySurface()),
