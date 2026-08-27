@@ -5,6 +5,7 @@ import { readFile, readdir } from 'node:fs/promises';
 const entryUrl = new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url);
 const entrySource = await readFile(entryUrl, 'utf8');
 const moduleDirUrl = new URL('../tools/action-studio/shield-parry-r281/', import.meta.url);
+const frameReportingSource = await readFile(new URL('frame-reporting.js', moduleDirUrl), 'utf8');
 
 function indexOfOrFail(source, marker) {
   const index = source.indexOf(marker);
@@ -14,7 +15,7 @@ function indexOfOrFail(source, marker) {
 
 test('R18M.C6 leaves a deliberately thin authority entry without redundant controller getter wrappers', () => {
   const lineCount = entrySource.split('\n').length;
-  assert.ok(lineCount <= 725, `R281 entry should stay at or below the audited 725-line ceiling, got ${lineCount}`);
+  assert.ok(lineCount <= 660, `R281 entry should stay at or below the audited 660-line ceiling, got ${lineCount}`);
   for (const redundant of [
     'function step3AOwnsLiveContact()',
     'function updateDefenderDeflectReleaseGate()',
@@ -23,8 +24,12 @@ test('R18M.C6 leaves a deliberately thin authority entry without redundant contr
     'function recordVisibleOldB3Sample(',
     'function requestedOutcome()',
   ]) assert.ok(!entrySource.includes(redundant), `redundant wrapper remains: ${redundant}`);
+  // Both gates are read straight off the controller wherever they are needed. R18V.3 moved the
+  // reporting reads into frame-reporting.js; what this test protects is that neither file grew a
+  // local wrapper around them on the way.
   assert.match(entrySource, /contactHandoffController\.ownsLiveContact\(\)/);
-  assert.match(entrySource, /contactHandoffController\.defenderDeflectReleaseGate\(\)/);
+  assert.match(frameReportingSource, /contactHandoffController\.ownsLiveContact\(\)/);
+  assert.match(frameReportingSource, /contactHandoffController\.defenderDeflectReleaseGate\(\)/);
 });
 
 test('R18M.C6 retains all explicit local authority and ordering boundaries required by #63', () => {

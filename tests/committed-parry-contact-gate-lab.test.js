@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const html = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab.html', import.meta.url), 'utf8');
 const source = readFileSync(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
 const labUiSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/lab-ui.js', import.meta.url), 'utf8');
+const frameReportingSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/frame-reporting.js', import.meta.url), 'utf8');
 const preContactSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
 const contactHandoffSource = readFileSync(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');
 
@@ -48,7 +49,7 @@ test('Step 2 exposes one manual Parry and removes Perfect from the Lab', () => {
   assert.match(html, /id="slowReview"[^>]*checked/);
   assert.match(html, />PARRY NOW \(F\)</);
   assert.doesNotMatch(html, /data-mode="perfect"/);
-  assert.match(html, /g43b5r281-anchor-coverage-r18v1/);
+  assert.match(html, /g43b5r281-frame-reporting-r18v3/);
 });
 
 test('Step 2 does not auto-start Parry from predictive timing', () => {
@@ -104,7 +105,7 @@ test('Step 2 previews the live gate without consuming input and gives an explici
   assert.doesNotMatch(preContact, /predictivePresentation\.start/);
   assert.match(labUiSource, /PARRY NOW! · PRESS F/);
   assert.match(labUiSource, /ATTEMPT USED/);
-  assert.match(source, /parryAttempt: parryGate\.attempt/);
+  assert.match(frameReportingSource, /parryAttempt: parryGate\.attempt/);
   assert.match(source, /function restartAttack/);
   assert.match(labUiSource, /elements\.retryAttack\.addEventListener\('click', handlers\.onRetryAttack\)/);
   assert.match(source, /onRetryAttack: \(\) => restartAttack\(selectedDirection\)/);

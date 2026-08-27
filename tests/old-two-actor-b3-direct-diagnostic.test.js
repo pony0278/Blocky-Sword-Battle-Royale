@@ -16,7 +16,7 @@ function functionBody(name) {
 
 test('Step 1 exposes a direct OLD Two-Actor B3 diagnostic control', () => {
   assert.match(html, /id="forceOldB3"/);
-  assert.match(html, /g43b5r281-anchor-coverage-r18v1/);
+  assert.match(html, /g43b5r281-frame-reporting-r18v3/);
   assert.match(source, /forceOldTwoActorB3/);
   assert.match(diagnosticSource, /direct-existing-old-two-actor-b3-diagnostic/);
 });
@@ -38,6 +38,6 @@ test('Step 1 diagnostic remains available after Step 2 replaces the active coupl
   assert.match(source, /function triggerParryNow/);
   assert.match(source, /function forceOldTwoActorB3/);
   const resolveStart = source.indexOf('function resolveContact(');
-  const resolveEnd = source.indexOf('function updateHud(', resolveStart);
+  const resolveEnd = source.indexOf('async function main(', resolveStart);
   assert.doesNotMatch(source.slice(resolveStart, resolveEnd), /couplingRuntime\.start/);
 });

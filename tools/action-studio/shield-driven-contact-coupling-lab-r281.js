@@ -15,7 +15,6 @@ import {
   createGuardResidualStanceReachRuntime,
 } from '../../src/combat/guard-residual-stance-reach.js?v=g43b5r281-debug-low-stance-controls-r18e';
 import { planFineGuardTracking } from '../../src/combat/directional-guard-bracing.js';
-import { assessGuardAnchorCoverage } from '../../src/combat/guard-directional-anchor.js';
 import { createArticulatedImpactBracingRuntime, planArticulatedImpactBracing } from '../../src/combat/articulated-impact-bracing.js';
 import {
   analyzePredictiveInterceptParry,
@@ -76,6 +75,8 @@ import {
 import { createShieldParryPreContactController } from './shield-parry-r281/pre-contact-controller.js';
 import { createShieldParryContactHandoffController } from './shield-parry-r281/contact-handoff-controller.js';
 import { createShieldParryLabScene } from './shield-parry-r281/lab-scene.js';
+import { cloneSurface, magnitude, createBladePolylineSampler } from './shield-parry-r281/lab-geometry.js';
+import { createShieldParryFrameReporting } from './shield-parry-r281/frame-reporting.js';
 import { createShieldParryInspectionOverlay } from './shield-parry-r281/inspection-overlay.js';
 import { createAttackerPresentationAdapter } from './shield-parry-r281/attacker-presentation.js';
 import { createDirectOldB3DiagnosticController } from './shield-parry-r281/direct-old-b3-diagnostic.js';
@@ -277,48 +278,40 @@ const directOldB3DiagnosticController = createDirectOldB3DiagnosticController({
       status.textContent = text;
       status.className = className;
     },
-    buildReport,
+    // Bound lazily on purpose: the reporting is constructed below because it needs this very
+    // controller, so the binding cannot exist yet. The arrow is only ever called after both do.
+    buildReport: (combatSnapshot) => buildReport(combatSnapshot),
   },
 });
 
-const bladeNodes = [attackerSword.bladeBase, attackerSword.bladeMid, attackerSword.tip];
-const bladeScratch = bladeNodes.map(() => new THREE.Vector3());
-const bladeBuffers = [0, 1].map(() => bladeNodes.map(() => ({ x: 0, y: 0, z: 0 })));
-let bladeBufferIndex = 0;
+const captureBladePolyline = createBladePolylineSampler(THREE, attackerSword);
 
-function captureBladePolyline() {
-  attackerSword.object3d.updateMatrixWorld(true);
-  const buffer = bladeBuffers[bladeBufferIndex];
-  bladeBufferIndex = 1 - bladeBufferIndex;
-  for (let i = 0; i < bladeNodes.length; i += 1) {
-    bladeNodes[i].getWorldPosition(bladeScratch[i]);
-    buffer[i].x = bladeScratch[i].x;
-    buffer[i].y = bladeScratch[i].y;
-    buffer[i].z = bladeScratch[i].z;
-  }
-  return buffer;
-}
-
-function cloneSurface(surface = {}) {
-  return {
-    center: {
-      x: Number(surface.center?.x) || 0,
-      y: Number(surface.center?.y) || 0,
-      z: Number(surface.center?.z) || 0,
-    },
-    normal: {
-      x: Number(surface.normal?.x) || 0,
-      y: Number(surface.normal?.y) || 0,
-      z: Number(surface.normal?.z) || -1,
-    },
-    radius: Number(surface.radius) || 0,
-    thickness: Number(surface.thickness) || 0,
-  };
-}
-
-function magnitude(v) {
-  return v ? Math.hypot(Number(v.x) || 0, Number(v.y) || 0, Number(v.z) || 0) : 0;
-}
+// Gathering only, and constructed here because every accessor below reads a `let` this file owns.
+const { updateParryCue, updateHud, buildReport } = createShieldParryFrameReporting({
+  labUi,
+  exchangeState,
+  documentRef: document,
+  windowRef: window,
+  reportNode,
+  runtimes: { combat, attackRuntime, parryGate, freeCamera, contactHandoffController, labScene },
+  services: { buildShieldParryVerificationReport, serializeVerificationReport },
+  constants: {
+    labStage: LAB_STAGE,
+    recoilStage: RECOIL_STAGE,
+    parryReviewRate: PARRY_REVIEW_RATE,
+    maxReportCharacters: MAX_REPORT_DOM_CHARACTERS,
+    recentCompactTraceFrames: RECENT_COMPACT_TRACE_FRAMES,
+    liveContactPhaseLatch: TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT_IMPULSE_PEAK,
+    debugMode: DEBUG_MODE,
+  },
+  read: {
+    ready: () => ready,
+    selectedMode: () => selectedMode,
+    selectedDirection: () => selectedDirection,
+    debugStanceProfile: () => debugStanceProfile,
+    parryReviewActive: (snapshot) => isParryPreContactReviewActive(snapshot),
+  },
+});
 
 function enterGuard() {
   guardMachine.send(GUARD_EVENTS.RESET, { stage: LAB_STAGE }); guardRuntime.sync(camera);
@@ -479,85 +472,6 @@ function resolveContact(snapshot, currentBlade, deltaSeconds) {
   });
 }
 
-function updateParryCue(snapshot = attackRuntime.snapshot) {
-  return labUi.updateParryCue({
-    snapshot,
-    ready,
-    selectedMode,
-    step3AContactTransfer: exchangeState.step3AContactTransfer,
-    latestGripConstraintReport: exchangeState.latestGripConstraintReport,
-    selectedDirection,
-    latestParryConfirmation: exchangeState.latestParryConfirmation,
-    latestParryWhiff: exchangeState.latestParryWhiff,
-    parryAttempt: parryGate.attempt,
-    firstContact: exchangeState.firstContact,
-    latestParryOpportunity: exchangeState.latestParryOpportunity,
-    parryReviewActive: isParryPreContactReviewActive(snapshot),
-    parryReviewRate: PARRY_REVIEW_RATE,
-    debugMode: DEBUG_MODE,
-  });
-}
-
-function updateHud(snapshot, combatSnapshot) {
-  return labUi.updateHud({
-    snapshot,
-    combatSnapshot,
-    latestCombatResult: exchangeState.latestCombatResult,
-    latestParryWhiff: exchangeState.latestParryWhiff,
-    latestParryConfirmation: exchangeState.latestParryConfirmation,
-    latestParryInput: exchangeState.latestParryInput,
-    selectedMode,
-    requestedOutcome: selectedMode,
-    parryReviewActive: isParryPreContactReviewActive(snapshot),
-    parryReviewRate: PARRY_REVIEW_RATE,
-    parryPromptHeld: Boolean(exchangeState.parryPromptHold),
-    firstContact: exchangeState.firstContact,
-    latestFinePlan: exchangeState.latestFinePlan,
-    latestFineTracking: exchangeState.latestFineTracking, latestGuardCoverage: exchangeState.latestGuardCoverage,
-    anchorCoverage: assessGuardAnchorCoverage({
-      direction: selectedDirection,
-      separationMeters: labScene.engagementStance?.separationMeters,
-    }),
-    latestReachableInterceptTarget: exchangeState.latestReachableInterceptTarget,
-    latestGripConstraintReport: exchangeState.latestGripConstraintReport,
-    step3AContactTransfer: exchangeState.step3AContactTransfer,
-    defenderReleaseGate: contactHandoffController.defenderDeflectReleaseGate(),
-    step3AOwnsLiveContact: contactHandoffController.ownsLiveContact(),
-    directOldB3Diagnostic: exchangeState.directOldB3Diagnostic,
-    debugMode: DEBUG_MODE,
-  });
-}
-
-function buildReport(combatSnapshot = combat.snapshot) {
-  const report = buildShieldParryVerificationReport({
-    combatSnapshot,
-    exchangeState,
-    labStage: LAB_STAGE,
-    recoilStage: RECOIL_STAGE,
-    ready,
-    selectedDirection,
-    selectedMode,
-    parryProfile: parryGate.profile,
-    defenderReleaseGate: contactHandoffController.defenderDeflectReleaseGate(),
-    ownsLiveContact: contactHandoffController.ownsLiveContact(),
-    inspectionCameraSnapshot: freeCamera.snapshot(),
-    debugMode: DEBUG_MODE,
-    debugStanceProfile,
-    recentCompactTraceFrames: RECENT_COMPACT_TRACE_FRAMES,
-    liveContactPhaseLatch: TWO_ACTOR_PARRY_REACTION_PHASE_LATCHES.LIVE_CONTACT_IMPULSE_PEAK,
-  });
-  const publication = serializeVerificationReport({
-    report,
-    maxCharacters: MAX_REPORT_DOM_CHARACTERS,
-    traceFrames: exchangeState.interceptDriveTrace.length,
-    recentTraceFrames: Math.min(exchangeState.interceptDriveTrace.length, RECENT_COMPACT_TRACE_FRAMES),
-  });
-  reportNode.textContent = publication.displayText;
-  document.documentElement.dataset.g43b5r281 = report.pass ? 'pass' : 'fail';
-  window.__G43B5R281_RESULT__ = report;
-  window.__G43B5R281_PERF__ = publication.perf;
-  return report;
-}
 async function main() {
   status.textContent = `Loading UAL attacks + Skyrim Guard + ${LAB_STAGE}…`;
   const bootstrap = await bootstrapShieldParryLabAssets({

@@ -12,7 +12,8 @@ const preContactController = await readFile(new URL('../tools/action-studio/shie
 const contactHandoffController = await readFile(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');
 const visualOwnershipRuntimeTaps = await readFile(new URL('../tools/action-studio/shield-parry-r281/visual-ownership-runtime-taps.js', import.meta.url), 'utf8');
 const debugApi = await readFile(new URL('../tools/action-studio/shield-parry-r281/debug-api.js', import.meta.url), 'utf8');
-const exchangeOwnershipSources = `${entry}\n${preContactController}\n${contactHandoffController}\n${visualOwnershipRuntimeTaps}\n${debugApi}`;
+const frameReporting = await readFile(new URL('../tools/action-studio/shield-parry-r281/frame-reporting.js', import.meta.url), 'utf8');
+const exchangeOwnershipSources = `${entry}\n${preContactController}\n${contactHandoffController}\n${visualOwnershipRuntimeTaps}\n${debugApi}\n${frameReporting}`;
 
 const EXPECTED_EXCHANGE_KEYS = [
   'previousShieldLeadSurface',
