@@ -21,6 +21,8 @@ const EXPECTED_EXCHANGE_KEYS = [
   'latestCombatResult',
   'latestCombatUpdate',
   'latestFinePlan',
+  'latestGuardCoverage',
+  'latestGuardResidual',
   'latestFineTracking',
   'latestPredictiveAnalysis',
   'latestReachableInterceptTarget',

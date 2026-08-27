@@ -412,7 +412,11 @@ test('armed Parry recruits predicted or measured low stance, holds it, and prese
   // window: nothing may move while the swept probe owns parry success.
   assert.match(html, /zero displacement while the swept probe owns success/);
   const block = preContactFunctionBody('updateBlockPreContact', 'updateParryPreContact');
-  assert.doesNotMatch(block, /refineMeasuredContact/);
+  // R18R.6: Guard may close its own measured residual, but only at Guard's budget - the plan it
+  // refines with has to be a guard-mode plan, never Parry's. The body and stance reaches stay
+  // Parry-only: Guard covers a direction, it does not lean and plant to meet a blade.
+  assert.match(block, /fineTrackingRuntime\.refineMeasuredContact\(guardResidualPlan/);
+  assert.match(block, /planGuardThreatCorrection\(\{\s*mode: 'guard',\s*threat: guardResidualTarget\.threat/);
   assert.doesNotMatch(block, /residualBodyReachRuntime\.update/);
   assert.doesNotMatch(block, /residualStanceReachRuntime\.update/);
 });

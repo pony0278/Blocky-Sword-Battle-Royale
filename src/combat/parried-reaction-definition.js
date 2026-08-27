@@ -2,7 +2,7 @@ import {
   TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_ACTIVATIONS,
   TWO_ACTOR_WHOLE_BODY_RECOIL_BURST_STAGE,
   buildTwoActorWholeBodyRecoilBurst,
-} from './two-actor-whole-body-recoil-burst.js?v=g43b5r281-block-reaction-r18q1';
+} from './two-actor-whole-body-recoil-burst.js?v=g43b5r281-omnidirectional-guard-r18r';
 
 export const PARRIED_REACTION_DEFINITION_STAGE = 'G4.3B.5R.3.4';
 

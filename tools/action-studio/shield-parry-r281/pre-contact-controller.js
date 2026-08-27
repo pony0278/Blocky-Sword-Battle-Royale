@@ -6,6 +6,8 @@ import {
   shouldRetainTopDirectionAdditive,
 } from '../../../src/combat/parry-top-direction-compatibility-probe.js';
 import { createTopPrepReadabilityHoldRuntime } from '../../../src/combat/parry-top-prep-readability-hold.js';
+import { createGuardCoverageLatch } from '../../../src/combat/guard-coverage-latch.js';
+import { createGuardCoverageTargetTracker, selectGuardCoverageTarget } from '../../../src/combat/guard-coverage-target.js';
 
 const TOP_DIRECTION_PROBE_ARM_BONES = Object.freeze(['upperarm.l', 'lowerarm.l']);
 
@@ -50,6 +52,8 @@ export function createShieldParryPreContactController({
   const visualOwnership = createVisualOwnershipRuntimeTaps({ rig: defender.rig, exchangeState });
   const shieldArmAdditiveRuntime = createBoundedShieldArmAdditiveRuntime();
   const topPrepReadabilityHoldRuntime = createTopPrepReadabilityHoldRuntime();
+  const guardCoverageLatch = createGuardCoverageLatch();
+  const guardCoverageTargetTracker = createGuardCoverageTargetTracker();
   const topDirectionProbeQuery = typeof globalThis.location?.search === 'string'
     ? new URLSearchParams(globalThis.location.search).get('topProbe')
     : null;
@@ -59,6 +63,8 @@ export function createShieldParryPreContactController({
     magnitude,
     planArticulatedImpactBracing,
     planFineGuardTracking,
+    predictGuardThreat,
+    getGuardThreatTrackingProfile,
     analyzePredictiveInterceptParry,
     evaluateCommittedParryInput,
     measureSweptSwordBucklerClosestApproach,
@@ -82,12 +88,101 @@ export function createShieldParryPreContactController({
       : zeroBracePlan();
     bracingRuntime.update(bracePlan, deltaSeconds);
     const postBraceSurface = buckler.getWorldParrySurface();
-    exchangeState.latestFinePlan = planFineGuardTracking({
-      threat: bracePlan?.analysis?.threat || null,
-      bucklerSurface: postBraceSurface,
-      maxCorrectionMeters: bracePlan?.fineTrackMaxMeters || 0,
+    // R18R.1: Guard reads the threat itself instead of accepting the brace's 7cm cosmetic nudge.
+    // planGuardThreatCorrection in 'guard' mode picks the blade point genuinely closest to the
+    // shield disc and asks for the full tracking budget, so a low LEFT sweep is a real target
+    // rather than a hilt end that happens to graze the shield plane a metre off centre.
+    const guardTracking = previousBlade && snapshot.phase !== LONGSWORD_ATTACK_PHASES.INTERRUPTED;
+    const guardApproach = guardTracking
+      ? measureSweptSwordBucklerClosestApproach({
+          previousBlade, currentBlade, bucklerSurface: cloneSurface(postBraceSurface),
+        })
+      : null;
+    const guardTarget = guardTracking
+      ? guardCoverageTargetTracker.select({
+          sequence: snapshot.sequence,
+          deltaSeconds,
+          direction: snapshot.direction,
+          predictedThreat: predictGuardThreat({
+            previousBlade,
+            currentBlade,
+            bucklerSurface: postBraceSurface,
+            deltaSeconds,
+            horizonSeconds: getGuardThreatTrackingProfile('guard').horizonSeconds,
+            selection: getGuardThreatTrackingProfile('guard').threatSelection,
+            extrapolation: getGuardThreatTrackingProfile('guard').threatExtrapolation,
+          }),
+          approach: guardApproach,
+          bucklerSurface: postBraceSurface,
+        })
+      : null;
+    const guardPlan = guardTarget?.threat
+      ? planGuardThreatCorrection({
+          mode: 'guard',
+          threat: guardTarget.threat,
+          bucklerSurface: postBraceSurface,
+        })
+      : planFineGuardTracking({
+          threat: null,
+          bucklerSurface: postBraceSurface,
+          maxCorrectionMeters: 0,
+        });
+    exchangeState.latestFinePlan = guardCoverageLatch.update({
+      plan: guardPlan,
+      sequence: snapshot.sequence,
+      committed: snapshot.phase !== LONGSWORD_ATTACK_PHASES.INTERRUPTED,
+      deltaMs: deltaSeconds * 1000,
+      currentOffset: fineTrackingRuntime.offset,
+      approach: guardApproach,
+      engaged: Boolean(guardTarget?.engaged),
     });
     exchangeState.latestFineTracking = fineTrackingRuntime.update(exchangeState.latestFinePlan, deltaSeconds);
+    // R18R.6: The primary plan is authored against the neutral surface. Once the shield has moved,
+    // which blade point is nearest has changed too, so the last centimetres are closed against the
+    // surface as it now stands - the same residual pass Parry runs, at Guard's budget.
+    const guardResidualSurface = guardTracking ? cloneSurface(buckler.getWorldParrySurface()) : null;
+    const guardResidualApproach = guardResidualSurface
+      ? measureSweptSwordBucklerClosestApproach({
+          previousBlade, currentBlade, bucklerSurface: guardResidualSurface,
+        })
+      : null;
+    const guardResidualTarget = guardResidualApproach && guardResidualApproach.combinedGapMeters > 1e-4
+      ? selectGuardCoverageTarget({
+          direction: snapshot.direction,
+          predictedThreat: null,
+          approach: guardResidualApproach,
+          bucklerSurface: guardResidualSurface,
+        })
+      : null;
+    const guardResidualPlan = guardResidualTarget?.engaged
+      ? planGuardThreatCorrection({
+          mode: 'guard',
+          threat: guardResidualTarget.threat,
+          bucklerSurface: guardResidualSurface,
+        })
+      : null;
+    exchangeState.latestGuardResidual = guardResidualPlan?.appliedDistance > 1e-6
+      ? fineTrackingRuntime.refineMeasuredContact(guardResidualPlan, deltaSeconds, {
+          speedScale: 1,
+          jointBudgetScale: 0.35,
+          maxResidualMeters: 0.08,
+          iterations: 2,
+        })
+      : null;
+    const guardTracked = guardTracking
+      ? measureSweptSwordBucklerClosestApproach({
+          previousBlade, currentBlade, bucklerSurface: cloneSurface(buckler.getWorldParrySurface()),
+        })
+      : null;
+    exchangeState.latestGuardCoverage = Object.freeze({
+      ...guardCoverageLatch.report,
+      // The gap the latch reports is measured against the neutral surface, before this frame's
+      // tracking moved the shield. This one is measured after, so it says whether the guard
+      // actually closed the line rather than whether it wanted to.
+      trackedGapMeters: guardTracked?.combinedGapMeters ?? null,
+      trackedPlaneGapMeters: guardTracked?.planeGapMeters ?? null,
+      trackedRadialGapMeters: guardTracked?.radialGapMeters ?? null,
+    });
     defender.update(0, camera); defenderSword?.update();
     exchangeState.previousShieldLeadSurface = cloneSurface(buckler.getWorldParrySurface());
   }
@@ -470,6 +565,8 @@ export function createShieldParryPreContactController({
     activeInterceptIntent?.reset();
     shieldArmAdditiveRuntime.reset();
     topPrepReadabilityHoldRuntime.reset();
+    guardCoverageLatch.reset();
+    guardCoverageTargetTracker.reset();
     visualOwnership.reset();
   }
 
