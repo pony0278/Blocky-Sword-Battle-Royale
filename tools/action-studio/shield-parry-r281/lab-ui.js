@@ -275,6 +275,18 @@ export function createShieldParryLabUi(elements) {
   });
 }
 
+// R19A.1: the defender's feet. Arrows rather than WASD because the free inspection camera already
+// owns WASD, and a key that both flies the camera and walks a fighter is a key that does neither
+// legibly.
+const LANE_KEYS = Object.freeze({ ArrowUp: -1, ArrowDown: 1 });
+
+function laneIntentFrom(held) {
+  let intent = 0;
+  for (const code of held) intent += LANE_KEYS[code] || 0;
+  // Both held at once cancels, which is what pressing two opposite directions should do.
+  return Math.sign(intent);
+}
+
 function isParryKey(event) {
   return event?.code === 'KeyF'
     || String(event?.key || '').toLowerCase() === 'f'
@@ -289,6 +301,10 @@ export function bindShieldParryLabUiEvents({
   handlers,
 }) {
   let parryKeyDownObserved = false;
+  const heldLaneKeys = new Set();
+  function publishLaneIntent() {
+    handlers.onDefenderIntent?.(laneIntentFrom(heldLaneKeys));
+  }
   documentRef.querySelectorAll('[data-attack]').forEach((button) =>
     button.addEventListener('click', () => handlers.onAttack(button.dataset.attack)));
   documentRef.querySelectorAll('[data-mode]').forEach((button) =>
@@ -302,6 +318,11 @@ export function bindShieldParryLabUiEvents({
   elements.debugResetDefaults.addEventListener('click', handlers.onDebugResetDefaults);
 
   documentRef.addEventListener('keydown', (event) => {
+    if (LANE_KEYS[event.code] !== undefined) {
+      event.preventDefault();
+      if (!event.repeat) { heldLaneKeys.add(event.code); publishLaneIntent(); }
+      return;
+    }
     if (!isParryKey(event) || event.repeat) return;
     parryKeyDownObserved = true;
     event.preventDefault();
@@ -309,13 +330,25 @@ export function bindShieldParryLabUiEvents({
     handlers.onParryInput('keyboard-f', event);
   }, true);
   documentRef.addEventListener('keyup', (event) => {
+    if (LANE_KEYS[event.code] !== undefined) {
+      event.preventDefault();
+      heldLaneKeys.delete(event.code);
+      publishLaneIntent();
+      return;
+    }
     if (!isParryKey(event)) return;
     event.preventDefault();
     event.stopPropagation();
     if (!parryKeyDownObserved) handlers.onParryInput('keyboard-f-keyup-fallback', event);
     parryKeyDownObserved = false;
   }, true);
-  windowRef.addEventListener('blur', () => { parryKeyDownObserved = false; });
+  // A key held when the window loses focus never reports its keyup, so the fighter would walk off
+  // on their own until the key was pressed and released again.
+  windowRef.addEventListener('blur', () => {
+    parryKeyDownObserved = false;
+    heldLaneKeys.clear();
+    publishLaneIntent();
+  });
   canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
   elements.showSurface.addEventListener('change', () => handlers.onShowSurface(elements.showSurface.checked));
   windowRef.addEventListener('resize', handlers.onResize);

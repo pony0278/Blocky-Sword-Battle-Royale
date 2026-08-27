@@ -76,6 +76,14 @@ export function createEngagementGround(options = {}) {
     });
   }
 
+  // R19A.1: the defender's own feet. Incremental rather than absolute, because unlike a swing this
+  // has no timeline to re-derive from - it is just distance covered since the last frame, and it is
+  // banked immediately: ground taken by walking is not contingent on anything landing.
+  function moveDefender(meters) {
+    defenderGroundMeters += finite(meters);
+    return report();
+  }
+
   // Absolute for the swing in progress, so a repeated frame cannot walk the attacker forward.
   function setAttackerSwing(meters) {
     attackerSwingMeters = finite(meters);
@@ -108,6 +116,7 @@ export function createEngagementGround(options = {}) {
   }
 
   return Object.freeze({
+    moveDefender,
     setAttackerSwing,
     settleImpact,
     releaseSwing,

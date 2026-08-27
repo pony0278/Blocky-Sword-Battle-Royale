@@ -513,6 +513,7 @@ bindShieldParryLabUiEvents({
     onRetryAttack: () => restartAttack(selectedDirection),
     onDebugApplyRetry: () => restartAttack(selectedDirection),
     onDebugResetDefaults: resetDebugStanceDefaults,
+    onDefenderIntent: (intent) => laneController.setDefenderIntent(intent),
     onShowSurface: (checked) => buckler.setParrySurfaceVisible(checked),
     onResize: resize,
   },
@@ -534,6 +535,9 @@ function frame(timestamp) {
   const deltaSeconds = Math.max(1e-5, deltaMs / 1000);
   lastTimestamp = timestamp;
   freeCamera.update(rawDeltaMs / 1000);
+  // Real seconds, not the review-scaled clock: slow motion is for watching a swing, not for
+  // walking in treacle. Outside the ready gate too, so the feet work between exchanges.
+  laneController.walkDefender(rawDeltaMs / 1000);
   if (ready) {
     const snapshot = attackRuntime.update(deltaMs);
 
@@ -625,6 +629,7 @@ window.__G43B5R281_LAB__ = createShieldParryDebugApi({
     },
   },
   runtimes: {
+    laneController,
     combat,
     attackRuntime,
     guardMachine,

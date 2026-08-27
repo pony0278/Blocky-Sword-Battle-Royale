@@ -1,5 +1,6 @@
 import { createAttackAdvanceRuntime } from '../../../src/combat/attack-advance.js';
 import { createEngagementGround } from '../../../src/combat/engagement-ground.js';
+import { createLaneLocomotionRuntime } from '../../../src/combat/lane-locomotion.js';
 
 // R18Z.1 — where the two fighters are standing, and nothing else.
 //
@@ -12,6 +13,7 @@ import { createEngagementGround } from '../../../src/combat/engagement-ground.js
 // It owns no authority over whether anything was hit. It is told an outcome and moves people.
 export function createShieldParryLaneController({ labScene }) {
   const advance = createAttackAdvanceRuntime();
+  const defenderFeet = createLaneLocomotionRuntime();
   const ground = createEngagementGround({
     startSeparationMeters: labScene.engagementStance.separationMeters,
   });
@@ -32,6 +34,19 @@ export function createShieldParryLaneController({ labScene }) {
       ground.setAttackerSwing(advance.update(elapsedSeconds)?.advanceMeters ?? 0);
       return apply();
     },
+    // The defender's feet run every frame, attack or no attack, which is the point: standing still
+    // is a choice they are making rather than the only thing available to them.
+    setDefenderIntent(intent) {
+      return defenderFeet.setIntent(intent);
+    },
+    walkDefender(deltaSeconds) {
+      // Measured against the live gap, so the clamp that stops them walking through each other is
+      // checked against where they actually are this frame rather than where they started.
+      const step = defenderFeet.update({ deltaSeconds, separationMeters: ground.separationMeters });
+      if (step.meters !== 0) { ground.moveDefender(step.meters); apply(); }
+      return step;
+    },
+    get defenderIntent() { return defenderFeet.intent; },
     // A landed blow is the only thing that banks ground. The outcome decides which way it moves:
     // blocking costs the defender more than the attacker, a parry costs the attacker far more.
     settle(outcome) {
@@ -43,6 +58,7 @@ export function createShieldParryLaneController({ labScene }) {
     // ground, but ground a previous blow moved is not handed back between attacks.
     release() {
       advance.reset();
+      // Intent survives a reset -- a held key is still held. Only the swing is given up.
       ground.releaseSwing();
       return apply();
     },
