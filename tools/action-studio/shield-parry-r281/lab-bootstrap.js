@@ -30,6 +30,9 @@ export async function bootstrapShieldParryLabAssets({ THREE, attacker, defender,
   attacker.registerAnimations(ual2);
   attacker.registerAnimations(kaykit);
   defender.registerAnimations(skyrim);
+  // R19E.1: the defender walks too - their legs borrow the same locomotion clips the attacker
+  // uses, overlaid under the Skyrim guard rather than replacing it.
+  defender.registerAnimations(kaykit);
 
   const attackerIdleDuration = attacker.getAnimationDuration('UAL1/Sword_Idle') || 1;
   const idle = skyrim.clips.get('SKYRIM_GUARD/shd_blockidle');

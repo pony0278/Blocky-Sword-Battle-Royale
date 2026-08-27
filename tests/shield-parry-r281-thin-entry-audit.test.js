@@ -51,7 +51,9 @@ test('R18M.C6 keeps exact cross-controller frame sequencing in the entry', () =>
   const frame = entrySource.slice(indexOfOrFail(entrySource, 'function frame(timestamp)'));
   const attackUpdate = indexOfOrFail(frame, 'attackRuntime.update(deltaMs)');
   const combatBeforeGuard = indexOfOrFail(frame, 'contactHandoffController.updateCombatBeforeGuard({');
+  const walkSampleSlice = indexOfOrFail(frame, 'laneController.sampleDefenderWalk(');
   const guardUpdate = indexOfOrFail(frame, 'guardRuntime.update(deltaMs, camera)');
+  const walkOverlaySlice = indexOfOrFail(frame, 'laneController.overlayDefenderWalkLegs()');
   const releaseGate = indexOfOrFail(frame, 'contactHandoffController.updateDefenderDeflectReleaseGate()');
   const liveConstraint = indexOfOrFail(frame, 'contactHandoffController.updateLiveConstraintAfterGuard({');
   const visibleOldB3 = indexOfOrFail(frame, 'contactHandoffController.recordVisibleOldB3Sample(exchangeState.latestCombatUpdate)');
@@ -60,6 +62,12 @@ test('R18M.C6 keeps exact cross-controller frame sequencing in the entry', () =>
   const parryCue = indexOfOrFail(frame, 'updateParryCue(snapshot)');
   assert.ok(attackUpdate < combatBeforeGuard);
   assert.ok(combatBeforeGuard < guardUpdate);
+  // R19E.1: the walk-leg sandwich must bracket the guard sample exactly - the walk is captured
+  // before the guard rebuilds the rig and laid back on top immediately after, before anything
+  // downstream reads defender geometry.
+  assert.ok(walkSampleSlice < guardUpdate);
+  assert.ok(guardUpdate < walkOverlaySlice);
+  assert.ok(walkOverlaySlice < releaseGate);
   assert.ok(guardUpdate < releaseGate);
   assert.ok(releaseGate < liveConstraint);
   assert.ok(liveConstraint < visibleOldB3);

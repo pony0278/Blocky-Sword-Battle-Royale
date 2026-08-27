@@ -119,8 +119,8 @@ const residualStanceReachRuntime = createGuardResidualStanceReachRuntime(THREE, 
 const predictivePresentation = createPredictiveInterceptParryPresentationRuntime(THREE, { character: defender });
 const activeParryInterceptIntent = createActiveParryInterceptIntent();
 const parryGate = createCommittedParryContactGate();
-// R18Z.1: the attacker's step and the ledger of ground both fighters have won or given up.
-const laneController = createShieldParryLaneController({ labScene, walkClips: ATTACKER_WALK_CLIPS });
+const laneController = createShieldParryLaneController({ // R18Z.1: steps, feet, and the ground ledger
+  labScene, walkClips: ATTACKER_WALK_CLIPS, services: { captureRigPose, applyRigPose } });
 const exchangeState = createShieldParryExchangeState();
 
 const attackerPresentation = createAttackerPresentationAdapter({
@@ -181,7 +181,7 @@ let attackerIdleDuration = 1;
 let attackerIdleClockSeconds = 0;
 let attackerRecovery = null;
 let repeatCooldownMs = 0;
-let bootExchangePending = false; // R19D.1: the boot demo attack must not spend the player's opening ground
+let bootExchangePending = false; // R19D.1: the boot demo must not spend the player's opening ground
 let previousBlade = null;
 let hudClockMs = HUD_INTERVAL_MS;
 let reportClockMs = REPORT_INTERVAL_MS;
@@ -540,9 +540,7 @@ function frame(timestamp) {
   const deltaSeconds = Math.max(1e-5, deltaMs / 1000);
   lastTimestamp = timestamp;
   freeCamera.update(rawDeltaMs / 1000);
-  // Real seconds, not the review-scaled clock: slow motion is for watching a swing, not for
-  // walking in treacle. Outside the ready gate too, so the feet work between exchanges.
-  laneController.walk(rawDeltaMs / 1000);
+  laneController.walk(rawDeltaMs / 1000); // real seconds, not the review-scaled clock
   if (ready) {
     const snapshot = attackRuntime.update(deltaMs);
 
@@ -575,7 +573,9 @@ function frame(timestamp) {
     });
     if (!contactFrame.handledCombat) sampleAttackerBase(snapshot, deltaMs);
 
+    laneController.sampleDefenderWalk(!attackRuntime.active && !combat.active);
     guardRuntime.update(deltaMs, camera);
+    laneController.overlayDefenderWalkLegs();
     contactHandoffController.updateDefenderDeflectReleaseGate();
     contactHandoffController.updateLiveConstraintAfterGuard({
       deltaSeconds,

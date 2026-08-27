@@ -2,6 +2,7 @@ import { createAttackAdvanceRuntime } from '../../../src/combat/attack-advance.j
 import { createEngagementGround } from '../../../src/combat/engagement-ground.js';
 import { createLaneLocomotionRuntime } from '../../../src/combat/lane-locomotion.js';
 import { createLaneWalkCycle, walkClipTimeSeconds } from '../../../src/combat/lane-walk-cycle.js';
+import { canWalkOverlayLegs, filterPoseToWalkOverlay } from '../../../src/combat/guard-walk-overlay.js';
 
 // R18Z.1 — where the two fighters are standing, and nothing else.
 //
@@ -12,7 +13,7 @@ import { createLaneWalkCycle, walkClipTimeSeconds } from '../../../src/combat/la
 // the entry should not be carrying.
 //
 // It owns no authority over whether anything was hit. It is told an outcome and moves people.
-export function createShieldParryLaneController({ labScene, walkClips }) {
+export function createShieldParryLaneController({ labScene, walkClips, services }) {
   // Durations arrive after the assets load, so the clips are described here and measured later.
   let walkDurations = { forward: 1, backward: 1 };
   const advance = createAttackAdvanceRuntime();
@@ -21,6 +22,12 @@ export function createShieldParryLaneController({ labScene, walkClips }) {
   // R19C.2: the attacker's gait, driven by the distance the ledger actually moved them rather than
   // by elapsed time, so the feet cannot disagree with the ground about how far anybody went.
   const attackerGait = createLaneWalkCycle();
+  // R19E.1: the defender walks too, but their guard IS their base clip, so their walk is a leg
+  // overlay rather than a base swap: sample the walk, keep the leg chain, let the guard sample the
+  // whole rig as always, then lay the legs back on top. The captured legs live here between the
+  // two steps of that sandwich.
+  const defenderGait = createLaneWalkCycle();
+  let pendingDefenderLegPose = null;
   const ground = createEngagementGround({
     startSeparationMeters: labScene.engagementStance.separationMeters,
   });
@@ -39,6 +46,14 @@ export function createShieldParryLaneController({ labScene, walkClips }) {
   let exchangeSettled = false;
   function attackerFeetLocked() {
     return swingLive && advance.report?.complete !== true;
+  }
+
+  function walkSampleFor(gait) {
+    if (!gait?.moving || !walkClips) return null;
+    const forward = gait.direction > 0;
+    const clipId = forward ? walkClips.forward : walkClips.backward;
+    const duration = forward ? walkDurations.forward : walkDurations.backward;
+    return Object.freeze({ clipId, timeSeconds: walkClipTimeSeconds(gait.phase, duration) });
   }
 
   function apply() {
@@ -89,6 +104,7 @@ export function createShieldParryLaneController({ labScene, walkClips }) {
       // Closing the gap is walking forward, so the sign flips: the ledger speaks in separation.
       if (attackerStep) attackerGait.advance({ travelledMeters: -attackerStep.meters, deltaSeconds });
       else attackerGait.settle();
+      defenderGait.advance({ travelledMeters: -defenderStep.meters, deltaSeconds });
       if (defenderStep.meters !== 0 || attackerStep?.meters) apply();
       return Object.freeze({ defenderStep, attackerStep });
     },
@@ -100,14 +116,37 @@ export function createShieldParryLaneController({ labScene, walkClips }) {
       walkDurations = { forward: durations?.forward || 1, backward: durations?.backward || 1 };
       return walkDurations;
     },
-    // Null when the attacker is standing, which is the caller's signal to keep the idle.
-    get attackerWalkSample() {
-      const gait = attackerGait.report;
-      if (!gait?.moving || !walkClips) return null;
-      const forward = gait.direction > 0;
-      const clipId = forward ? walkClips.forward : walkClips.backward;
-      const duration = forward ? walkDurations.forward : walkDurations.backward;
-      return Object.freeze({ clipId, timeSeconds: walkClipTimeSeconds(gait.phase, duration) });
+    // Null when that fighter is standing, which is the caller's signal to keep the idle.
+    get attackerWalkSample() { return walkSampleFor(attackerGait.report); },
+    get defenderGait() { return defenderGait.report; },
+    // R19E.1, first slice of the sandwich: sample the walk on the defender and keep only the leg
+    // chain. Called immediately before the guard runtime samples its own clip over the whole rig.
+    // `exchangeIdle` is the caller's word that no attack is in flight and no impact is resolving -
+    // the guard owns the entire fighter during an exchange, planted crouch included, and every
+    // coverage band was measured on those planted legs.
+    sampleDefenderWalk(exchangeIdle) {
+      pendingDefenderLegPose = null;
+      const defender = labScene.defender;
+      const sample = walkSampleFor(defenderGait.report);
+      if (!sample || !defender?.sampleAnimation || !services?.captureRigPose) return null;
+      const gate = canWalkOverlayLegs({
+        attackInFlight: !exchangeIdle,
+        combatResolving: !exchangeIdle,
+      });
+      if (!gate.allowed) return gate;
+      defender.sampleAnimation(sample.clipId, sample.timeSeconds, {
+        loop: true, inPlace: true, rootRotationPolicy: 'lock',
+      });
+      defender.update(0, labScene.camera);
+      pendingDefenderLegPose = filterPoseToWalkOverlay(services.captureRigPose(defender.rig));
+      return gate;
+    },
+    // Second slice: after the guard has rebuilt the whole rig, lay the walk's legs back on top.
+    overlayDefenderWalkLegs() {
+      if (!pendingDefenderLegPose) return false;
+      services.applyRigPose(labScene.defender.rig, pendingDefenderLegPose);
+      pendingDefenderLegPose = null;
+      return true;
     },
     // A landed blow is the only thing that banks ground. The outcome decides which way it moves:
     // blocking costs the defender more than the attacker, a parry costs the attacker far more.
