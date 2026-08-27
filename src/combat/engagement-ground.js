@@ -76,11 +76,22 @@ export function createEngagementGround(options = {}) {
     });
   }
 
-  // R19A.1: the defender's own feet. Incremental rather than absolute, because unlike a swing this
-  // has no timeline to re-derive from - it is just distance covered since the last frame, and it is
-  // banked immediately: ground taken by walking is not contingent on anything landing.
-  function moveDefender(meters) {
-    defenderGroundMeters += finite(meters);
+  // R19A.1 / R19B.1: a fighter's own feet. Incremental rather than absolute, because unlike a swing
+  // this has no timeline to re-derive from - it is just distance covered since the last frame, and
+  // it is banked immediately: ground taken by walking is not contingent on anything landing.
+  //
+  // Both take a change in separation rather than a direction along the lane, which is the one place
+  // the two fighters differ and therefore the one place to say it out loud. The defender opens the
+  // gap by moving away from the origin and the attacker opens it by moving toward it, so the same
+  // "back off half a metre" is +z for one of them and -z for the other. Callers pass what they mean
+  // - how the gap should change - and the sign lives here.
+  function moveDefender(separationDeltaMeters) {
+    defenderGroundMeters += finite(separationDeltaMeters);
+    return report();
+  }
+
+  function moveAttacker(separationDeltaMeters) {
+    attackerGroundMeters -= finite(separationDeltaMeters);
     return report();
   }
 
@@ -116,6 +127,7 @@ export function createEngagementGround(options = {}) {
   }
 
   return Object.freeze({
+    moveAttacker,
     moveDefender,
     setAttackerSwing,
     settleImpact,

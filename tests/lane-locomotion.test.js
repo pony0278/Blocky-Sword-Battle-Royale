@@ -94,3 +94,24 @@ test('R19A.1 carries no authority over contact', () => {
   assert.match(planLaneStep({ intent: 1, deltaSeconds: 0.1 }).authority, /no-contact-authority/);
   assert.match(LANE_LOCOMOTION_PROFILE.authority, /no-contact-authority/);
 });
+
+test('R19B.1 both fighters express travel as a change in the gap, not a direction on the lane', async () => {
+  // The one asymmetry in the lane: the defender opens the gap by moving away from the origin and
+  // the attacker opens it by moving toward it. Both ledger methods take the change in separation
+  // so callers never have to know which way that is, and this pins that they agree.
+  const { createEngagementGround } = await import('../src/combat/engagement-ground.js');
+  const start = 2.4;
+  const closing = planLaneStep({ intent: -1, deltaSeconds: 0.5, separationMeters: start });
+
+  const byDefender = createEngagementGround({ startSeparationMeters: start });
+  byDefender.moveDefender(closing.meters);
+  const byAttacker = createEngagementGround({ startSeparationMeters: start });
+  byAttacker.moveAttacker(closing.meters);
+
+  assert.ok(Math.abs(byDefender.separationMeters - byAttacker.separationMeters) < 1e-9,
+    'the same step must close the gap by the same amount whoever takes it');
+  assert.ok(byDefender.separationMeters < start);
+  // And they move opposite ways down the lane to do it.
+  assert.ok(byDefender.defenderMeters < 0);
+  assert.ok(byAttacker.attackerMeters > 0);
+});

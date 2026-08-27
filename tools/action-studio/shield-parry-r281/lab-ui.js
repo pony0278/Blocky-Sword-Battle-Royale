@@ -287,6 +287,17 @@ function laneIntentFrom(held) {
   return Math.sign(intent);
 }
 
+// R19B.1: which fighter the arrows are driving. Shift picks the attacker rather than giving them
+// their own pair of keys, so there is one thing to learn - up closes, down backs off - and a
+// modifier saying who is doing it. Only one of them walks at a time, which is what a single player
+// at a single keyboard can honestly do anyway.
+function laneIntentsFor(held, attackerModifier) {
+  const intent = laneIntentFrom(held);
+  return attackerModifier
+    ? { defender: 0, attacker: intent }
+    : { defender: intent, attacker: 0 };
+}
+
 function isParryKey(event) {
   return event?.code === 'KeyF'
     || String(event?.key || '').toLowerCase() === 'f'
@@ -302,8 +313,11 @@ export function bindShieldParryLabUiEvents({
 }) {
   let parryKeyDownObserved = false;
   const heldLaneKeys = new Set();
+  let attackerModifierHeld = false;
   function publishLaneIntent() {
-    handlers.onDefenderIntent?.(laneIntentFrom(heldLaneKeys));
+    const intents = laneIntentsFor(heldLaneKeys, attackerModifierHeld);
+    handlers.onDefenderIntent?.(intents.defender);
+    handlers.onAttackerIntent?.(intents.attacker);
   }
   documentRef.querySelectorAll('[data-attack]').forEach((button) =>
     button.addEventListener('click', () => handlers.onAttack(button.dataset.attack)));
@@ -318,6 +332,12 @@ export function bindShieldParryLabUiEvents({
   elements.debugResetDefaults.addEventListener('click', handlers.onDebugResetDefaults);
 
   documentRef.addEventListener('keydown', (event) => {
+    // Shift can be pressed or released while an arrow is already held, so the fighter it is
+    // driving has to be able to change mid-hold rather than only at the next arrow press.
+    if (event.shiftKey !== attackerModifierHeld) {
+      attackerModifierHeld = event.shiftKey;
+      publishLaneIntent();
+    }
     if (LANE_KEYS[event.code] !== undefined) {
       event.preventDefault();
       if (!event.repeat) { heldLaneKeys.add(event.code); publishLaneIntent(); }
@@ -330,6 +350,10 @@ export function bindShieldParryLabUiEvents({
     handlers.onParryInput('keyboard-f', event);
   }, true);
   documentRef.addEventListener('keyup', (event) => {
+    if (event.shiftKey !== attackerModifierHeld) {
+      attackerModifierHeld = event.shiftKey;
+      publishLaneIntent();
+    }
     if (LANE_KEYS[event.code] !== undefined) {
       event.preventDefault();
       heldLaneKeys.delete(event.code);
@@ -347,6 +371,7 @@ export function bindShieldParryLabUiEvents({
   windowRef.addEventListener('blur', () => {
     parryKeyDownObserved = false;
     heldLaneKeys.clear();
+    attackerModifierHeld = false;
     publishLaneIntent();
   });
   canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
