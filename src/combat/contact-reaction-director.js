@@ -75,9 +75,22 @@ export function sanitizeIncomingVelocity(velocity) {
   return saneVelocity(velocity, EXCITATION_LIMITS.maximumIncomingSpeedMps);
 }
 
-export function createContactReactionDirector(THREE, { attackerRig, defenderRig } = {}) {
-  const attackerRootDisplacement = createParryRootDisplacementRuntime({ rig: attackerRig });
-  const defenderRootDisplacement = createParryRootDisplacementRuntime({ rig: defenderRig });
+export function createContactReactionDirector(THREE, {
+  attackerRig,
+  defenderRig,
+  // R18V.2: only supplied by a caller that moves the fighters itself. Left out, each displacement
+  // captures the root where the hit landed and re-derives from there, which is what a fight
+  // between two planted actors wants. Supplied, the recoil rides on top of the caller's position
+  // instead of overwriting it for the length of the reaction.
+  readAttackerBasePosition,
+  readDefenderBasePosition,
+} = {}) {
+  const attackerRootDisplacement = createParryRootDisplacementRuntime({
+    rig: attackerRig, readBasePosition: readAttackerBasePosition,
+  });
+  const defenderRootDisplacement = createParryRootDisplacementRuntime({
+    rig: defenderRig, readBasePosition: readDefenderBasePosition,
+  });
   const attackerArmFling = createParryArmFlingRuntime(THREE, { rig: attackerRig });
   const attackerTorsoLean = createParriedTorsoWorldLeanRuntime(THREE, { rig: attackerRig });
   // Blocking is absorption, so the defender leans too.
