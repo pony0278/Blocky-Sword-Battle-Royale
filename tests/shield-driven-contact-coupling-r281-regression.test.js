@@ -6,6 +6,10 @@ const source = await readFile(
   new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url),
   'utf8',
 );
+const parryInterceptDirectorSource = await readFile(
+  new URL('../src/combat/parry-intercept-director.js', import.meta.url),
+  'utf8',
+);
 const preContactSource = await readFile(
   new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url),
   'utf8',
@@ -50,7 +54,7 @@ function sliceFunction(text, startMarker) {
 test('R18M.1 baseline targets the actual R18I5 R281 browser entry', () => {
   assert.match(
     html,
-    /<script type="module" src="\.\/shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-guard-coverage-director-r18s2"><\/script>/,
+    /<script type="module" src="\.\/shield-driven-contact-coupling-lab-r281\.js\?v=g43b5r281-parry-intercept-director-r18s3"><\/script>/,
   );
   assert.match(html, /BUILD R18I5 TOP\/RIGHT/);
   assert.match(html, /LEFT release (?:仍)?(?:暫緩|deferred)/);
@@ -68,11 +72,14 @@ test('R18M.1 locks manual Parry input and authored commitment\/TTC authority', (
 });
 
 test('R18M.1 locks predictive\/measured pre-contact guidance without granting success authority', () => {
+  // R18S.3: the analysis and the gate stay with the lab; the reach ladder they feed is the
+  // director's, and the guidance-only contract holds on both sides of that seam.
   assert.match(preContactSource, /analyzePredictiveInterceptParry\(\{/);
-  assert.match(preContactSource, /selectReachableParryInterceptTarget\(\{/);
-  assert.match(preContactSource, /measureSweptSwordBucklerClosestApproach\(\{/);
-  assert.match(preContactSource, /residualBodyReachRuntime\.update\(\{/);
-  assert.match(preContactSource, /residualStanceReachRuntime\.update\(\{/);
+  assert.match(parryInterceptDirectorSource, /selectReachableParryInterceptTarget\(\{/);
+  assert.match(parryInterceptDirectorSource, /measureSweptSwordBucklerClosestApproach\(\{/);
+  assert.match(parryInterceptDirectorSource, /bodyReachRuntime\.update\(\{ mode: 'parry'/);
+  assert.match(parryInterceptDirectorSource, /stanceRuntime\.update\(\{\s*\n\s*mode: 'parry'/);
+  assert.match(parryInterceptDirectorSource, /reach-guidance-only-real-swept-contact-still-decides/);
   assert.match(html, /unreachable linear target may fall back to measured current sweep/);
   assert.match(html, /guidance · cannot veto input/);
   assert.match(html, /Success authority<\/span><b>real swept Sword × Shield contact<\/b>/);

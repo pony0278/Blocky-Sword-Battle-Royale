@@ -10,6 +10,10 @@ const preContactSource = readFileSync(
   new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url),
   'utf8',
 );
+const parryInterceptDirectorSource = readFileSync(
+  new URL('../src/combat/parry-intercept-director.js', import.meta.url),
+  'utf8',
+);
 const guardCoverageDirectorSource = readFileSync(
   new URL('../src/combat/guard-coverage-director.js', import.meta.url),
   'utf8',
@@ -140,7 +144,8 @@ test('R18E exposes URL-gated low-stance tuning without changing real-contact aut
   assert.match(stanceDebugSource, /query: 'downRatio'/);
   assert.match(stanceDebugSource, /query: 'kneeBandCm'/);
   assert.match(stanceDebugSource, /query: 'armAttemptCm'/);
-  assert.match(preContactSource, /profile: debugMode \? debugStanceProfile : null/);
+  assert.match(preContactSource, /stanceProfile: debugMode \? debugStanceProfile : null/);
+  assert.match(parryInterceptDirectorSource, /profile: stanceProfile,/);
   assert.match(diagnosticFormattersSource, /DEBUG pred \$\{predictedDecision\}/);
   assert.match(diagnosticFormattersSource, /anticipatedEligibilityReason/);
   assert.match(diagnosticFormattersSource, /pflags \$\{predictedFlags\}/);
@@ -338,11 +343,11 @@ test('Step 3A classifies a Parry whiff from measured sweep geometry without chan
   assert.doesNotMatch(preContactSource, /parryGate\.confirm|combat\.resolveContact/);
 });
 test('Step 3A replaces only an unreachable linear target with reachable measured sweep guidance', () => {
-  const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
-  assert.match(preContactSource, /selectReachableParryInterceptTarget/);
-  assert.match(update, /measureSweptSwordBucklerClosestApproach/);
-  assert.match(update, /predictedTrackingPlan: exchangeState\.latestPredictiveAnalysis\?\.trackingPlan/);
-  assert.match(update, /threat: exchangeState\.latestReachableInterceptTarget\.threat/);
+  // R18S.3: the fallback decision moved into the director with the ladder it feeds.
+  assert.match(parryInterceptDirectorSource, /selectReachableParryInterceptTarget/);
+  assert.match(parryInterceptDirectorSource, /measureSweptSwordBucklerClosestApproach/);
+  assert.match(parryInterceptDirectorSource, /predictedTrackingPlan: predictiveAnalysis\?\.trackingPlan/);
+  assert.match(parryInterceptDirectorSource, /threat: interceptTarget\.threat/);
   assert.match(verificationReportSource, /measuredSweepFallbackIsGuidanceOnly/);
   assert.match(verificationReportSource, /realSweptContactRequired/);
   assert.match(html, /MEASURED SWEEP preserves world direction \+ 1\.2cm inset/);
@@ -350,15 +355,27 @@ test('Step 3A replaces only an unreachable linear target with reachable measured
 });
 test('armed Parry samples a continuous post-tracking shield surface before selecting and driving the next frame', () => {
   const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
+  // The lab hands the ladder last frame's post-tracking shield as the selector baseline...
   const presentation = update.indexOf('predictivePresentation.update');
-  const continuity = update.indexOf('const continuitySurface = exchangeState.previousShieldLeadSurface');
-  const measure = update.indexOf('measureSweptSwordBucklerClosestApproach');
-  const select = update.indexOf('selectReachableParryInterceptTarget');
-  const plan = update.indexOf('planGuardThreatCorrection');
-  const drive = update.indexOf('fineTrackingRuntime.update');
-  assert.ok(presentation >= 0 && continuity > presentation && measure > continuity && select > measure && plan > select && drive > plan);
+  const reach = update.indexOf('parryInterceptDirector.reach({');
+  assert.ok(presentation >= 0 && reach > presentation);
+  assert.match(
+    update.slice(reach),
+    /continuitySurface: exchangeState\.previousShieldLeadSurface/,
+    'the ladder is handed last frame\'s post-tracking shield, not this frame\'s rebuilt one',
+  );
+  // ...and the ladder measures against it, selects on it, plans from it, then drives.
+  const measure = parryInterceptDirectorSource.indexOf('measure(previousBlade, currentBlade, selectorSurface)');
+  const select = parryInterceptDirectorSource.indexOf('selectReachableParryInterceptTarget({');
+  const plan = parryInterceptDirectorSource.indexOf('planGuardThreatCorrection({');
+  const drive = parryInterceptDirectorSource.indexOf('trackingRuntime.update(plan, deltaSeconds)');
+  assert.ok(measure >= 0 && select > measure && plan > select && drive > plan);
   assert.match(preContactSource, /selectorBaseline: 'previous-frame-post-tracking-world-shield-surface'/);
-  assert.match(update, /exchangeState\.latestReachableInterceptTarget\?\.fallbackApplied[\s\S]*exchangeState\.latestReachableInterceptTarget\.trackingPlan/);
+  assert.match(
+    parryInterceptDirectorSource,
+    /interceptTarget\?\.fallbackApplied\s*\n\s*\? interceptTarget\.trackingPlan/,
+    'a measured contact correction is preferred over a predicted one',
+  );
   assert.match(preContactSource, /drivePlanSource: activeIntentPlan[\s\S]*exchangeState\.latestReachableInterceptTarget\?\.fallbackApplied/);
   assert.match(preContactSource, /surface-relative-measured-contact-correction/);
   assert.match(preContactSource, /correctionDirectionDot/);
@@ -370,33 +387,36 @@ test('armed Parry samples a continuous post-tracking shield surface before selec
 });
 test('armed Parry recruits predicted or measured low stance, holds it, and preserves contact authority', () => {
   const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
-  const primaryDrive = update.indexOf('fineTrackingRuntime.update');
-  const primarySurface = update.indexOf('const primaryTrackingSurfaceAfter', primaryDrive);
-  const residualBefore = update.indexOf('const residualBeforeRefinement', primarySurface);
-  const residualSelect = update.indexOf('const residualInterceptTarget', residualBefore);
-  const refine = update.indexOf('fineTrackingRuntime.refineMeasuredContact', residualSelect);
-  const residualAfterArm = update.indexOf('const residualAfterArmRefinement', refine);
-  const bodyReach = update.indexOf('residualBodyReachRuntime.update', residualAfterArm);
-  const residualAfterBody = update.indexOf('const residualAfterBodyReach', bodyReach);
-  const stanceReach = update.indexOf('residualStanceReachRuntime.update', residualAfterBody);
-  const residualAfter = update.indexOf('const residualAfterRefinement', stanceReach);
-  assert.ok(primaryDrive >= 0 && primarySurface > primaryDrive && residualBefore > primarySurface);
-  assert.ok(residualSelect > residualBefore && refine > residualSelect);
-  assert.ok(residualAfterArm > refine && bodyReach > residualAfterArm);
-  assert.ok(residualAfterBody > bodyReach && stanceReach > residualAfterBody && residualAfter > stanceReach);
-  assert.match(update, /jointBudgetScale: 0\.35/);
-  assert.match(update, /maxResidualMeters: 0\.06/);
-  assert.match(update, /residualEdgeReductionMeters/);
-  assert.match(update, /residualPlaneReductionMeters/);
-  assert.match(update, /bodyEdgeReductionMeters/);
-  assert.match(update, /bodyPlaneReductionMeters/);
-  assert.match(update, /stanceEdgeReductionMeters/);
-  assert.match(update, /stancePlaneReductionMeters/);
+  // R18S.3: each rung is measured against the shield the rung before it just moved, so the order
+  // is the whole contract - and it is the director's.
+  const ladder = parryInterceptDirectorSource;
+  const primaryDrive = ladder.indexOf('trackingRuntime.update(plan, deltaSeconds)');
+  const residualBefore = ladder.indexOf('const residualBeforeRefinement', primaryDrive);
+  const residualSelect = ladder.indexOf('const residualInterceptTarget', residualBefore);
+  const refine = ladder.indexOf('trackingRuntime.refineMeasuredContact', residualSelect);
+  const residualAfterArm = ladder.indexOf('const residualAfterArmRefinement', refine);
+  const bodyReach = ladder.indexOf('bodyReachRuntime.update({', residualAfterArm);
+  const residualAfterBody = ladder.indexOf('const residualAfterBodyReach', bodyReach);
+  const stanceReach = ladder.indexOf('stanceRuntime.update({', residualAfterBody);
+  assert.ok(primaryDrive >= 0 && residualBefore > primaryDrive && residualSelect > residualBefore);
+  assert.ok(refine > residualSelect && residualAfterArm > refine && bodyReach > residualAfterArm);
+  assert.ok(residualAfterBody > bodyReach && stanceReach > residualAfterBody);
+  assert.match(ladder, /jointBudgetScale: 0\.35/);
+  assert.match(ladder, /maxResidualMeters: 0\.06/);
+  for (const reduction of [
+    /residualEdgeReductionMeters/, /residualPlaneReductionMeters/,
+    /bodyEdgeReductionMeters/, /bodyPlaneReductionMeters/,
+    /stanceEdgeReductionMeters/, /stancePlaneReductionMeters/,
+  ]) {
+    assert.match(ladder, reduction, 'the director measures it');
+    assert.match(update, reduction, 'and the lab still reports it');
+  }
   assert.match(source, /createGuardResidualBodyReachRuntime/);
   assert.match(source, /createGuardResidualStanceReachRuntime/);
-  assert.match(update, /anticipatedClosestApproach: exchangeState\.latestPredictiveAnalysis\?\.threat\?\.worldPoint/);
-  assert.match(update, /point: exchangeState\.latestPredictiveAnalysis\.threat\.worldPoint/);
-  assert.match(update, /anticipatedLeadSeconds: exchangeState\.latestPredictiveAnalysis\?\.threat\?\.futureSeconds/);  assert.match(preContactSource, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);
+  assert.match(update, /predictiveAnalysis: exchangeState\.latestPredictiveAnalysis/);
+  assert.match(ladder, /anticipatedClosestApproach: predictiveAnalysis\?\.threat\?\.worldPoint/);
+  assert.match(ladder, /point: predictiveAnalysis\.threat\.worldPoint/);
+  assert.match(ladder, /anticipatedLeadSeconds: predictiveAnalysis\?\.threat\?\.futureSeconds/);  assert.match(preContactSource, /persistent-arm-carry-then-predicted-or-measured-low-threat-planted-stance-held-to-real-contact-or-reset-diagnostic/);
   assert.match(diagnosticFormattersSource, /residual edge \$\{edgeBefore\}→\$\{edgeAfter\}/);
   assert.match(diagnosticFormattersSource, /carry \$\{carryBefore\}→\$\{carryAfter\}/);
   assert.match(diagnosticFormattersSource, /refine \$\{refinementStep\} · rdir \$\{refinementDirection\}/);
@@ -432,7 +452,7 @@ test('F review batches presentation rebuilds and avoids dynamic debug bounds wor
   const update = preContactFunctionBody('updateParryPreContact', 'updatePreContact');
   const defenderUpdateCount = update.split('defender.update(0, camera)').length - 1;
   const swordUpdateCount = update.split('defenderSword?.update()').length - 1;
-  const stanceSolve = update.indexOf('residualStanceReachRuntime.update');
+  const stanceSolve = update.indexOf('parryInterceptDirector.reach({');
   const presentationUpdate = update.indexOf('defender.update(0, camera)', stanceSolve);
 
   assert.equal(defenderUpdateCount, 1);

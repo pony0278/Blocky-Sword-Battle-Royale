@@ -5,6 +5,7 @@ import { createShieldParryPreContactController } from '../tools/action-studio/sh
 
 const entry = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
 const controller = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
+const parryInterceptDirectorSource = await readFile(new URL('../src/combat/parry-intercept-director.js', import.meta.url), 'utf8');
 const contactHandoffController = await readFile(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');
 
 test('R18M.5 entry delegates pre-contact orchestration to one controller', () => {
@@ -32,18 +33,25 @@ test('R18M.5 controller owns the Block bracing and hands coverage to its directo
   assert.match(controller, /exchangeState\.previousShieldLeadSurface = cloneSurface\(buckler\.getWorldParrySurface\(\)\)/);
 });
 
-test('R18M.5 controller owns predictive/measured Parry intercept and residual reach', () => {
+test('R18M.5 controller owns the Parry analysis and gate, and its director owns the reach', () => {
+  // R18S.3: what the lab decides - is there an opportunity, was it taken, what does the shield
+  // look like on the way out - stays here. Where the shield reaches for the blade does not.
   for (const contract of [
     /analyzePredictiveInterceptParry\(\{/,
     /evaluateCommittedParryInput\(\{/,
-    /selectReachableParryInterceptTarget\(\{/,
-    /planGuardThreatCorrection\(\{/,
-    /fineTrackingRuntime\.refineMeasuredContact\(/,
-    /residualBodyReachRuntime\.update\(\{/,
-    /residualStanceReachRuntime\.update\(\{/,
+    /parryInterceptDirector\.reach\(\{/,
+    /parryInterceptDirector\.finalClosure\(\{/,
+    /parryInterceptDirector\.measureOutcome\(\{/,
     /sampleActiveShieldLeadMotion\(\{/,
     /compactInterceptDriveTraceFrame\(exchangeState\.latestInterceptDriveReport\)/,
   ]) assert.match(controller, contract);
+  for (const moved of [
+    /selectReachableParryInterceptTarget\(\{/,
+    /planGuardThreatCorrection\(\{/,
+    /trackingRuntime\.refineMeasuredContact\(/,
+    /bodyReachRuntime\.update\(\{/,
+    /stanceRuntime\.update\(\{/,
+  ]) assert.match(parryInterceptDirectorSource, moved);
 });
 
 test('R18M.5 whiff probing remains diagnostic and real swept contact stays authoritative outside pre-contact', () => {
