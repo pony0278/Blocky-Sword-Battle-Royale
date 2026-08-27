@@ -27,6 +27,8 @@ export function createShieldParryDebugApi({
     refreshDebugStanceProfile: actions.refreshDebugStanceProfile,
     resetDebugStanceDefaults: actions.resetDebugStanceDefaults,
     swordGripConstraint: runtimes.swordGripConstraint,
+    setEngagementSeparation: actions.setEngagementSeparation,
+    get engagementStance() { return runtimes.labScene?.engagementStance ?? null; },
     triggerParryNow: actions.triggerParryNow,
     dispatchParryInput: actions.dispatchParryInput,
     forceOldTwoActorB3: actions.forceOldTwoActorB3,

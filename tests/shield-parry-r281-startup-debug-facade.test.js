@@ -87,11 +87,13 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
   const runtimes = {
     combat: {}, attackRuntime: {}, guardMachine: {}, predictivePresentation: {}, parryGate: {}, freeCamera: {},
     residualBodyReachRuntime: {}, residualStanceReachRuntime: {}, swordGripConstraint: {},
+    labScene: { engagementStance: { separationMeters: 2.3 } },
   };
   const api = createShieldParryDebugApi({
     actions: {
       startAttack: noop, restartAttack: noop, setMode: noop, refreshDebugStanceProfile: noop,
       resetDebugStanceDefaults: noop, triggerParryNow: noop, dispatchParryInput: noop, forceOldTwoActorB3: noop,
+      setEngagementSeparation: noop,
     },
     runtimes,
     debugMode: true,
@@ -102,7 +104,8 @@ test('R18M.C5 debug facade preserves the public API shape without owning gamepla
     'startAttack', 'restartAttack', 'setMode', 'combat', 'attackRuntime', 'guardMachine',
     'predictivePresentation', 'parryGate', 'freeCamera', 'residualBodyReachRuntime',
     'residualStanceReachRuntime', 'debugMode', 'debugStanceProfile', 'refreshDebugStanceProfile',
-    'resetDebugStanceDefaults', 'swordGripConstraint', 'triggerParryNow', 'dispatchParryInput',
+    'resetDebugStanceDefaults', 'swordGripConstraint', 'setEngagementSeparation', 'engagementStance',
+    'triggerParryNow', 'dispatchParryInput',
     'forceOldTwoActorB3', 'directOldB3Diagnostic', 'latestPredictiveReport', 'latestShieldLeadMotion',
     'latestLeadHandoff', 'latestCombatResult', 'latestParryInput', 'latestParryOpportunity', 'latestContact',
     'latestParryConfirmation', 'step3AContactTransfer', 'latestGripConstraintReport',

@@ -96,7 +96,10 @@ const PARRY_PROMPT_HOLD_MS = 1500;
 const DEBUG_QUERY = new URLSearchParams(window.location.search);
 const DEBUG_MODE = DEBUG_QUERY.get('debug') === '1';
 
-const labScene = createShieldParryLabScene({ THREE, documentRef: document, windowRef: window });
+const labScene = createShieldParryLabScene({
+  THREE, documentRef: document, windowRef: window,
+  separationMeters: DEBUG_QUERY.has('spacing') ? Number(DEBUG_QUERY.get('spacing')) : undefined,
+});
 const {
   canvas, renderer, scene, camera, freeCamera, attacker, defender, attackerSword, buckler, resize, setView,
 } = labScene;
@@ -683,6 +686,14 @@ window.__G43B5R281_LAB__ = createShieldParryDebugApi({
     triggerParryNow,
     dispatchParryInput,
     forceOldTwoActorB3,
+    setEngagementSeparation: (meters) => {
+      // Between exchanges only: moving either actor mid-exchange would move the geometry the
+      // swept contact probe is measuring.
+      if (combat.active || attackRuntime.active) return null;
+      const stance = labScene.setEngagementSeparation(meters);
+      resetExchange();
+      return stance;
+    },
   },
   runtimes: {
     combat,
@@ -694,6 +705,7 @@ window.__G43B5R281_LAB__ = createShieldParryDebugApi({
     residualBodyReachRuntime,
     residualStanceReachRuntime,
     swordGripConstraint,
+    labScene,
   },
   debugMode: DEBUG_MODE,
   getDebugStanceProfile: () => debugStanceProfile,

@@ -7,11 +7,20 @@ import {
   ACCEPTED_OFFHAND_BUCKLER_SHAPE_G423,
 } from '../../../src/character/offhand-buckler-accepted-calibration.js';
 import { createFreeInspectionCameraControls } from '../free-inspection-camera-controls.js?v=g43b5r281-residual-body-reach-r18';
+import {
+  CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+  planEngagementStance,
+} from '../../../src/combat/engagement-spacing.js';
 
 const DEFAULT_VIEW = Object.freeze({ x: 4.8, y: 2.4, z: 4.9 });
 const CAMERA_TARGET = Object.freeze({ x: 0, y: 1.05, z: 0 });
 
-export function createShieldParryLabScene({ THREE, documentRef = document, windowRef = window } = {}) {
+export function createShieldParryLabScene({
+  THREE,
+  documentRef = document,
+  windowRef = window,
+  separationMeters = CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+} = {}) {
   if (!THREE?.WebGLRenderer) throw new Error('createShieldParryLabScene requires Three.js WebGLRenderer');
 
   const canvas = documentRef.getElementById('canvas');
@@ -49,9 +58,25 @@ export function createShieldParryLabScene({ THREE, documentRef = document, windo
 
   const attacker = createDefaultCharacter(THREE);
   const defender = createDefaultCharacter(THREE);
-  attacker.object3d.position.set(0, 0, -1.15);
-  defender.object3d.position.set(0, 0, 1.15);
-  defender.object3d.rotation.y = Math.PI;
+  // R18T.1: the stance geometry is the combat module's, so that how far apart the fighters stand
+  // is a stated fact rather than two coordinates buried in a scene file.
+  let engagementStance = planEngagementStance(separationMeters);
+  function applyEngagementStance(stance) {
+    engagementStance = stance;
+    attacker.object3d.position.set(stance.attacker.position.x, stance.attacker.position.y, stance.attacker.position.z);
+    attacker.object3d.rotation.y = stance.attacker.facingRadians;
+    defender.object3d.position.set(stance.defender.position.x, stance.defender.position.y, stance.defender.position.z);
+    defender.object3d.rotation.y = stance.defender.facingRadians;
+    attacker.object3d.updateMatrixWorld(true);
+    defender.object3d.updateMatrixWorld(true);
+    return stance;
+  }
+  applyEngagementStance(engagementStance);
+  // Changing separation mid-exchange would move the geometry the swept probe is measuring, so
+  // callers are expected to do it between exchanges.
+  function setEngagementSeparation(meters) {
+    return applyEngagementStance(planEngagementStance(meters));
+  }
   scene.add(attacker.object3d, defender.object3d);
 
   const attackerSword = createDebugSword(THREE);
@@ -94,5 +119,7 @@ export function createShieldParryLabScene({ THREE, documentRef = document, windo
     buckler,
     resize,
     setView,
+    setEngagementSeparation,
+    get engagementStance() { return engagementStance; },
   });
 }
