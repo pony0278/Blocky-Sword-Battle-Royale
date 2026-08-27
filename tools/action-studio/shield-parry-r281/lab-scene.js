@@ -61,9 +61,18 @@ export function createShieldParryLabScene({
   // R18T.1: the stance geometry is the combat module's, so that how far apart the fighters stand
   // is a stated fact rather than two coordinates buried in a scene file.
   let engagementStance = planEngagementStance(separationMeters);
+  // R18Y.1: how far the attacker's own swing has carried him off that stance. Kept here because
+  // this is the only place actor transforms are written, and it is re-applied absolutely rather
+  // than accumulated, so a repeated frame cannot make him creep down the lane.
+  let attackerAdvanceMeters = 0;
   function applyEngagementStance(stance) {
     engagementStance = stance;
-    attacker.object3d.position.set(stance.attacker.position.x, stance.attacker.position.y, stance.attacker.position.z);
+    attacker.object3d.position.set(
+      stance.attacker.position.x,
+      stance.attacker.position.y,
+      // The attacker faces down +z, so the whole step is along it.
+      stance.attacker.position.z + attackerAdvanceMeters,
+    );
     attacker.object3d.rotation.y = stance.attacker.facingRadians;
     defender.object3d.position.set(stance.defender.position.x, stance.defender.position.y, stance.defender.position.z);
     defender.object3d.rotation.y = stance.defender.facingRadians;
@@ -76,6 +85,11 @@ export function createShieldParryLabScene({
   // callers are expected to do it between exchanges.
   function setEngagementSeparation(meters) {
     return applyEngagementStance(planEngagementStance(meters));
+  }
+  function setAttackerAdvance(meters) {
+    const advance = Number(meters);
+    attackerAdvanceMeters = Number.isFinite(advance) ? advance : 0;
+    return applyEngagementStance(engagementStance);
   }
   scene.add(attacker.object3d, defender.object3d);
 
@@ -120,6 +134,7 @@ export function createShieldParryLabScene({
     resize,
     setView,
     setEngagementSeparation,
+    setAttackerAdvance,
     get engagementStance() { return engagementStance; },
   });
 }

@@ -9,7 +9,11 @@ import {
   getGuardDirectionalAnchor,
   resolveGuardDirectionalAnchorPoint,
 } from '../src/combat/guard-directional-anchor.js';
-import { CALIBRATED_ENGAGEMENT_SEPARATION_METERS } from '../src/combat/engagement-spacing.js';
+import {
+  CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+  effectiveSeparationAtContact,
+} from '../src/combat/engagement-spacing.js';
+import { ATTACK_ADVANCE_PROFILES } from '../src/combat/attack-advance.js';
 
 const surface = Object.freeze({
   center: Object.freeze({ x: 0, y: 1, z: 0.5 }),
@@ -61,20 +65,23 @@ test('R18R.5 the anchor threat carries no contact authority', () => {
   assert.equal(buildGuardDirectionalAnchorThreat({ direction: 'left' }), null);
 });
 
-test('R18X.2 the default stance must sit inside every direction\'s verified band', () => {
-  // This replaced a check that the anchors were captured at the default separation. They are no
-  // longer the same distance -- the anchors were captured at 2.30m and the default moved to
-  // 1.55m -- and this is the invariant that was actually worth enforcing: whatever distance the
-  // fighters are stood at by default, every direction has to have been measured to work there.
+test('R18Y.1 every direction must contact inside its own verified band', () => {
+  // R18X.2 checked the starting separation against these bands. Attacks carry a step now, so the
+  // starting separation is not the one that decides anything -- the guard's success tracks the gap
+  // at contact, and each direction closes a different amount of it. Checking the start would now
+  // pass or fail for the wrong reason: LEFT's band tops out at 2.05m and the fighters start at
+  // 2.4m, yet LEFT contacts at 1.95m and blocks 16/16 there.
   for (const direction of Object.keys(GUARD_DIRECTIONAL_COVERAGE_ANCHORS)) {
-    const coverage = assessGuardAnchorCoverage({
-      direction,
-      separationMeters: CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
-    });
+    const separationMeters = effectiveSeparationAtContact(
+      CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+      ATTACK_ADVANCE_PROFILES[direction].metersByContact,
+    );
+    const coverage = assessGuardAnchorCoverage({ direction, separationMeters });
     assert.equal(
       coverage.verified,
       true,
-      `default separation is outside ${direction}'s verified band (${coverage.reason}) -- either move it back or re-measure`,
+      `${direction} contacts at ${separationMeters.toFixed(2)}m, outside its verified band (${coverage.reason})`
+        + ' -- move the starting separation, change that direction\'s step, or re-measure the band',
     );
   }
   // Where they were captured is recorded literally, because it is a fact about the past rather
@@ -87,21 +94,21 @@ test('R18X.2 the default stance must sit inside every direction\'s verified band
   );
 });
 
-test('R18X.2 LEFT reaches the guard at the calibrated separation now, and 2.30m still does not', () => {
-  // This began as a characterisation test stating that LEFT could not reach the guard where the
-  // fight was calibrated. It exists to make that gap visible until it closed. It has closed, from
-  // both ends: the arc-aware swept test cleared 1.50-2.05m, and the default moved into that band.
-  const separationMeters = CALIBRATED_ENGAGEMENT_SEPARATION_METERS;
-  for (const direction of ['top', 'right', 'left']) {
-    assert.equal(assessGuardAnchorCoverage({ direction, separationMeters }).verified, true, direction);
-  }
+test('R18Y.1 the step is what put LEFT inside its band, not a wider band', () => {
+  // This began as a characterisation test recording that LEFT could not reach the guard where the
+  // fight was calibrated. It closed in two moves, and both are worth keeping visible: the
+  // arc-aware swept test widened LEFT's band down to 1.50m, and the attack step brought the
+  // contact distance into it from above.
+  const startMeters = CALIBRATED_ENGAGEMENT_SEPARATION_METERS;
+  const leftContact = effectiveSeparationAtContact(startMeters, ATTACK_ADVANCE_PROFILES.left.metersByContact);
+  assert.ok(leftContact < startMeters, 'LEFT was authored planted; the step is code-driven');
+  assert.equal(assessGuardAnchorCoverage({ direction: 'left', separationMeters: leftContact }).verified, true);
 
-  // The old default is still outside LEFT's band, which is why it stopped being the default.
-  const stale = assessGuardAnchorCoverage({ direction: 'left', separationMeters: 2.3 });
-  assert.equal(stale.verified, false);
-  assert.equal(stale.reason, 'beyond-verified-reach');
-  assert.equal(stale.deltaFromMeasuredMeters, 0, '2.30m is still where the anchors were captured');
-  assert.equal(stale.beyondTestedRange, false);
+  // Standing still at the same distance, LEFT would still be out of reach. That is the gap the
+  // step closes, and it is the reason attacks that do not move cannot be mixed with ones that do.
+  const planted = assessGuardAnchorCoverage({ direction: 'left', separationMeters: startMeters });
+  assert.equal(planted.verified, false);
+  assert.equal(planted.reason, 'beyond-verified-reach');
 });
 
 test('R18V.1 reports honestly outside the range that was actually tested', () => {

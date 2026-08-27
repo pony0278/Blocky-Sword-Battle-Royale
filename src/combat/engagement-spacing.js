@@ -11,14 +11,15 @@ export const ENGAGEMENT_SPACING_STAGE = 'R18T.1';
 // Naming it is the first step to letting the fighters move. A separation this module does not
 // know about is a separation nothing has been calibrated for, and the honest thing is to be able
 // to say how far from calibration a given stance is.
-// R18X.2: 1.55m, and it is the only distance that satisfies both measurements below at once.
-// The guard becomes fully reliable here and no closer; all three attacks stop reaching the body
-// here and no further. It was 2.3m, which is a distance at which two of the three directions
-// cannot touch the defender at all - a fight that could not be lost and therefore could not be
-// won. Note that the two constraints meet at a point rather than over a band, so this default has
-// no slack in either direction. Widening it is a content question (how far the attacks travel),
-// not a tuning one.
-export const CALIBRATED_ENGAGEMENT_SEPARATION_METERS = 1.55;
+// R18Y.1: where the fighters start, which since attacks carry a step is no longer where they meet.
+//
+// It was 1.55m for one turn of this argument, chosen as the only separation at which a standing
+// attacker could still reach a standing defender while the guard stayed reliable - a knife edge,
+// because those two constraints met at a point rather than over a band. Giving the attacks their
+// step is what widened it: measured with the step active, the guard holds 48/48 across every
+// direction from 2.40m through 2.70m, and at 2.40m two of the three attacks genuinely require it
+// to work rather than passing where the shield already rests.
+export const CALIBRATED_ENGAGEMENT_SEPARATION_METERS = 2.4;
 
 // R18X.1: the band the calibrations are trusted within - the range over which all three attack
 // directions were measured to reach the guard at least 10 times in 12, in BLOCK mode, headless.
@@ -58,6 +59,21 @@ export const MEASURED_UNDEFENDED_BODY_REACH_METERS = Object.freeze({
   left: 2.05,
   testedRange: Object.freeze({ minimum: 1.4, maximum: 2.5 }),
 });
+
+// R18Y.1: the distance that actually decides everything, which is not the one the fighters start
+// at. The attacker spends their step before the blow lands, so by contact the gap has closed by
+// however far that direction travels. Measured across four start distances and three directions,
+// the guard's success tracks this number and not the starting one - a TOP attack from 2.30m
+// behaves like the 1.44m it contacts at, which is why it failed there while RIGHT and LEFT, whose
+// steps are shorter, did not.
+//
+// So the coverage bands in guard-directional-anchor.js did not go stale when attacks started
+// moving. They are facts about the separation at contact, and this is how a starting stance is
+// converted into one.
+export function effectiveSeparationAtContact(startSeparationMeters, advanceMeters) {
+  const start = finite(startSeparationMeters, CALIBRATED_ENGAGEMENT_SEPARATION_METERS);
+  return Math.max(0, start - Math.max(0, finite(advanceMeters)));
+}
 
 function finite(value, fallback = 0) {
   const number = Number(value);

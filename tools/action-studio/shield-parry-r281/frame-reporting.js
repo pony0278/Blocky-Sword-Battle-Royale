@@ -1,4 +1,6 @@
 import { assessGuardAnchorCoverage } from '../../../src/combat/guard-directional-anchor.js';
+import { ATTACK_ADVANCE_PROFILES } from '../../../src/combat/attack-advance.js';
+import { effectiveSeparationAtContact } from '../../../src/combat/engagement-spacing.js';
 
 // R18V.3 — everything the frame says about itself: the parry cue, the HUD, and the verification
 // report. Gathering only. Each of these reads live state and hands it to a module that already
@@ -77,9 +79,16 @@ export function createShieldParryFrameReporting({
       latestGuardCoverage: exchangeState.latestGuardCoverage,
       // R18V.1: the anchors and the compensations tuned with them were measured at one separation.
       // Say so on screen whenever the fighters are standing somewhere they were never verified.
+      // R18Y.1: against the separation at contact rather than at the start, because that is what
+      // the bands are facts about and what the guard's success actually tracks. Reading the start
+      // distance here made the HUD call LEFT unverified at the default stance while it was
+      // blocking 16 of 16.
       anchorCoverage: assessGuardAnchorCoverage({
         direction: read.selectedDirection(),
-        separationMeters: labScene.engagementStance?.separationMeters,
+        separationMeters: effectiveSeparationAtContact(
+          labScene.engagementStance?.separationMeters,
+          ATTACK_ADVANCE_PROFILES[read.selectedDirection()]?.metersByContact ?? 0,
+        ),
       }),
       latestReachableInterceptTarget: exchangeState.latestReachableInterceptTarget,
       latestGripConstraintReport: exchangeState.latestGripConstraintReport,
