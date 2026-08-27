@@ -109,6 +109,11 @@ export function createContactLifecycleDirector({
   // The handoff builder wants the shield surface as it stood at contact, not as it stands at
   // release time, so the impact read is kept.
   let surfaceAtContactForRelease = null;
+  // R18W.2: where the shield was on the previous resolve. The parry path gets a shield translation
+  // handed to it by the lead-motion sampler, but Guard has no such sampler, so the moving-shield
+  // solve below was silently inert in BLOCK mode - the one mode where the shield does most of its
+  // travelling. The director measures its own now.
+  let previousShieldCenter = null;
   let lastDeltaMs = 0;
 
   function ownsLiveContact() {
@@ -287,7 +292,21 @@ export function createContactLifecycleDirector({
     // Observer-only moving-shield classification. Production contact authority remains the probe
     // above; this second solve only removes the measured shield translation from the sword sweep
     // so a hitch miss can be classified without injecting or accepting a synthetic contact.
-    const shieldTranslation = shieldLeadMotion?.translation || null;
+    const measuredShieldTranslation = previousShieldCenter && currentShieldSurface?.center
+      ? {
+          x: currentShieldSurface.center.x - previousShieldCenter.x,
+          y: currentShieldSurface.center.y - previousShieldCenter.y,
+          z: currentShieldSurface.center.z - previousShieldCenter.z,
+        }
+      : null;
+    if (currentShieldSurface?.center) {
+      previousShieldCenter = {
+        x: Number(currentShieldSurface.center.x) || 0,
+        y: Number(currentShieldSurface.center.y) || 0,
+        z: Number(currentShieldSurface.center.z) || 0,
+      };
+    }
+    const shieldTranslation = shieldLeadMotion?.translation || measuredShieldTranslation;
     const relativePreviousBlade = shieldTranslation
       ? previousBlade.map((point) => ({
           x: point.x + (Number(shieldTranslation.x) || 0),
@@ -322,6 +341,7 @@ export function createContactLifecycleDirector({
             Number(shieldTranslation.z) || 0,
           ),
           shieldAngularRadians: shieldLeadMotion?.angularRadians ?? null,
+          translationSource: shieldLeadMotion?.translation ? 'parry-lead-sampler' : 'director-measured',
           authority: 'observer-only-relative-translation-sweep',
         })
       : null;
@@ -615,6 +635,7 @@ export function createContactLifecycleDirector({
   }
 
   function reset() {
+    previousShieldCenter = null;
     reactionDirector.reset();
     firstContact = null;
     bodyHit = null;
