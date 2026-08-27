@@ -13,12 +13,20 @@ export const ENGAGEMENT_SPACING_STAGE = 'R18T.1';
 // to say how far from calibration a given stance is.
 export const CALIBRATED_ENGAGEMENT_SEPARATION_METERS = 2.3;
 
-// The band the calibrations are trusted within, pending the sweep that establishes the real one.
-// Deliberately narrow and deliberately provisional: it is a placeholder for measured evidence,
-// not a design decision about how far apart fighters may stand.
-export const PROVISIONAL_ENGAGEMENT_BAND_METERS = Object.freeze({
-  minimum: 2.3,
-  maximum: 2.3,
+// R18V.1: the band the calibrations are trusted within. This replaces the placeholder that stood
+// here, and it is now measured rather than assumed: it is the range over which all three attack
+// directions were observed to reach the guard at least 10 times in 12, in BLOCK mode, headless,
+// n=12 per cell. The per-direction detail and the full table live in guard-directional-anchor.js.
+//
+// It is narrower than the calibrated separation, and it does not contain it. That is not a
+// mistake in the constant, it is the measurement: LEFT stops reliably reaching the guard just past
+// 2.1m, so 2.3m is a distance where two directions out of three are covered. Widening this band
+// means fixing LEFT, not editing this number.
+export const MEASURED_FULL_COVERAGE_BAND_METERS = Object.freeze({
+  minimum: 2.0,
+  maximum: 2.1,
+  limitedBy: 'left',
+  testedRange: Object.freeze({ minimum: 2.0, maximum: 2.5 }),
 });
 
 function finite(value, fallback = 0) {

@@ -15,6 +15,7 @@ import {
   createGuardResidualStanceReachRuntime,
 } from '../../src/combat/guard-residual-stance-reach.js?v=g43b5r281-debug-low-stance-controls-r18e';
 import { planFineGuardTracking } from '../../src/combat/directional-guard-bracing.js';
+import { assessGuardAnchorCoverage } from '../../src/combat/guard-directional-anchor.js';
 import { createArticulatedImpactBracingRuntime, planArticulatedImpactBracing } from '../../src/combat/articulated-impact-bracing.js';
 import {
   analyzePredictiveInterceptParry,
@@ -513,6 +514,10 @@ function updateHud(snapshot, combatSnapshot) {
     firstContact: exchangeState.firstContact,
     latestFinePlan: exchangeState.latestFinePlan,
     latestFineTracking: exchangeState.latestFineTracking, latestGuardCoverage: exchangeState.latestGuardCoverage,
+    anchorCoverage: assessGuardAnchorCoverage({
+      direction: selectedDirection,
+      separationMeters: labScene.engagementStance?.separationMeters,
+    }),
     latestReachableInterceptTarget: exchangeState.latestReachableInterceptTarget,
     latestGripConstraintReport: exchangeState.latestGripConstraintReport,
     step3AContactTransfer: exchangeState.step3AContactTransfer,

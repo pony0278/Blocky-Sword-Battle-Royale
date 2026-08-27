@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+  MEASURED_FULL_COVERAGE_BAND_METERS,
   ENGAGEMENT_SPACING_STAGE,
   normalizeEngagementSeparation,
   planEngagementStance,
@@ -66,4 +67,20 @@ test('R18T.1 the lab places its fighters from the module and can only move them 
   // Moving a fighter mid-exchange would move the geometry the swept contact probe is measuring.
   assert.match(entry, /if \(combat\.active \|\| attackRuntime\.active\) return null;/);
   assert.match(entry, /labScene\.setEngagementSeparation\(meters\)/);
+});
+
+test('R18V.1 replaces the provisional band with the measured one', () => {
+  const band = MEASURED_FULL_COVERAGE_BAND_METERS;
+  assert.ok(band.minimum < band.maximum, 'a placeholder band collapses to a point; a measured one does not');
+  assert.equal(band.limitedBy, 'left');
+  // The measured band does not contain the calibrated separation, and that is the finding rather
+  // than a bug in the constant: at 2.3m only two of the three directions reach the guard. This
+  // assertion is what makes fixing LEFT show up as a deliberate edit here.
+  assert.ok(
+    CALIBRATED_ENGAGEMENT_SEPARATION_METERS > band.maximum,
+    'if LEFT now reaches at the calibrated separation, re-measure and widen the band on purpose',
+  );
+  // Bounds must stay inside what was actually swept; anything else is extrapolation.
+  assert.ok(band.minimum >= band.testedRange.minimum);
+  assert.ok(band.maximum <= band.testedRange.maximum);
 });

@@ -1,3 +1,5 @@
+import { CALIBRATED_ENGAGEMENT_SEPARATION_METERS } from './engagement-spacing.js';
+
 export const GUARD_DIRECTIONAL_ANCHOR_STAGE = 'R18R.5';
 
 // R18R.5: Where a given attack direction actually arrives, in the shield's own frame.
@@ -15,12 +17,94 @@ export const GUARD_DIRECTIONAL_ANCHOR_STAGE = 'R18R.5';
 // These are direction-level coverage, deliberately coarse: they say where to be before the swing
 // commits to its final arc, which is the only thing a defender can know that early. The predicted
 // threat refines them once it is credible, and the measured sweep replaces them once the blade is
-// close enough to measure. Re-measure these if the attack clips or the actors' spacing change.
+// close enough to measure. These anchors were measured at one
+// separation and they do not hold at every separation; GUARD_DIRECTIONAL_ANCHOR_CALIBRATION below
+// records which one, and how far from it they were verified to carry.
 export const GUARD_DIRECTIONAL_COVERAGE_ANCHORS = Object.freeze({
   top: Object.freeze({ right: -0.19, up: 0.03, forward: -0.01 }),
   right: Object.freeze({ right: -0.12, up: -0.21, forward: -0.05 }),
   left: Object.freeze({ right: -0.23, up: -0.43, forward: -0.08 }),
 });
+
+// R18V.1: what the anchors above are actually worth, and where.
+//
+// The anchors were measured at one actor separation, and every downstream compensation that leans
+// on them - the tracking servo's travel budget, the residual, the planted crouch - was tuned at
+// that same separation. Nothing in the code said so. The binding lived in a comment, so moving the
+// actors apart silently invalidated a stack of numbers with no signal at all. `measuredAtMeters`
+// is imported rather than typed, so it cannot drift out of step: change the calibrated separation
+// and the anchor tests fail until these are re-measured.
+//
+// `verifiedCoverage` is the separate and harder question - not where the anchors were measured,
+// but how far from there the guard still meets the blade. Measured in BLOCK mode, headless, idle
+// machine, n=12 per cell, counting shield contact:
+//
+//         2.00m   2.10m   2.20m   2.30m   2.35m   2.40m   2.50m
+//   top   12/12   12/12   12/12   12/12     -     12/12   12/12
+//   right 12/12   12/12   12/12   11/12     -     12/12   12/12
+//   left  12/12   10/12    5/12    3/12    0/12    0/12    0/12
+//
+// TOP and RIGHT arrive close enough to where the guard already rests that distance barely matters
+// across the tested range. LEFT is a genuine low sweep the guard has to travel to reach, and its
+// travel budget runs out just past 2.1m. Note what that means for the calibrated separation: LEFT
+// is already outside its own verified band there, blocking 3 times in 12. An earlier small-sample
+// reading (6/6) said otherwise and was wrong; the same 3-5/12 shows on the commit before the body
+// hurtbox, so this is standing behaviour rather than a regression.
+export const GUARD_DIRECTIONAL_ANCHOR_CALIBRATION = Object.freeze({
+  stage: 'R18V.1',
+  measuredAtMeters: CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+  // The separation band over which the anchored guard was measured to meet that direction's blade
+  // at least 10 times in 12. Both bounds are measured, not extrapolated: outside the tested
+  // 2.00-2.50m range these say nothing at all.
+  verifiedCoverage: Object.freeze({
+    top: Object.freeze({ fromMeters: 2.0, toMeters: 2.5 }),
+    right: Object.freeze({ fromMeters: 2.0, toMeters: 2.5 }),
+    left: Object.freeze({ fromMeters: 2.0, toMeters: 2.1 }),
+  }),
+  testedRange: Object.freeze({ fromMeters: 2.0, toMeters: 2.5 }),
+});
+
+// Answers one question for a caller that knows the live separation: is this direction's anchor,
+// and the stack of compensations tuned alongside it, still inside the range where it was measured
+// to work? It deliberately does not correct the anchor for distance. The drift is real - LEFT's
+// arrival point moves roughly 0.7m in depth per metre of separation - but no correction has been
+// measured, and a guessed one is worse than a caller that knows it is outside the band.
+export function assessGuardAnchorCoverage(input = {}) {
+  const direction = String(input.direction || '').toLowerCase();
+  const band = GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.verifiedCoverage[direction] || null;
+  const raw = Number(input.separationMeters);
+  const known = Number.isFinite(raw);
+  const tested = GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.testedRange;
+  const beyondTestedRange = known && (raw < tested.fromMeters || raw > tested.toMeters);
+  const deltaFromMeasuredMeters = known
+    ? raw - GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.measuredAtMeters
+    : null;
+  if (!band || !known) {
+    return Object.freeze({
+      stage: GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.stage,
+      direction: direction || null,
+      separationMeters: known ? raw : null,
+      band,
+      verified: false,
+      reason: band ? 'unknown-separation' : 'unknown-direction',
+      deltaFromMeasuredMeters,
+      beyondTestedRange,
+    });
+  }
+  const verified = raw >= band.fromMeters && raw <= band.toMeters;
+  return Object.freeze({
+    stage: GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.stage,
+    direction,
+    separationMeters: raw,
+    band,
+    verified,
+    reason: verified
+      ? 'within-verified-band'
+      : (raw > band.toMeters ? 'beyond-verified-reach' : 'closer-than-verified-band'),
+    deltaFromMeasuredMeters,
+    beyondTestedRange,
+  });
+}
 
 function finite(value, fallback = 0) {
   const number = Number(value);

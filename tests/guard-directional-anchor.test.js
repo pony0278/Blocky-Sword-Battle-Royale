@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {
   GUARD_DIRECTIONAL_ANCHOR_STAGE,
   GUARD_DIRECTIONAL_COVERAGE_ANCHORS,
+  GUARD_DIRECTIONAL_ANCHOR_CALIBRATION,
+  assessGuardAnchorCoverage,
   buildGuardDirectionalAnchorThreat,
   getGuardDirectionalAnchor,
   resolveGuardDirectionalAnchorPoint,
 } from '../src/combat/guard-directional-anchor.js';
+import { CALIBRATED_ENGAGEMENT_SEPARATION_METERS } from '../src/combat/engagement-spacing.js';
 
 const surface = Object.freeze({
   center: Object.freeze({ x: 0, y: 1, z: 0.5 }),
@@ -56,4 +59,75 @@ test('R18R.5 the anchor threat carries no contact authority', () => {
   const expected = Math.hypot(anchor.right, anchor.up, anchor.forward);
   assert.ok(Math.abs(threat.radialDistance - expected) < 1e-9);
   assert.equal(buildGuardDirectionalAnchorThreat({ direction: 'left' }), null);
+});
+
+test('R18V.1 binds the anchors to the separation they were measured at', () => {
+  // The binding itself: measuredAtMeters is imported, not typed, so it can never disagree with the
+  // stance the scene actually builds.
+  assert.equal(
+    GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.measuredAtMeters,
+    CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+  );
+  // And the loud half: this literal is what fails when someone moves the fighters apart. The
+  // anchors, the servo travel budget, the residual and the crouch were all measured at 2.3m. If
+  // that changes, re-measure them and update the table in guard-directional-anchor.js -- do not
+  // just update this number.
+  assert.equal(
+    GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.measuredAtMeters,
+    2.3,
+    'calibrated separation moved: re-measure GUARD_DIRECTIONAL_COVERAGE_ANCHORS and verifiedCoverage',
+  );
+  assert.deepEqual(
+    Object.keys(GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.verifiedCoverage).sort(),
+    Object.keys(GUARD_DIRECTIONAL_COVERAGE_ANCHORS).sort(),
+    'every anchored direction needs a measured coverage band',
+  );
+});
+
+test('R18V.1 records that LEFT does not reach the guard at the calibrated separation', () => {
+  // This is a characterisation test, not an aspiration. It states the measured gap so that fixing
+  // LEFT is a visible, deliberate change to this file rather than a silent drift.
+  const separationMeters = CALIBRATED_ENGAGEMENT_SEPARATION_METERS;
+  assert.equal(assessGuardAnchorCoverage({ direction: 'top', separationMeters }).verified, true);
+  assert.equal(assessGuardAnchorCoverage({ direction: 'right', separationMeters }).verified, true);
+
+  const left = assessGuardAnchorCoverage({ direction: 'left', separationMeters });
+  assert.equal(left.verified, false);
+  assert.equal(left.reason, 'beyond-verified-reach');
+  assert.equal(left.deltaFromMeasuredMeters, 0);
+  assert.equal(left.beyondTestedRange, false);
+  assert.ok(
+    left.band.toMeters < separationMeters,
+    'LEFT was measured to stop reaching the guard before the calibrated separation',
+  );
+});
+
+test('R18V.1 reports honestly outside the range that was actually tested', () => {
+  const close = assessGuardAnchorCoverage({ direction: 'left', separationMeters: 1.5 });
+  assert.equal(close.verified, false);
+  assert.equal(close.reason, 'closer-than-verified-band');
+  assert.equal(close.beyondTestedRange, true);
+
+  const far = assessGuardAnchorCoverage({ direction: 'top', separationMeters: 4 });
+  assert.equal(far.verified, false);
+  assert.equal(far.reason, 'beyond-verified-reach');
+  assert.equal(far.beyondTestedRange, true);
+
+  for (const bad of [
+    { direction: 'nonsense', separationMeters: 2.3 },
+    { direction: 'left', separationMeters: 'x' },
+    {},
+  ]) {
+    const result = assessGuardAnchorCoverage(bad);
+    assert.equal(result.verified, false, JSON.stringify(bad));
+    assert.ok(['unknown-direction', 'unknown-separation'].includes(result.reason));
+  }
+});
+
+test('R18V.1 does not silently correct the anchor for distance', () => {
+  // No drift model has been measured, so the anchor itself must stay the same object at every
+  // separation. Reporting that it is out of band is the whole contract.
+  const nearThreat = buildGuardDirectionalAnchorThreat({ direction: 'left', bucklerSurface: surface });
+  assert.deepEqual(nearThreat.point, resolveGuardDirectionalAnchorPoint({ direction: 'left', bucklerSurface: surface }));
+  assert.equal(getGuardDirectionalAnchor('left'), GUARD_DIRECTIONAL_COVERAGE_ANCHORS.left);
 });

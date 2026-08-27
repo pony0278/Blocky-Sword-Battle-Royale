@@ -155,6 +155,7 @@ export function createShieldParryLabUi(elements) {
       snapshot, combatSnapshot, latestCombatResult, latestParryWhiff, latestParryConfirmation,
       latestParryInput, selectedMode, requestedOutcome, parryReviewActive, parryReviewRate,
       parryPromptHeld, firstContact, latestFinePlan, latestGuardCoverage, latestReachableInterceptTarget,
+      anchorCoverage,
       latestGripConstraintReport, step3AContactTransfer, defenderReleaseGate,
       step3AOwnsLiveContact, directOldB3Diagnostic, debugMode,
     } = model;
@@ -192,10 +193,19 @@ export function createShieldParryLabUi(elements) {
     const originalPrediction = latestReachableInterceptTarget?.predictedRequiredDistanceMeters;
     const guardAim = latestFinePlan?.threat?.selection || '—';
     const guardCm = (value) => (value == null ? '—' : `${(value * 100).toFixed(1)}cm`);
+    // R18V.1: the anchors and every compensation tuned with them were measured at one separation.
+    // Say so on screen the moment the fighters are standing somewhere those numbers were never
+    // verified, rather than letting a direction quietly stop reaching the guard.
+    const coverageBand = !anchorCoverage
+      ? ''
+      : anchorCoverage.verified
+        ? ` · ${anchorCoverage.direction} verified ${anchorCoverage.band.fromMeters}-${anchorCoverage.band.toMeters}m`
+        : ` · UNVERIFIED AT THIS RANGE: ${anchorCoverage.direction} ${anchorCoverage.reason}`
+          + (anchorCoverage.band ? ` (measured ${anchorCoverage.band.fromMeters}-${anchorCoverage.band.toMeters}m)` : '');
     hudShield.textContent = selectedMode === 'block'
       ? latestGuardCoverage
-        ? `Guard coverage: ${latestGuardCoverage.reason} · aim ${guardAim} · need ${guardCm(latestGuardCoverage.requiredDistance)} · applied ${guardCm(interceptApplied)} · blade gap ${guardCm(latestGuardCoverage.trackedGapMeters)}`
-        : 'Guard coverage: omnidirectional · waits out the reaction delay, then covers the committed direction'
+        ? `Guard coverage: ${latestGuardCoverage.reason} · aim ${guardAim} · need ${guardCm(latestGuardCoverage.requiredDistance)} · applied ${guardCm(interceptApplied)} · blade gap ${guardCm(latestGuardCoverage.trackedGapMeters)}${coverageBand}`
+        : `Guard coverage: omnidirectional · waits out the reaction delay, then covers the committed direction${coverageBand}`
       : latestParryInput
       ? latestReachableInterceptTarget?.fallbackApplied && interceptRequired != null
         ? `Shield intercept: MEASURED SWEEP ${(interceptRequired * 100).toFixed(1)}→${(interceptApplied * 100).toFixed(1)}cm · bad linear prediction ${originalPrediction == null ? '—' : `${(originalPrediction * 100).toFixed(1)}cm`} rejected · real contact still required`
