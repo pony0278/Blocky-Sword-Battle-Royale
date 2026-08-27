@@ -11,7 +11,14 @@ export const ENGAGEMENT_SPACING_STAGE = 'R18T.1';
 // Naming it is the first step to letting the fighters move. A separation this module does not
 // know about is a separation nothing has been calibrated for, and the honest thing is to be able
 // to say how far from calibration a given stance is.
-export const CALIBRATED_ENGAGEMENT_SEPARATION_METERS = 2.3;
+// R18X.2: 1.55m, and it is the only distance that satisfies both measurements below at once.
+// The guard becomes fully reliable here and no closer; all three attacks stop reaching the body
+// here and no further. It was 2.3m, which is a distance at which two of the three directions
+// cannot touch the defender at all - a fight that could not be lost and therefore could not be
+// won. Note that the two constraints meet at a point rather than over a band, so this default has
+// no slack in either direction. Widening it is a content question (how far the attacks travel),
+// not a tuning one.
+export const CALIBRATED_ENGAGEMENT_SEPARATION_METERS = 1.55;
 
 // R18X.1: the band the calibrations are trusted within - the range over which all three attack
 // directions were measured to reach the guard at least 10 times in 12, in BLOCK mode, headless.

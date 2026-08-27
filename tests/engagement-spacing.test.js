@@ -10,14 +10,15 @@ import {
   planEngagementStance,
 } from '../src/combat/engagement-spacing.js';
 
-test('R18T.1 the default stance is exactly the one every calibration was measured at', () => {
+test('R18T.1 the default stance is symmetric about the origin and reports its own geometry', () => {
   assert.equal(ENGAGEMENT_SPACING_STAGE, 'R18T.1');
-  assert.equal(CALIBRATED_ENGAGEMENT_SEPARATION_METERS, 2.3);
+  // R18X.2 moved this from 2.3m. The original 2.3m reproduced the hardcoded lab coordinates that
+  // predated this module; it was never a measured distance, and both measurements below now say
+  // it was the wrong one.
+  assert.equal(CALIBRATED_ENGAGEMENT_SEPARATION_METERS, 1.55);
   const stance = planEngagementStance();
-  // The lab stood the fighters at these exact coordinates before this module existed; the default
-  // has to reproduce them or every calibration silently shifts.
-  assert.deepEqual(stance.attacker.position, { x: 0, y: 0, z: -1.15 });
-  assert.deepEqual(stance.defender.position, { x: 0, y: 0, z: 1.15 });
+  assert.deepEqual(stance.attacker.position, { x: 0, y: 0, z: -0.775 });
+  assert.deepEqual(stance.defender.position, { x: 0, y: 0, z: 0.775 });
   assert.equal(stance.attacker.facingRadians, 0);
   assert.equal(stance.defender.facingRadians, Math.PI);
   assert.equal(stance.calibrated, true);
@@ -39,10 +40,10 @@ test('R18T.1 the fighters stay symmetric about the origin at any separation', ()
 test('R18T.1 a stance away from calibration says so, and by how much', () => {
   const far = planEngagementStance(2.5);
   assert.equal(far.calibrated, false);
-  assert.ok(Math.abs(far.offsetFromCalibrationMeters - 0.2) < 1e-9);
-  const near = planEngagementStance(2.0);
+  assert.ok(Math.abs(far.offsetFromCalibrationMeters - 0.95) < 1e-9);
+  const near = planEngagementStance(1.4);
   assert.equal(near.calibrated, false);
-  assert.ok(Math.abs(near.offsetFromCalibrationMeters + 0.3) < 1e-9);
+  assert.ok(Math.abs(near.offsetFromCalibrationMeters + 0.15) < 1e-9);
 });
 
 test('R18T.1 nonsense separations are clamped rather than allowed to place a fighter inside another', () => {
@@ -75,13 +76,12 @@ test('R18V.1 replaces the provisional band with the measured one', () => {
   assert.ok(band.minimum < band.maximum, 'a placeholder band collapses to a point; a measured one does not');
   assert.equal(band.limitedBy.maximum, 'left');
   assert.equal(band.limitedBy.minimum, 'right');
-  // The measured band does not contain the calibrated separation, and that is the finding rather
-  // than a bug in the constant: at 2.3m only two of the three directions reach the guard. This
-  // assertion is what makes fixing LEFT show up as a deliberate edit here.
-  assert.ok(
-    CALIBRATED_ENGAGEMENT_SEPARATION_METERS > band.maximum,
-    'if LEFT now reaches at the calibrated separation, re-measure and widen the band on purpose',
-  );
+  // This asserted the opposite until R18X.2: the band did not contain the calibrated separation,
+  // because at 2.3m only two directions of three reached the guard. Both halves moved -- the band
+  // widened downward when the swept test started following the blade's arc, and the default moved
+  // into it. The default standing inside the measured band is the property worth holding now.
+  assert.ok(CALIBRATED_ENGAGEMENT_SEPARATION_METERS >= band.minimum);
+  assert.ok(CALIBRATED_ENGAGEMENT_SEPARATION_METERS <= band.maximum);
   // Bounds must stay inside what was actually swept; anything else is extrapolation.
   assert.ok(band.minimum >= band.testedRange.minimum);
   assert.ok(band.maximum <= band.testedRange.maximum);

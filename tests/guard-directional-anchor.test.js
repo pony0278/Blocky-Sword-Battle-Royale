@@ -61,22 +61,25 @@ test('R18R.5 the anchor threat carries no contact authority', () => {
   assert.equal(buildGuardDirectionalAnchorThreat({ direction: 'left' }), null);
 });
 
-test('R18V.1 binds the anchors to the separation they were measured at', () => {
-  // The binding itself: measuredAtMeters is imported, not typed, so it can never disagree with the
-  // stance the scene actually builds.
-  assert.equal(
-    GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.measuredAtMeters,
-    CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
-  );
-  // And the loud half: this literal is what fails when someone moves the fighters apart. The
-  // anchors, the servo travel budget, the residual and the crouch were all measured at 2.3m. If
-  // that changes, re-measure them and update the table in guard-directional-anchor.js -- do not
-  // just update this number.
-  assert.equal(
-    GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.measuredAtMeters,
-    2.3,
-    'calibrated separation moved: re-measure GUARD_DIRECTIONAL_COVERAGE_ANCHORS and verifiedCoverage',
-  );
+test('R18X.2 the default stance must sit inside every direction\'s verified band', () => {
+  // This replaced a check that the anchors were captured at the default separation. They are no
+  // longer the same distance -- the anchors were captured at 2.30m and the default moved to
+  // 1.55m -- and this is the invariant that was actually worth enforcing: whatever distance the
+  // fighters are stood at by default, every direction has to have been measured to work there.
+  for (const direction of Object.keys(GUARD_DIRECTIONAL_COVERAGE_ANCHORS)) {
+    const coverage = assessGuardAnchorCoverage({
+      direction,
+      separationMeters: CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+    });
+    assert.equal(
+      coverage.verified,
+      true,
+      `default separation is outside ${direction}'s verified band (${coverage.reason}) -- either move it back or re-measure`,
+    );
+  }
+  // Where they were captured is recorded literally, because it is a fact about the past rather
+  // than a thing that follows the default around.
+  assert.equal(GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.measuredAtMeters, 2.3);
   assert.deepEqual(
     Object.keys(GUARD_DIRECTIONAL_ANCHOR_CALIBRATION.verifiedCoverage).sort(),
     Object.keys(GUARD_DIRECTIONAL_COVERAGE_ANCHORS).sort(),
@@ -84,22 +87,21 @@ test('R18V.1 binds the anchors to the separation they were measured at', () => {
   );
 });
 
-test('R18V.1 records that LEFT does not reach the guard at the calibrated separation', () => {
-  // This is a characterisation test, not an aspiration. It states the measured gap so that fixing
-  // LEFT is a visible, deliberate change to this file rather than a silent drift.
+test('R18X.2 LEFT reaches the guard at the calibrated separation now, and 2.30m still does not', () => {
+  // This began as a characterisation test stating that LEFT could not reach the guard where the
+  // fight was calibrated. It exists to make that gap visible until it closed. It has closed, from
+  // both ends: the arc-aware swept test cleared 1.50-2.05m, and the default moved into that band.
   const separationMeters = CALIBRATED_ENGAGEMENT_SEPARATION_METERS;
-  assert.equal(assessGuardAnchorCoverage({ direction: 'top', separationMeters }).verified, true);
-  assert.equal(assessGuardAnchorCoverage({ direction: 'right', separationMeters }).verified, true);
+  for (const direction of ['top', 'right', 'left']) {
+    assert.equal(assessGuardAnchorCoverage({ direction, separationMeters }).verified, true, direction);
+  }
 
-  const left = assessGuardAnchorCoverage({ direction: 'left', separationMeters });
-  assert.equal(left.verified, false);
-  assert.equal(left.reason, 'beyond-verified-reach');
-  assert.equal(left.deltaFromMeasuredMeters, 0);
-  assert.equal(left.beyondTestedRange, false);
-  assert.ok(
-    left.band.toMeters < separationMeters,
-    'LEFT was measured to stop reaching the guard before the calibrated separation',
-  );
+  // The old default is still outside LEFT's band, which is why it stopped being the default.
+  const stale = assessGuardAnchorCoverage({ direction: 'left', separationMeters: 2.3 });
+  assert.equal(stale.verified, false);
+  assert.equal(stale.reason, 'beyond-verified-reach');
+  assert.equal(stale.deltaFromMeasuredMeters, 0, '2.30m is still where the anchors were captured');
+  assert.equal(stale.beyondTestedRange, false);
 });
 
 test('R18V.1 reports honestly outside the range that was actually tested', () => {

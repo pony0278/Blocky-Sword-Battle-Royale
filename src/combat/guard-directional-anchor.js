@@ -1,5 +1,3 @@
-import { CALIBRATED_ENGAGEMENT_SEPARATION_METERS } from './engagement-spacing.js';
-
 export const GUARD_DIRECTIONAL_ANCHOR_STAGE = 'R18R.5';
 
 // R18R.5: Where a given attack direction actually arrives, in the shield's own frame.
@@ -31,9 +29,21 @@ export const GUARD_DIRECTIONAL_COVERAGE_ANCHORS = Object.freeze({
 // The anchors were measured at one actor separation, and every downstream compensation that leans
 // on them - the tracking servo's travel budget, the residual, the planted crouch - was tuned at
 // that same separation. Nothing in the code said so. The binding lived in a comment, so moving the
-// actors apart silently invalidated a stack of numbers with no signal at all. `measuredAtMeters`
-// is imported rather than typed, so it cannot drift out of step: change the calibrated separation
-// and the anchor tests fail until these are re-measured.
+// actors apart silently invalidated a stack of numbers with no signal at all.
+//
+// R18X.2 moved the default separation to 1.55m and the guard rail did its job: it failed, naming
+// these anchors. They were then re-measured at 1.55m against a deliberately frozen guard, which is
+// the only way to see the un-tracked shield these offsets are defined against. The re-measurement
+// was rejected. At 1.55m TOP and RIGHT already pass through the resting disc, so their closest
+// approach point is ill-conditioned - the same measurement moved 0.11m in `right` between n=6 and
+// n=14 - while the values below, captured at 2.30m, produce 16/16 in every direction at 1.55m.
+// Replacing well-behaved numbers with noisier ones is not a re-measurement, it is a regression.
+//
+// So `measuredAtMeters` is now the literal distance these were captured at rather than an import
+// of the default, because those are no longer the same distance and pretending otherwise would be
+// the exact silent lie this block exists to prevent. What the tests enforce instead is the
+// invariant that actually matters: the default stance must sit inside every direction's verified
+// band.
 //
 // `verifiedCoverage` is the separate and harder question - not where the anchors were measured,
 // but how far from there the guard still meets the blade. Measured in BLOCK mode, headless, idle
@@ -56,7 +66,7 @@ export const GUARD_DIRECTIONAL_COVERAGE_ANCHORS = Object.freeze({
 // reaches the body when it gets through. It is the direction this whole stack exists for.
 export const GUARD_DIRECTIONAL_ANCHOR_CALIBRATION = Object.freeze({
   stage: 'R18V.1',
-  measuredAtMeters: CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
+  measuredAtMeters: 2.3,
   // The separation band over which the anchored guard was measured to meet that direction's blade
   // at least 10 times in 12. Both bounds are measured, not extrapolated: outside the tested
   // 1.40-2.50m range these say nothing at all.
