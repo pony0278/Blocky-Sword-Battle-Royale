@@ -24,6 +24,13 @@ export function createShieldParryLaneController({ labScene }) {
   // that has not started yet - so asking it whether a swing is live gave the wrong answer in both
   // directions, and locked the attacker's feet from the first swing of the session onwards.
   let swingLive = false;
+  // R19B.2: once a blow has settled, its step is banked and must never be fed back in. The attack
+  // animation keeps running past contact, so the frame loop would otherwise re-report the same
+  // travel as an unspent swing on top of the ground it had already become - and the next exchange
+  // would bank it a second time. Measured before this flag existed: a single blocked TOP attack
+  // moved the attacker 1.56m instead of 0.70m, and repeated lunges walked him clean through the
+  // defender past the minimum separation.
+  let exchangeSettled = false;
   function attackerFeetLocked() {
     return swingLive && advance.report?.complete !== true;
   }
@@ -35,6 +42,7 @@ export function createShieldParryLaneController({ labScene }) {
 
   return Object.freeze({
     startAttack(direction, contactSeconds) {
+      exchangeSettled = false;
       return advance.start({ direction, contactSeconds, startSeconds: 0 });
     },
     // Called every frame of a live swing, before anything reads a world position: the guard tracks
@@ -42,7 +50,7 @@ export function createShieldParryLaneController({ labScene }) {
     // actually carried him.
     update(elapsedSeconds, attacking = true) {
       swingLive = Boolean(attacking);
-      if (!swingLive) return ground.report;
+      if (!swingLive || exchangeSettled) return ground.report;
       ground.setAttackerSwing(advance.update(elapsedSeconds)?.advanceMeters ?? 0);
       return apply();
     },
@@ -82,16 +90,18 @@ export function createShieldParryLaneController({ labScene }) {
     // blocking costs the defender more than the attacker, a parry costs the attacker far more.
     settle(outcome) {
       const settled = ground.settleImpact(outcome);
-      if (settled) apply();
+      if (settled) { exchangeSettled = true; apply(); }
       return settled;
     },
-    // The swing is released rather than the lane reset: a step that bought no contact buys no
-    // ground, but ground a previous blow moved is not handed back between attacks.
-    release() {
+    // Ends the exchange without a landed blow. The step is banked rather than given back, so a
+    // whiffed lunge leaves the attacker deep instead of snapping them home. Intent survives -- a
+    // held key is still held.
+    endExchange() {
       swingLive = false;
       advance.reset();
-      // Intent survives a reset -- a held key is still held. Only the swing is given up.
-      ground.releaseSwing();
+      // A settled exchange already banked its step; only an unresolved one still has travel to keep.
+      if (!exchangeSettled) ground.settleWhiff();
+      exchangeSettled = false;
       return apply();
     },
     get report() { return ground.report; },

@@ -338,7 +338,7 @@ function sampleAttackerBase(snapshot, deltaMs) {
   attackerIdleClockSeconds = presentationState.idleClockSeconds;
 }
 function resetExchange() {
-  laneController.release();
+  laneController.endExchange();
   parryGate.reset();
   swordGripConstraint.reset();
   bracingRuntime.resetImpact(); fineTrackingRuntime.reset();

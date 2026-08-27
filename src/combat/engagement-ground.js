@@ -1,4 +1,5 @@
 import { PARRY_ROOT_DISPLACEMENT_PROFILES, BLOCK_ROOT_DISPLACEMENT_PROFILES } from './parry-root-displacement.js';
+import { MINIMUM_ENGAGEMENT_SEPARATION_METERS } from './lane-locomotion.js';
 
 export const ENGAGEMENT_GROUND_STAGE = 'R18Z.1';
 
@@ -53,6 +54,14 @@ export function resolveGroundTransfer(outcome) {
 // fight has carried them off it.
 export function createEngagementGround(options = {}) {
   const startSeparationMeters = Math.max(0, finite(options.startSeparationMeters, 0));
+  // R19B.2: walking already refuses to carry anyone through their opponent, but a swing's step is
+  // not a walk and was never checked against anything. Now that a whiffed lunge banks its step
+  // rather than giving it back, repeated whiffs are a path straight through the defender, so the
+  // floor belongs on the ledger where every source of movement has to pass it.
+  const minimumSeparationMeters = Math.max(0, finite(
+    options.minimumSeparationMeters,
+    MINIMUM_ENGAGEMENT_SEPARATION_METERS,
+  ));
   let attackerGroundMeters = 0;
   let defenderGroundMeters = 0;
   // The attacker's step is separate from their ground because it is still being spent: it grows
@@ -72,6 +81,7 @@ export function createEngagementGround(options = {}) {
       // closes it, and this is the number every coverage band is a fact about.
       separationMeters: startSeparationMeters + defenderGroundMeters - attackerMeters,
       startSeparationMeters,
+      minimumSeparationMeters,
       authority: 'lane-position-ledger-no-contact-authority',
     });
   }
@@ -95,27 +105,45 @@ export function createEngagementGround(options = {}) {
     return report();
   }
 
-  // Absolute for the swing in progress, so a repeated frame cannot walk the attacker forward.
+  // Absolute for the swing in progress, so a repeated frame cannot walk the attacker forward. The
+  // floor applies here too and not only once the step is banked: a lunge is the one movement that
+  // can carry someone inside their opponent, and clamping it only at settle left the attacker
+  // visibly standing in the defender for the length of every over-committed swing.
   function setAttackerSwing(meters) {
-    attackerSwingMeters = finite(meters);
+    const requested = finite(meters);
+    const roomToClose = Math.max(0, startSeparationMeters + defenderGroundMeters
+      - attackerGroundMeters - minimumSeparationMeters);
+    attackerSwingMeters = Math.min(requested, roomToClose);
     return report();
   }
 
-  // Banks the step that has been spent and applies what the blow did to both fighters. Called once
-  // per resolved contact; a whiff never reaches it, so an attack that hits nothing keeps no ground.
+  // Nobody ends a step standing inside anybody. Applied to the attacker because they are the one
+  // whose movement can overrun: the defender's own feet are clamped before they travel.
+  function holdMinimumSeparation() {
+    const overrun = minimumSeparationMeters - report().separationMeters;
+    if (overrun > 0) attackerGroundMeters -= overrun;
+  }
+
+  // Banks the step that has been spent and applies what the blow did to both fighters.
   function settleImpact(outcome) {
     const transfer = resolveGroundTransfer(outcome);
     if (!transfer) return null;
     attackerGroundMeters += attackerSwingMeters + transfer.attackerMeters;
     defenderGroundMeters += transfer.defenderMeters;
     attackerSwingMeters = 0;
+    holdMinimumSeparation();
     return Object.freeze({ ...report(), transfer });
   }
 
-  // The swing is given up without banking it. This is what an exchange reset does, and it is why
-  // resetting between attacks no longer quietly returns both fighters to their starting marks.
-  function releaseSwing() {
+  // R19B.2: a swing that hit nothing. The step is banked all the same, so a fighter who lunges at
+  // empty air is left standing where their own momentum carried them - deep, close, and with none
+  // of the impact rebound a landed blow would have given them back. Returning them to where they
+  // started would be the system undoing a commitment the player made, and being caught out of
+  // position is the price of a whiff rather than something to be spared.
+  function settleWhiff() {
+    attackerGroundMeters += attackerSwingMeters;
     attackerSwingMeters = 0;
+    holdMinimumSeparation();
     return report();
   }
 
@@ -131,11 +159,12 @@ export function createEngagementGround(options = {}) {
     moveDefender,
     setAttackerSwing,
     settleImpact,
-    releaseSwing,
+    settleWhiff,
     reset,
     get report() { return report(); },
     get attackerMeters() { return attackerGroundMeters + attackerSwingMeters; },
     get defenderMeters() { return defenderGroundMeters; },
     get separationMeters() { return report().separationMeters; },
+    get minimumSeparationMeters() { return minimumSeparationMeters; },
   });
 }

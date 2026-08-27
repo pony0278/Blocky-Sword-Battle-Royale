@@ -63,19 +63,51 @@ test('R18Z.1 a landed blow banks the step and moves both fighters for good', () 
   assert.equal(settled.attackerSwingMeters, 0, 'the step is spent once it is banked');
   assert.equal(settled.transfer, ENGAGEMENT_GROUND_TRANSFERS.block);
 
-  // And it survives the reset that ends the exchange, which is the whole point: ground changes
-  // hands. Before this the fighters returned to their starting marks after every blow.
-  lane.releaseSwing();
+  // And it survives the end of the exchange, which is the whole point: ground changes hands.
+  // Before this the fighters returned to their starting marks after every blow.
+  lane.settleWhiff();
   assert.ok(Math.abs(lane.separationMeters - settled.separationMeters) < 1e-9);
 });
 
-test('R18Z.1 a whiffed swing keeps no ground', () => {
+test('R19B.2 a whiffed swing leaves the attacker where their own momentum carried them', () => {
+  // This asserted the opposite until R19B.2: a whiff used to hand the step back and return the
+  // attacker to their mark. Being caught deep and out of position is the price of a whiff, and
+  // undoing it was the system sparing a player a commitment they had made.
   const lane = ground();
-  lane.setAttackerSwing(ATTACK_ADVANCE_PROFILES.top.metersByContact);
-  assert.ok(lane.separationMeters < START);
-  lane.releaseSwing();
-  assert.equal(lane.separationMeters, START, 'an attack that hit nothing has bought nothing');
+  const step = ATTACK_ADVANCE_PROFILES.top.metersByContact;
+  lane.setAttackerSwing(step);
+  const mid = lane.separationMeters;
+  lane.settleWhiff();
+  assert.ok(Math.abs(lane.separationMeters - mid) < 1e-9, 'the lunge is kept, not rewound');
+  assert.ok(Math.abs(lane.report.attackerGroundMeters - step) < 1e-9);
+  assert.equal(lane.report.attackerSwingMeters, 0);
+
+  // And crucially there is no rebound: a landed blow would have pushed the attacker back off the
+  // shield, so whiffing leaves them closer than blocking would have.
+  const blocked = createEngagementGround({ startSeparationMeters: START });
+  blocked.setAttackerSwing(step);
+  blocked.settleImpact('block');
+  assert.ok(lane.separationMeters < blocked.separationMeters, 'a whiff should end closer than a block');
   assert.equal(lane.settleImpact('nonsense'), null);
+});
+
+test('R19B.2 no sequence of lunges walks the attacker through the defender', () => {
+  const lane = ground();
+  const min = lane.minimumSeparationMeters;
+  for (let i = 0; i < 12; i += 1) {
+    lane.setAttackerSwing(ATTACK_ADVANCE_PROFILES.top.metersByContact);
+    lane.settleWhiff();
+    assert.ok(
+      lane.separationMeters >= min - 1e-9,
+      `lunge ${i + 1} put them ${lane.separationMeters.toFixed(3)}m apart, inside the ${min}m floor`,
+    );
+  }
+  assert.ok(Math.abs(lane.separationMeters - min) < 1e-9, 'and they end pinned against it');
+
+  // The floor holds through a landed blow too, not just whiffs.
+  lane.setAttackerSwing(ATTACK_ADVANCE_PROFILES.top.metersByContact);
+  lane.settleImpact('block');
+  assert.ok(lane.separationMeters >= min - 1e-9);
 });
 
 test('R18Z.1 the ledger is what the ground actually adds up to over an exchange', () => {
@@ -118,4 +150,20 @@ test('R18Z.1 reset returns the lane to its stance and carries no contact authori
   assert.equal(lane.attackerMeters, 0);
   assert.equal(lane.defenderMeters, 0);
   assert.match(lane.report.authority, /no-contact-authority/);
+});
+
+test('R19B.2 a lunge in progress cannot carry the attacker inside the defender either', () => {
+  // The floor used to be checked only when a step was banked, so an over-committed swing put the
+  // attacker visibly inside the defender for its whole length and only snapped out at settle.
+  const lane = ground();
+  const min = lane.minimumSeparationMeters;
+  lane.setAttackerSwing(START);
+  assert.ok(Math.abs(lane.separationMeters - min) < 1e-9, 'the live swing is clamped, not just the banked one');
+  assert.ok(Math.abs(lane.report.attackerSwingMeters - (START - min)) < 1e-9, 'and only the room that existed was spent');
+
+  // Room is recomputed against where the defender is now, not where they started.
+  lane.moveDefender(0.5);
+  lane.setAttackerSwing(START);
+  assert.ok(Math.abs(lane.separationMeters - min) < 1e-9);
+  assert.ok(lane.report.attackerSwingMeters > START - min, 'backing away gives the lunge more room');
 });
