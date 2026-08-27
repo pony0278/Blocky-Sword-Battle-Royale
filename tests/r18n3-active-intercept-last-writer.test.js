@@ -8,6 +8,7 @@ const bodyReach = await readFile(new URL('../src/combat/guard-residual-body-reac
 const handoff = await readFile(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');
 const intent = await readFile(new URL('../src/combat/active-parry-intercept-intent.js', import.meta.url), 'utf8');
 const director = await readFile(new URL('../src/combat/parry-intercept-director.js', import.meta.url), 'utf8');
+const lifecycle = await readFile(new URL('../src/combat/contact-lifecycle-director.js', import.meta.url), 'utf8');
 
 test('R18N.3 keeps Active Intercept as the last post-presentation shield-arm writer', () => {
   // R18S.3: the lab latches the intent, the director drives the ladder on it.
@@ -70,10 +71,13 @@ test('R18N.3 preserves production tracking limits and real-contact reset boundar
   assert.match(bodyReach, /maxBodyReachMeters: 0\.035/);
   assert.match(bodyReach, /chestMaxDegrees: 2\.4/);
   assert.match(bodyReach, /spineMaxDegrees: 1\.6/);
-  assert.match(handoff, /probeSweptSwordBucklerContact\(/);
-  assert.match(handoff, /parryGate\.confirm\(/);
+  // R18S.4: the contact boundary lives in the lifecycle director; the lab wires the gate and the
+  // reach-ownership release into it, and the reset still happens the moment contact takes the arm.
+  assert.match(lifecycle, /probeSweptSwordBucklerContact\(/);
+  assert.match(handoff, /confirmParry: \(input\) => parryGate\.confirm\(input\)/);
   assert.match(handoff, /fineTrackingRuntime\.reset\(\);/);
   assert.match(handoff, /residualBodyReachRuntime\.reset\(\);/);
+  assert.match(lifecycle, /releaseReachOwnership\(\);/);
 });
 
 test('R18N.3 does not promote the fixed target into contact authority', () => {

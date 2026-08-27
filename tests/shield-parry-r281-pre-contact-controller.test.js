@@ -5,6 +5,7 @@ import { createShieldParryPreContactController } from '../tools/action-studio/sh
 
 const entry = await readFile(new URL('../tools/action-studio/shield-driven-contact-coupling-lab-r281.js', import.meta.url), 'utf8');
 const controller = await readFile(new URL('../tools/action-studio/shield-parry-r281/pre-contact-controller.js', import.meta.url), 'utf8');
+const lifecycleDirector = await readFile(new URL('../src/combat/contact-lifecycle-director.js', import.meta.url), 'utf8');
 const parryInterceptDirectorSource = await readFile(new URL('../src/combat/parry-intercept-director.js', import.meta.url), 'utf8');
 const contactHandoffController = await readFile(new URL('../tools/action-studio/shield-parry-r281/contact-handoff-controller.js', import.meta.url), 'utf8');
 
@@ -13,7 +14,7 @@ test('R18M.5 entry delegates pre-contact orchestration to one controller', () =>
   assert.match(entry, /shield-parry-r281\/pre-contact-controller\.js/);
   assert.match(entry, /const preContactController = createShieldParryPreContactController\(\{/);
   assert.match(entry, /preContactController\.update\(snapshot, currentBlade, deltaSeconds\);/);
-  assert.match(contactHandoffController, /preContactController\.recordWhiffProbe\(snapshot, exchangeState\.latestContact\);/);
+  assert.match(contactHandoffController, /preContactController\.recordWhiffProbe\(attackSnapshot, evaluation\)/);
   assert.doesNotMatch(entry, /function updateBlockPreContact\(/);
   assert.doesNotMatch(entry, /function updateParryPreContact\(/);
   assert.doesNotMatch(entry, /function recordWhiffProbe\(/);
@@ -63,12 +64,14 @@ test('R18M.5 whiff probing remains diagnostic and real swept contact stays autho
   assert.doesNotMatch(controller, /swordGripConstraint\./);
   assert.doesNotMatch(controller, /buildLiveParryOldB3Handoff\(/);
 
-  const probeIndex = contactHandoffController.indexOf('const geometricContact = probeSweptSwordBucklerContact({');
-  const temporalEligibilityIndex = contactHandoffController.indexOf('exchangeState.latestContact = evaluateSweptContactTemporalEligibility({', probeIndex);
-  const whiffIndex = contactHandoffController.indexOf('preContactController.recordWhiffProbe(snapshot, exchangeState.latestContact);', temporalEligibilityIndex);
-  const rejectIndex = contactHandoffController.indexOf('if (!exchangeState.latestContact.contact) return;', whiffIndex);
-  const confirmIndex = contactHandoffController.indexOf('parryGate.confirm({ attackSnapshot: snapshot, contact: exchangeState.latestContact })', rejectIndex);
-  const resolveIndex = contactHandoffController.indexOf('exchangeState.latestCombatResult = combat.resolveContact({', confirmIndex);
+  // R18S.4: the sequence lives in the lifecycle director; the whiff record is a hook it fires
+  // after eligibility and before the confirmation can consume the gate's armed state.
+  const probeIndex = lifecycleDirector.indexOf('const geometricContact = probeSweptSwordBucklerContact({');
+  const temporalEligibilityIndex = lifecycleDirector.indexOf('const contactEvaluation = evaluateSweptContactTemporalEligibility({', probeIndex);
+  const whiffIndex = lifecycleDirector.indexOf('observe.contactEvaluated?.(contactEvaluation, attackSnapshot);', temporalEligibilityIndex);
+  const rejectIndex = lifecycleDirector.indexOf('if (!contactEvaluation.contact) {', whiffIndex);
+  const confirmIndex = lifecycleDirector.indexOf('confirmParry({ attackSnapshot, contact: contactEvaluation })', rejectIndex);
+  const resolveIndex = lifecycleDirector.indexOf('combatResult = resolveCombat({', confirmIndex);
   assert.ok(
     probeIndex >= 0
       && temporalEligibilityIndex > probeIndex
@@ -77,13 +80,14 @@ test('R18M.5 whiff probing remains diagnostic and real swept contact stays autho
       && confirmIndex > rejectIndex
       && resolveIndex > confirmIndex,
   );
+  assert.match(contactHandoffController, /preContactController\.recordWhiffProbe\(attackSnapshot, evaluation\)/);
 });
 
 test('R18M.5 manual timing gate and post-contact handoff authority remain outside the controller', () => {
   assert.match(entry, /exchangeState\.latestParryInput = parryGate\.arm\(\{/);
-  assert.match(contactHandoffController, /swordGripConstraint\.start\(\{/);
-  assert.match(contactHandoffController, /buildLiveParryOldB3Handoff\(\{/);
-  assert.match(contactHandoffController, /continuityBridgeMs: handoff\.releaseBlendMs/);
+  assert.match(lifecycleDirector, /gripConstraint\.start\(\{/);
+  assert.match(lifecycleDirector, /buildLiveParryOldB3Handoff\(\{/);
+  assert.match(lifecycleDirector, /continuityBridgeMs: handoff\.releaseBlendMs/);
   assert.doesNotMatch(controller, /parryGate\.arm\(/);
   assert.doesNotMatch(controller, /DEFLECT_IMPULSE|old-b3-handoff|continuityBridgeMs/);
 });
