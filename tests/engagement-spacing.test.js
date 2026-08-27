@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import {
   CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
   MEASURED_FULL_COVERAGE_BAND_METERS,
+  MEASURED_UNDEFENDED_BODY_REACH_METERS,
   ENGAGEMENT_SPACING_STAGE,
   normalizeEngagementSeparation,
   planEngagementStance,
@@ -72,7 +73,8 @@ test('R18T.1 the lab places its fighters from the module and can only move them 
 test('R18V.1 replaces the provisional band with the measured one', () => {
   const band = MEASURED_FULL_COVERAGE_BAND_METERS;
   assert.ok(band.minimum < band.maximum, 'a placeholder band collapses to a point; a measured one does not');
-  assert.equal(band.limitedBy, 'left');
+  assert.equal(band.limitedBy.maximum, 'left');
+  assert.equal(band.limitedBy.minimum, 'right');
   // The measured band does not contain the calibrated separation, and that is the finding rather
   // than a bug in the constant: at 2.3m only two of the three directions reach the guard. This
   // assertion is what makes fixing LEFT show up as a deliberate edit here.
@@ -83,4 +85,25 @@ test('R18V.1 replaces the provisional band with the measured one', () => {
   // Bounds must stay inside what was actually swept; anything else is extrapolation.
   assert.ok(band.minimum >= band.testedRange.minimum);
   assert.ok(band.maximum <= band.testedRange.maximum);
+});
+
+test('R18X.1 records where an unopposed attack still reaches the body', () => {
+  const reach = MEASURED_UNDEFENDED_BODY_REACH_METERS;
+  const coverage = MEASURED_FULL_COVERAGE_BAND_METERS;
+  for (const direction of ['top', 'right', 'left']) {
+    assert.ok(reach[direction] >= reach.testedRange.minimum, direction);
+    assert.ok(reach[direction] <= reach.testedRange.maximum, direction);
+  }
+  // LEFT is the outlier the whole guard stack exists for: it lands from far enough out that the
+  // resting shield never covers it, where TOP and RIGHT finish short.
+  assert.ok(reach.left > reach.top && reach.left > reach.right);
+
+  // The two measurements meet at a point rather than over a band, and saying so is the point of
+  // keeping them side by side: the guard becomes fully reliable exactly where TOP and RIGHT stop
+  // being able to land at all.
+  assert.equal(coverage.minimum, reach.top);
+  assert.equal(coverage.minimum, reach.right);
+  // Past that, only LEFT still threatens anything, and it does so right up to the far end of the
+  // guard's own band.
+  assert.equal(reach.left, coverage.maximum);
 });

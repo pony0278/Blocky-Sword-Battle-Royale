@@ -13,20 +13,43 @@ export const ENGAGEMENT_SPACING_STAGE = 'R18T.1';
 // to say how far from calibration a given stance is.
 export const CALIBRATED_ENGAGEMENT_SEPARATION_METERS = 2.3;
 
-// R18V.1: the band the calibrations are trusted within. This replaces the placeholder that stood
-// here, and it is now measured rather than assumed: it is the range over which all three attack
-// directions were observed to reach the guard at least 10 times in 12, in BLOCK mode, headless,
-// n=12 per cell. The per-direction detail and the full table live in guard-directional-anchor.js.
+// R18X.1: the band the calibrations are trusted within - the range over which all three attack
+// directions were measured to reach the guard at least 10 times in 12, in BLOCK mode, headless.
+// The per-direction detail and the full table live in guard-directional-anchor.js.
 //
-// It is narrower than the calibrated separation, and it does not contain it. That is not a
-// mistake in the constant, it is the measurement: LEFT stops reliably reaching the guard just past
-// 2.1m, so 2.3m is a distance where two directions out of three are covered. Widening this band
-// means fixing LEFT, not editing this number.
+// It still does not contain the calibrated separation, and still for a measured reason rather than
+// a mistake in the constant: LEFT stops clearing the bar past 2.05m. What changed is the bottom.
+// Before the swept contact test followed the blade's arc this read 2.00-2.10m, and everything
+// below 2.00m was simply unswept; the arc fix cleared 1.50-2.05m and the sweep went down to 1.40m.
 export const MEASURED_FULL_COVERAGE_BAND_METERS = Object.freeze({
-  minimum: 2.0,
-  maximum: 2.1,
-  limitedBy: 'left',
-  testedRange: Object.freeze({ minimum: 2.0, maximum: 2.5 }),
+  minimum: 1.55,
+  maximum: 2.05,
+  // Different directions set the two ends, which is the whole reason this is not one number.
+  limitedBy: Object.freeze({ minimum: 'right', maximum: 'left' }),
+  testedRange: Object.freeze({ minimum: 1.4, maximum: 2.5 }),
+});
+
+// R18X.1: the other half of what a separation means - not whether the guard can reach the blade,
+// but whether the blade would have reached anything. Measured the only honest way, by freezing the
+// guard's tracking entirely so a miss is guaranteed, then asking whether the body hurtbox is
+// struck. Per direction, the furthest separation at which an unopposed attack still lands:
+//
+//   top    1.55m       right  1.55m       left   2.05m
+//
+// Beyond its entry here a direction is theatre: the swing finishes short of the defender and it
+// makes no difference whether the guard met it. LEFT reaches the knees and waist from over two
+// metres, which is why it is the direction that has driven every guard problem in this codebase.
+//
+// Read this against MEASURED_FULL_COVERAGE_BAND_METERS and the useful distance is narrow. The
+// guard is fully reliable from 1.55m out; all three attacks land from 1.55m in. They meet at a
+// point rather than over a band. Between 1.60m and 2.05m only LEFT is a real threat, and closer
+// than 1.50m the guard starts failing outright - RIGHT blocks 0 of 12 at 1.40m, and every miss in
+// that range reaches the body.
+export const MEASURED_UNDEFENDED_BODY_REACH_METERS = Object.freeze({
+  top: 1.55,
+  right: 1.55,
+  left: 2.05,
+  testedRange: Object.freeze({ minimum: 1.4, maximum: 2.5 }),
 });
 
 function finite(value, fallback = 0) {

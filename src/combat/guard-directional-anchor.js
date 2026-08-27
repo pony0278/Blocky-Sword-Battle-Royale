@@ -37,31 +37,35 @@ export const GUARD_DIRECTIONAL_COVERAGE_ANCHORS = Object.freeze({
 //
 // `verifiedCoverage` is the separate and harder question - not where the anchors were measured,
 // but how far from there the guard still meets the blade. Measured in BLOCK mode, headless, idle
-// machine, n=12 per cell, counting shield contact:
+// machine, counting shield contact, n=12 to 48 per cell:
 //
-//         2.00m   2.10m   2.20m   2.30m   2.35m   2.40m   2.50m
-//   top   12/12   12/12   12/12   12/12     -     12/12   12/12
-//   right 12/12   12/12   12/12   11/12     -     12/12   12/12
-//   left  12/12   10/12    5/12    3/12    0/12    0/12    0/12
+//         1.40m  1.45m  1.50m  1.55m  1.60m  1.80m  2.05m  2.30m  2.35m  2.50m
+//   top   10/12  16/16  16/16  16/16  12/12  12/12  12/12  12/12    -    12/12
+//   right  0/12   8/16  12/16  16/16  12/12  12/12  12/12  12/12    -    12/12
+//   left   1/12   5/16  16/16  16/16  12/12  12/12  12/12  36/48   0/12   0/12
 //
-// TOP and RIGHT arrive close enough to where the guard already rests that distance barely matters
-// across the tested range. LEFT is a genuine low sweep the guard has to travel to reach, and its
-// travel budget runs out just past 2.1m. Note what that means for the calibrated separation: LEFT
-// is already outside its own verified band there, blocking 3 times in 12. An earlier small-sample
-// reading (6/6) said otherwise and was wrong; the same 3-5/12 shows on the commit before the body
-// hurtbox, so this is standing behaviour rather than a regression.
+// R18X.1 moved these: before the swept contact test followed the blade's arc, LEFT read 12/12 at
+// 2.00m falling to 3/12 at 2.30m, and the band below 2.00m had never been swept at all. The arc
+// fix cleared everything from 1.50m to 2.05m outright and took 2.30m from a coin flip to three in
+// four - still short of this table's bar, so LEFT's band ends at 2.05m.
+//
+// The shape underneath is worth stating, because it is what these bands are really about. With the
+// guard's tracking frozen entirely, a resting shield still blocks TOP and RIGHT 16/16 from 1.70m
+// out: at those distances their scores are not evidence that tracking works, only that the shield
+// happens to be in the way. LEFT is the one direction a frozen guard never stops, and the one that
+// reaches the body when it gets through. It is the direction this whole stack exists for.
 export const GUARD_DIRECTIONAL_ANCHOR_CALIBRATION = Object.freeze({
   stage: 'R18V.1',
   measuredAtMeters: CALIBRATED_ENGAGEMENT_SEPARATION_METERS,
   // The separation band over which the anchored guard was measured to meet that direction's blade
   // at least 10 times in 12. Both bounds are measured, not extrapolated: outside the tested
-  // 2.00-2.50m range these say nothing at all.
+  // 1.40-2.50m range these say nothing at all.
   verifiedCoverage: Object.freeze({
-    top: Object.freeze({ fromMeters: 2.0, toMeters: 2.5 }),
-    right: Object.freeze({ fromMeters: 2.0, toMeters: 2.5 }),
-    left: Object.freeze({ fromMeters: 2.0, toMeters: 2.1 }),
+    top: Object.freeze({ fromMeters: 1.4, toMeters: 2.5 }),
+    right: Object.freeze({ fromMeters: 1.55, toMeters: 2.5 }),
+    left: Object.freeze({ fromMeters: 1.5, toMeters: 2.05 }),
   }),
-  testedRange: Object.freeze({ fromMeters: 2.0, toMeters: 2.5 }),
+  testedRange: Object.freeze({ fromMeters: 1.4, toMeters: 2.5 }),
 });
 
 // Answers one question for a caller that knows the live separation: is this direction's anchor,

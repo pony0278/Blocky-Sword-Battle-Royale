@@ -103,10 +103,14 @@ test('R18V.1 records that LEFT does not reach the guard at the calibrated separa
 });
 
 test('R18V.1 reports honestly outside the range that was actually tested', () => {
-  const close = assessGuardAnchorCoverage({ direction: 'left', separationMeters: 1.5 });
+  // R18X.1 swept down to 1.40m and LEFT now clears the bar from 1.50m, so the closer-than-band
+  // case has moved in with it.
+  assert.equal(assessGuardAnchorCoverage({ direction: 'left', separationMeters: 1.5 }).verified, true);
+  const close = assessGuardAnchorCoverage({ direction: 'left', separationMeters: 1.45 });
   assert.equal(close.verified, false);
   assert.equal(close.reason, 'closer-than-verified-band');
-  assert.equal(close.beyondTestedRange, true);
+  assert.equal(close.beyondTestedRange, false, '1.45m was swept, it just failed');
+  assert.equal(assessGuardAnchorCoverage({ direction: 'left', separationMeters: 1.2 }).beyondTestedRange, true);
 
   const far = assessGuardAnchorCoverage({ direction: 'top', separationMeters: 4 });
   assert.equal(far.verified, false);
