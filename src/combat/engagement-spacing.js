@@ -53,6 +53,12 @@ export const MEASURED_FULL_COVERAGE_BAND_METERS = Object.freeze({
 // point rather than over a band. Between 1.60m and 2.05m only LEFT is a real threat, and closer
 // than 1.50m the guard starts failing outright - RIGHT blocks 0 of 12 at 1.40m, and every miss in
 // that range reaches the body.
+//
+// R19J.1 measured what that range looks like from the attack's side, and the answer reframes it:
+// the attack stays healthy all the way down to the 0.9m body pushbox (the blade meets the body at
+// fraction 0.44-0.63, mid-blade), so the band below 1.55m is not a distance the attack should be
+// stopped from reaching - it is a distance the defence does not cover yet. close-range-engagement
+// holds those curves and the two proposals they refuted.
 export const MEASURED_UNDEFENDED_BODY_REACH_METERS = Object.freeze({
   top: 1.55,
   right: 1.55,
