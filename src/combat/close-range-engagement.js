@@ -82,6 +82,12 @@ export const MEASURED_SHIELD_CATCH_BLADE_FRACTION = Object.freeze({
 // Below this the guard does not intercept at all: nine of nine attempts across the three
 // directions resolved with no block and reached the body. It corroborates the band already
 // recorded in engagement-spacing (RIGHT blocks 0 of 12 at 1.40m) from the other side.
+//
+// R19L.1 then showed that this floor is the less interesting half of the story, and that framing
+// the guard as "reliable out here, failing in there" flatters it. Pairing each stance against an
+// unguarded run found the guard turns a landing hit into a block three times in twenty-seven, and
+// never once for RIGHT: most of the blocks counted here are against swings that were missing
+// anyway. guard-effectiveness holds that pairing.
 export const MEASURED_GUARD_WORKING_FLOOR_METERS = 1.55;
 
 // The gap is the finding, and it is computed rather than transcribed so that moving either end

@@ -60,6 +60,10 @@ export const MEASURED_FULL_COVERAGE_BAND_METERS = Object.freeze({
 // band below 1.55m is a distance where neither side has a working answer - not, as R19J.1 first
 // concluded from near-miss data, one where only the defence is missing. close-range-engagement
 // holds those curves and the trap that produced the wrong version.
+//
+// R19L.1 asks the question these bands cannot: not "does a block resolve" but "would the swing
+// have landed if it had not". Paired against unguarded runs, the guard answers a landing blow at
+// three of twenty-seven sampled stances - see guard-effectiveness.
 export const MEASURED_UNDEFENDED_BODY_REACH_METERS = Object.freeze({
   top: 1.55,
   right: 1.55,
