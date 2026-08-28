@@ -1,80 +1,81 @@
 import { MINIMUM_ENGAGEMENT_SEPARATION_METERS } from './lane-locomotion.js';
 
-export const CLOSE_RANGE_ENGAGEMENT_STAGE = 'R19J.1';
+export const CLOSE_RANGE_ENGAGEMENT_STAGE = 'R19J.2';
 
-// R19J.1: what actually happens when the two of them are close, measured rather than assumed.
+// R19J.2: what actually happens when the two of them are close, measured rather than assumed.
 //
-// The question that prompted this was "at very close range the attack passes through the
-// defender - should there be a personal-space radius, or should a swing become a shove?" Both
-// proposals assume the same thing: that a sword at close range is being swung from too close to
-// work, so the swing should be prevented or converted. The measurement below says that assumption
-// is false for this weapon, and it is recorded here because a plausible-but-false premise is the
-// expensive kind - a "hilt hits do not cut" rule built on it would have been dead code from the
-// day it shipped, and a raised pushbox floor would have banned a distance whose attack geometry is
-// perfectly healthy.
+// The question that prompted this was "at very close range the attack passes through the defender
+// - should there be a personal-space radius, or should a swing become a shove?".
 //
-// Method: the defender is left in R19I.1's neutral stance so nothing intercepts, one attack per
-// direction is fired at each separation, and the blade fraction where the swept probe FIRST meets
-// a body band is recorded. Fraction 0 is the blade base at the guard and 1 is the tip
-// (lab-geometry samples the sword as [bladeBase, bladeMid, tip]). The strike lands before the
-// authored contact time, so the attack advance has not accumulated yet and the separations below
-// are the separations the swing started from.
+// R19J.1 answered it with the opposite of the truth, and the reason is worth more than the numbers
+// were. It read `latestBodyHit` and treated any non-null value as a strike. That field holds the
+// NEAREST body reading of the exchange, and body-hurtbox stores near-misses in it too - only
+// `contact === true` means the blade actually landed. So the first sweep recorded, for each
+// separation, where the blade came closest while sweeping PAST the body, which is the tip; the
+// resulting curve said the strike lands mid-blade everywhere and rises to the tip at range. It
+// also recorded a "strike" on TOP at 2.4m, a separation the previously measured body reach says
+// TOP cannot cover - the contradiction that gave it away. The trap is easy to fall into from the
+// debug facade, where the field is simply called latestBodyHit, so it is named here.
 //
-// The headline: at 0.9m - the closest two bodies can stand - the blade meets the body at fraction
-// 0.44 to 0.63. That is mid-blade. There is no separation this fighter can reach at which the
-// sword strikes with its base, because the body pushbox already prevents it. The same rule WILL
-// have work to do when a polearm exists (a 2.5m haft at 0.9m is all haft), which is why the
-// concept belongs to a weapon rather than to the lane - but it belongs to that weapon's arrival,
-// not to this one's geometry.
+// Method, corrected: the defender is left in R19I.1's neutral stance so nothing intercepts, one
+// attack per direction is fired from each starting distance, and the frame where the probe reports
+// `contact === true` is the one recorded - its blade fraction, its band, and the separation the
+// ledger reports at that moment, which is after the attack advance has been spent rather than
+// before. Fraction 0 is the blade base at the guard and 1 is the tip (lab-geometry samples the
+// sword as [bladeBase, bladeMid, tip], checked rather than assumed). Two runs, near-identical.
+//
+// The bands are read off the defender's bones, so these describe striking someone standing
+// relaxed. A guarding defender crouches and its bands sit lower; that case is the coverage work
+// in engagement-spacing, not this.
 export const MEASURED_BODY_STRIKE_BLADE_FRACTION = Object.freeze({
   top: Object.freeze([
-    Object.freeze({ separationMeters: 0.9, bladeFraction: 0.63, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.0, bladeFraction: 0.69, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.2, bladeFraction: 0.81, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.4, bladeFraction: 0.94, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.6, bladeFraction: 1.0, band: 'chest' }),
-    Object.freeze({ separationMeters: 2.4, bladeFraction: 1.0, band: 'head' }),
+    Object.freeze({ contactSeparationMeters: 0.90, bladeFraction: 0, band: 'chest' }),
+    Object.freeze({ contactSeparationMeters: 0.94, bladeFraction: 0.02, band: 'chest' }),
+    Object.freeze({ contactSeparationMeters: 1.14, bladeFraction: 0.20, band: 'chest' }),
+    Object.freeze({ contactSeparationMeters: 1.54, bladeFraction: 0.59, band: 'chest' }),
   ]),
   right: Object.freeze([
-    Object.freeze({ separationMeters: 0.9, bladeFraction: 0.63, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.0, bladeFraction: 0.75, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.2, bladeFraction: 0.88, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.4, bladeFraction: 1.0, band: 'chest' }),
-    Object.freeze({ separationMeters: 1.6, bladeFraction: 1.0, band: 'head' }),
-    Object.freeze({ separationMeters: 2.4, bladeFraction: 1.0, band: 'head' }),
+    Object.freeze({ contactSeparationMeters: 0.90, bladeFraction: 0, band: 'chest' }),
+    Object.freeze({ contactSeparationMeters: 0.94, bladeFraction: 0, band: 'chest' }),
+    Object.freeze({ contactSeparationMeters: 1.14, bladeFraction: 0.13, band: 'chest' }),
   ]),
   left: Object.freeze([
-    Object.freeze({ separationMeters: 0.9, bladeFraction: 0.44, band: 'head' }),
-    Object.freeze({ separationMeters: 1.0, bladeFraction: 0.5, band: 'head' }),
-    Object.freeze({ separationMeters: 1.2, bladeFraction: 0.63, band: 'head' }),
-    Object.freeze({ separationMeters: 1.4, bladeFraction: 0.75, band: 'head' }),
-    Object.freeze({ separationMeters: 1.6, bladeFraction: 0.94, band: 'head' }),
-    Object.freeze({ separationMeters: 2.4, bladeFraction: 1.0, band: 'head' }),
+    Object.freeze({ contactSeparationMeters: 1.15, bladeFraction: 0.16, band: 'waist' }),
+    Object.freeze({ contactSeparationMeters: 1.35, bladeFraction: 0.20, band: 'waist' }),
   ]),
+});
+
+// LEFT is the direction with no close-range strike at all: from every start at or below 1.4m it
+// passes the standing defender by 0.8 to 4.1 centimetres without landing. It is the low sweep, and
+// a body standing upright is simply not where it travels. Recorded because "misses by a
+// centimetre, repeatably" is a different design problem from "hits weakly", and the two would be
+// solved differently.
+export const MEASURED_CLOSE_RANGE_MISS_GAPS_METERS = Object.freeze({
+  left: Object.freeze([0.008, 0.010, 0.014, 0.015, 0.017, 0.022, 0.023, 0.041]),
+  authority: 'measured-near-miss-gaps-standing-defender',
 });
 
 // The other half of the same sweep, with the guard up: where on the blade the shield catches. It
 // slides toward the base as the fighters close, and below the working floor it stops catching at
-// all. A shield meeting the blade at its base is not a shield that mistimed anything - it is the
-// geometry of an attacker who is already inside, which is the finding that reframes close range as
-// a state needing its own defence rather than a distance where defence merely fails.
+// all. This half came from `latestContact` on a resolved block, so it was never exposed to the
+// near-miss trap above.
 export const MEASURED_SHIELD_CATCH_BLADE_FRACTION = Object.freeze({
   top: Object.freeze([
-    Object.freeze({ separationMeters: 1.66, bladeFraction: 0 }),
-    Object.freeze({ separationMeters: 1.86, bladeFraction: 0.08 }),
-    Object.freeze({ separationMeters: 2.06, bladeFraction: 0.27 }),
-    Object.freeze({ separationMeters: 2.26, bladeFraction: 0.47 }),
+    Object.freeze({ contactSeparationMeters: 1.66, bladeFraction: 0 }),
+    Object.freeze({ contactSeparationMeters: 1.86, bladeFraction: 0.08 }),
+    Object.freeze({ contactSeparationMeters: 2.06, bladeFraction: 0.27 }),
+    Object.freeze({ contactSeparationMeters: 2.26, bladeFraction: 0.47 }),
   ]),
   right: Object.freeze([
-    Object.freeze({ separationMeters: 1.86, bladeFraction: 0 }),
-    Object.freeze({ separationMeters: 2.06, bladeFraction: 0.33 }),
-    Object.freeze({ separationMeters: 2.26, bladeFraction: 0.5 }),
+    Object.freeze({ contactSeparationMeters: 1.86, bladeFraction: 0 }),
+    Object.freeze({ contactSeparationMeters: 2.06, bladeFraction: 0.33 }),
+    Object.freeze({ contactSeparationMeters: 2.26, bladeFraction: 0.5 }),
   ]),
   left: Object.freeze([
-    Object.freeze({ separationMeters: 1.66, bladeFraction: 0 }),
-    Object.freeze({ separationMeters: 1.86, bladeFraction: 0.23 }),
-    Object.freeze({ separationMeters: 2.06, bladeFraction: 0.34 }),
-    Object.freeze({ separationMeters: 2.26, bladeFraction: 0.58 }),
+    Object.freeze({ contactSeparationMeters: 1.66, bladeFraction: 0 }),
+    Object.freeze({ contactSeparationMeters: 1.86, bladeFraction: 0.23 }),
+    Object.freeze({ contactSeparationMeters: 2.06, bladeFraction: 0.34 }),
+    Object.freeze({ contactSeparationMeters: 2.26, bladeFraction: 0.58 }),
   ]),
 });
 
@@ -95,18 +96,23 @@ export const UNDEFENDED_CLOSE_RANGE_BAND_METERS = Object.freeze({
   authority: 'measured-close-range-gap-no-contact-authority',
 });
 
-// Two proposals this sweep refuted, kept because the reasoning that produced them was sound and
-// will be produced again by anyone looking at the same symptom.
-export const CLOSE_RANGE_REFUTED = Object.freeze({
+// What the corrected sweep says about the two proposals that prompted it. R19J.1 recorded the
+// first of these as refuted; the corrected data supports it, and the reversal is kept in view
+// rather than quietly replaced.
+export const CLOSE_RANGE_FINDINGS = Object.freeze({
   hiltStrikeRule: Object.freeze({
     proposal: 'a swing that connects near the hilt should not cut, as in Mount & Blade or Mordhau',
-    refutedBy: 'the minimum measured body-strike fraction is 0.44 at the 0.9m floor - mid-blade',
-    consequence: 'the rule would never fire for this weapon; it belongs to the first polearm',
+    verdict: 'supported',
+    evidence: 'TOP and RIGHT strike at fraction 0 - the blade base - at the 0.9m pushbox, rising '
+      + 'past 0.5 only around 1.5m of contact separation',
+    supersedes: 'R19J.1 recorded this as refuted from near-miss data read as strikes',
   }),
   raisedPushboxFloor: Object.freeze({
     proposal: 'raise the body pushbox to the guard working floor so close range cannot happen',
-    refutedBy: 'the attack geometry is healthy across 0.9-2.4m; only the defence has a floor',
-    consequence: 'it would encode one weapon\'s reach into body size and ban a sound distance',
+    verdict: 'still rejected',
+    evidence: 'the degenerate strike is a weapon property that a per-weapon effective range can '
+      + 'express directly; encoding it as body size would misprice every future weapon, and a '
+      + 'polearm needs the opposite floor from a dagger',
   }),
 });
 
@@ -119,16 +125,16 @@ function finite(value, fallback = 0) {
 // sampled range the honest answer is the nearest thing actually observed.
 function interpolate(samples, separationMeters) {
   if (!samples?.length) return null;
-  const at = finite(separationMeters, samples[0].separationMeters);
-  if (at <= samples[0].separationMeters) return samples[0].bladeFraction;
+  const at = finite(separationMeters, samples[0].contactSeparationMeters);
+  if (at <= samples[0].contactSeparationMeters) return samples[0].bladeFraction;
   const last = samples[samples.length - 1];
-  if (at >= last.separationMeters) return last.bladeFraction;
+  if (at >= last.contactSeparationMeters) return last.bladeFraction;
   for (let index = 1; index < samples.length; index += 1) {
     const previous = samples[index - 1];
     const current = samples[index];
-    if (at <= current.separationMeters) {
-      const span = current.separationMeters - previous.separationMeters;
-      const alpha = span > 1e-9 ? (at - previous.separationMeters) / span : 0;
+    if (at <= current.contactSeparationMeters) {
+      const span = current.contactSeparationMeters - previous.contactSeparationMeters;
+      const alpha = span > 1e-9 ? (at - previous.contactSeparationMeters) / span : 0;
       return previous.bladeFraction + (current.bladeFraction - previous.bladeFraction) * alpha;
     }
   }
@@ -149,15 +155,14 @@ export function assessCloseRangeEngagement(input = {}) {
     });
   }
   const separationMeters = Math.max(0, finite(input.separationMeters));
-  const insideGuardWorkingRange = separationMeters >= MEASURED_GUARD_WORKING_FLOOR_METERS;
   return Object.freeze({
     stage: CLOSE_RANGE_ENGAGEMENT_STAGE,
     direction,
     known: true,
     separationMeters,
-    insideGuardWorkingRange,
-    // Inside the undefended band the defence does not exist yet; that is a gap in the design, not
-    // a property of the attack, and naming it that way is the point of this report.
+    insideGuardWorkingRange: separationMeters >= MEASURED_GUARD_WORKING_FLOOR_METERS,
+    // Inside this band the defence does not exist yet; that is a gap in the design rather than a
+    // property of the attack, and naming it that way is the point of this report.
     insideUndefendedBand: separationMeters >= UNDEFENDED_CLOSE_RANGE_BAND_METERS.minimum
       && separationMeters < UNDEFENDED_CLOSE_RANGE_BAND_METERS.maximum,
     expectedBodyStrikeBladeFraction: interpolate(samples, separationMeters),
